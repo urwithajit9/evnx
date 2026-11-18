@@ -20,7 +20,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 /// Same keys, every value different: a `.env` filled in from its template.
 fn filled_in() -> Project {

@@ -11,7 +11,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const KEY: &str = "sk_live_51H1234567890abcdefghijk";
 

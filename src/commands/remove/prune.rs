@@ -34,10 +34,10 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use colored::*;
 
-use super::{edit, in_dir, read_place, Change, Kind};
+use super::{Change, Kind, edit, in_dir, read_place};
 use crate::core::env_name;
 use crate::utils::path::label;
 use crate::utils::prompt::Declined;

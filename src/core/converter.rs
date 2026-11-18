@@ -176,7 +176,7 @@ impl ConvertOptions {
     /// Transform a value (base64 encode if enabled)
     pub fn transform_value(&self, value: &str) -> String {
         if self.base64 {
-            use base64::{engine::general_purpose, Engine as _};
+            use base64::{Engine as _, engine::general_purpose};
             general_purpose::STANDARD.encode(value.as_bytes())
         } else {
             value.to_string()

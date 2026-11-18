@@ -26,7 +26,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn golden(name: &str) -> String {
     std::fs::read_to_string(support::snapshot::golden_path(&format!("backup/{name}")))

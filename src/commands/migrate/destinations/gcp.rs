@@ -27,7 +27,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
-use crate::formats::gcp::{upsert_function, upsert_line, UPSERT_COMMENT};
+use crate::formats::gcp::{UPSERT_COMMENT, upsert_function, upsert_line};
 
 pub struct GcpDestination {
     /// GCP project ID, printed as `--project=` into every command (DEC-MG2).

@@ -25,7 +25,7 @@
 //! existing keys, unchanged, and they should be treated as public from now on.
 //! [`catalogue`] is what a deprecation would have to go through.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use super::loader::schema;
 use super::models::{VarCollection, VarSource};

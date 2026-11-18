@@ -14,7 +14,7 @@
 //! Single-vault runs never come through here.
 
 use crate::core::secret::Vars;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::Colorize;
 use indexmap::IndexMap;
 use zeroize::Zeroize;

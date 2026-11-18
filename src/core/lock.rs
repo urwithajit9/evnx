@@ -29,7 +29,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 /// A lock with no live owner this old is taken over.
 pub const STALE_AFTER: Duration = Duration::from_secs(600);
@@ -92,7 +92,7 @@ pub fn acquire(target: &Path) -> Result<FileLock> {
                 }
             }
             Err(e) => {
-                return Err(e).with_context(|| format!("could not lock {}", target.display()))
+                return Err(e).with_context(|| format!("could not lock {}", target.display()));
             }
         }
     }

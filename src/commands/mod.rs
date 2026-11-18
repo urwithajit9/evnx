@@ -26,7 +26,7 @@ pub use init::run as run_init;
 
 pub mod completions {
     use anyhow::{Context, Result};
-    use clap_complete::{generate, Shell};
+    use clap_complete::{Shell, generate};
 
     /// Print the completion script for `shell`.
     ///

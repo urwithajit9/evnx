@@ -4,7 +4,7 @@
 //! `evnx scan --staged`. Lines the hook already had are kept, a reinstall
 //! replaces the block in place, and `uninstall` removes only the block.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

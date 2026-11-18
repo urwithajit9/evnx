@@ -11,7 +11,7 @@
 mod support;
 
 use support::cloud::signed_in;
-use support::{run_with, Project};
+use support::{Project, run_with};
 
 const TOKEN: &str = "evnx_tok_00000000000000000000000000000000";
 

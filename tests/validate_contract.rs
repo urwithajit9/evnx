@@ -8,7 +8,7 @@
 mod support;
 
 use serde_json::Value;
-use support::{run, Project};
+use support::{Project, run};
 
 /// The review's fixture: eight declared variables, two of them missing
 /// (`STRIPE_KEY`, `OPTIONAL_X`), one extra, one duplicate, bad values.

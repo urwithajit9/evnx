@@ -33,7 +33,7 @@
 //! says so before making the request, so the reason is legible.
 
 use crate::cloud::client::api_path;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
@@ -237,7 +237,7 @@ pub fn create(
             return Err(crate::core::verdict::usage(
                 "a token needs a scope: pass --vault <VAULT> for one vault, or --all-vaults \
                  to reach every vault on the account",
-            ))
+            ));
         }
     };
     let expires_in_days = lifetime.request_days();

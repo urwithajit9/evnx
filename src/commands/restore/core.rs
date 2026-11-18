@@ -996,8 +996,7 @@ mod tests {
         use tempfile::TempDir;
 
         let dir = TempDir::new().unwrap();
-        let prose_content =
-            "This is plain prose.\nNo variables here.\nNot a dotenv file.\nStill not.\nNope.\nNope.\n";
+        let prose_content = "This is plain prose.\nNo variables here.\nNot a dotenv file.\nStill not.\nNope.\nNope.\n";
         let backup_path = dir.path().join("test.backup");
         let output_path = dir.path().join(".env");
 

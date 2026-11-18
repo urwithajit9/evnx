@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::core::parser::{Document, Parser, ParserConfig};
 
@@ -131,7 +131,9 @@ pub fn cut_entries(content: &str, names: &BTreeSet<String>, label: &str) -> Resu
         .filter(|k| !names.contains(k))
         .collect();
     if !after.is_clean() || keys(&after) != expected {
-        bail!("removing from {label} would change more than the entries asked for, so nothing was written");
+        bail!(
+            "removing from {label} would change more than the entries asked for, so nothing was written"
+        );
     }
     Ok(Cut { text, removed })
 }

@@ -23,7 +23,7 @@
 //! EVNX_OUTPUT_JSON=1 evnx doctor | jq '.summary.errors'  # CI/CD integration
 //! ```
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::Utc;
 use colored::*;
 use std::fs;
@@ -147,7 +147,7 @@ fn run_checks(
     // The template by the one rule (WP-5): `[defaults] env_name`'s own
     // (`.env.prod.example`) when there is one.
     let template = {
-        use crate::core::resolve::{resolve, Flags, Need, TemplateFrom};
+        use crate::core::resolve::{Flags, Need, TemplateFrom, resolve};
         match resolve(&project_root, Flags::default(), &config, Need::MayCreate) {
             Ok(r) => Template {
                 configured: r.template_from != TemplateFrom::Project,
@@ -796,7 +796,7 @@ fn is_ciphertext(path: &Path) -> bool {
 
 // The template rule (I-294) moved to `core::config::Template` in 0.10.16
 // (R-init, DQ-28), so `init` and `add` write to the template doctor checks.
-use crate::core::config::{templates_in, Template};
+use crate::core::config::{Template, templates_in};
 
 /// Whether `project_root` shows a project: a known project type or a Docker
 /// file. A folder with neither, and no env file or template, has nothing for
@@ -1930,7 +1930,7 @@ mod env_file_coverage_tests {
     /// plaintext copy is listed, as a copy; an `evnx backup` is not.
     #[test]
     fn t_i160_reads_plaintext_copies_and_leaves_out_evnx_backups() {
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join(".env"), "A=1\n").unwrap();
         fs::write(dir.path().join(".env.backup"), "A=1\n").unwrap();

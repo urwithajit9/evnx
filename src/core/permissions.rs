@@ -340,9 +340,11 @@ mod acl_tests {
             reset,
             [OsString::from("C:\\p\\.env"), OsString::from("/reset")]
         );
-        assert!(!args
-            .iter()
-            .any(|a| a.contains("Everyone") || a.contains("Users")));
+        assert!(
+            !args
+                .iter()
+                .any(|a| a.contains("Everyone") || a.contains("Users"))
+        );
     }
 
     #[test]

@@ -322,7 +322,8 @@ fn doctor_agrees_with_the_parser_about_what_is_valid() {
         let parser_ok = parser.parse_content(content).is_ok();
 
         assert_eq!(
-            doctor_ok, parser_ok,
+            doctor_ok,
+            parser_ok,
             "doctor and the parser disagree about {name:?} ({content:?}) — doctor says {}, parser says {}",
             if doctor_ok { "valid" } else { "invalid" },
             if parser_ok { "valid" } else { "invalid" },

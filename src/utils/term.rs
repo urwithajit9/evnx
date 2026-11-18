@@ -28,7 +28,7 @@ pub fn silence_output() {
 #[cfg(windows)]
 pub fn silence_output() {
     use std::os::windows::io::IntoRawHandle;
-    extern "system" {
+    unsafe extern "system" {
         fn SetStdHandle(which: u32, handle: *mut std::ffi::c_void) -> i32;
     }
     const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;

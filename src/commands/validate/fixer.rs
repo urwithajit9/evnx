@@ -11,7 +11,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use anyhow::{Context, Result};
 
-use super::policy::{is_placeholder, FixAction};
+use super::policy::{FixAction, is_placeholder};
 use super::types::FixApplied;
 
 // ─────────────────────────────────────────────────────────────
@@ -352,7 +352,7 @@ fn render_value(_key: &str, value: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::policy::{suggest_fix, WeakSecretPolicy};
+    use super::super::policy::{WeakSecretPolicy, suggest_fix};
     use super::super::types::IssueType;
     use super::*;
     use crate::core::secret::Vars;

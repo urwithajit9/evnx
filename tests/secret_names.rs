@@ -13,7 +13,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn weak_vars(stdout: &str) -> Vec<String> {
     let json: serde_json::Value = serde_json::from_str(stdout).unwrap();

@@ -8,8 +8,8 @@
 
 mod support;
 
-use support::cloud::signed_in;
 use support::Project;
+use support::cloud::signed_in;
 
 /// `evnx vault list` against a server whose `GET /api/v1/vaults` answers
 /// `status` with `body`.

@@ -12,7 +12,7 @@
 
 use std::path::Path;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 
 /// `VERCEL_PROJECT_ID`.
 pub const ENV_PROJECT: &str = "VERCEL_PROJECT_ID";
@@ -221,10 +221,12 @@ mod tests {
             .to_string();
         assert!(e.contains("not valid JSON"), "{e}");
         linked(d.path(), r#"{"orgId":"team_x"}"#);
-        assert!(resolve(None, None, envs(&[]), d.path())
-            .unwrap_err()
-            .to_string()
-            .contains("no projectId"));
+        assert!(
+            resolve(None, None, envs(&[]), d.path())
+                .unwrap_err()
+                .to_string()
+                .contains("no projectId")
+        );
     }
 
     #[test]

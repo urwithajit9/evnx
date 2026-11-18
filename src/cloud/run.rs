@@ -29,7 +29,7 @@
 //! that checks exactly that by reading `/proc`.
 
 use crate::core::secret::Vars;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 
 use zeroize::Zeroize;

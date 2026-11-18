@@ -11,7 +11,7 @@
 mod support;
 
 use support::snapshot::{check_golden, normalise};
-use support::{run, Project};
+use support::{Project, run};
 
 #[test]
 fn spec_init_stdout_block_is_stable() {

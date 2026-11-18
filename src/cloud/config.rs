@@ -18,7 +18,7 @@
 //! A per-directory vault *binding* would be safe there — a vault id is not a
 //! secret — but that is a later change and it still would not hold credentials.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 

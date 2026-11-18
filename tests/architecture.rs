@@ -535,24 +535,78 @@ fn t_wp9b_json_on_stdout_goes_through_core_json() {
 /// disclosures, never the text. Adding a line here is the review checkpoint.
 const EXPOSE_ALLOW: &[(&str, &str)] = &[
     ("core/secret.rs", "the type and its serde bridges"),
-    ("core/", "parsing, classification, masking, converting, injecting and the one safe writer work on the text"),
-    ("formats/", "a converter's job is to write values in another syntax"),
-    ("platform/", "reads and pushes values to a hosting platform; tokens go in headers"),
-    ("cloud/", "encryption, upload, credentials file and request bodies"),
-    ("commands/get.rs", "get --reveal prints the one value asked for; --json carries it"),
-    ("commands/parse.rs", "parse reports a value's length, class and, with --values, the value"),
-    ("commands/convert.rs", "convert reads the values it rewrites"),
-    ("commands/remove/edit.rs", "remove reads values to find references to a removed key"),
-    ("commands/restore/", "restore reads a refused line to name the key it looks like"),
-    ("commands/add/shared.rs", "add compares an existing example value and writes .env and .env.example"),
-    ("commands/init/shared.rs", "init reads the kept template's values to infer `required` and to warn about a live credential"),
-    ("commands/migrate/", "a destination prints commands or sends values (a terminal gets <hidden>)"),
-    ("commands/diff.rs", "diff --show-values, --format patch and the interactive merge write values"),
-    ("commands/sync/executor.rs", "sync writes .env and .env.example and refuses a credential in a template"),
-    ("commands/validate/checks.rs", "checks read values for shape, length and placeholders; findings name keys only"),
-    ("commands/validate/fixer.rs", "the fixer writes repaired values to .env"),
-    ("commands/validate/mod.rs", "--fix reads the old value and masks what it reports"),
-    ("commands/template.rs", "template renders values into the output"),
+    (
+        "core/",
+        "parsing, classification, masking, converting, injecting and the one safe writer work on the text",
+    ),
+    (
+        "formats/",
+        "a converter's job is to write values in another syntax",
+    ),
+    (
+        "platform/",
+        "reads and pushes values to a hosting platform; tokens go in headers",
+    ),
+    (
+        "cloud/",
+        "encryption, upload, credentials file and request bodies",
+    ),
+    (
+        "commands/get.rs",
+        "get --reveal prints the one value asked for; --json carries it",
+    ),
+    (
+        "commands/parse.rs",
+        "parse reports a value's length, class and, with --values, the value",
+    ),
+    (
+        "commands/convert.rs",
+        "convert reads the values it rewrites",
+    ),
+    (
+        "commands/remove/edit.rs",
+        "remove reads values to find references to a removed key",
+    ),
+    (
+        "commands/restore/",
+        "restore reads a refused line to name the key it looks like",
+    ),
+    (
+        "commands/add/shared.rs",
+        "add compares an existing example value and writes .env and .env.example",
+    ),
+    (
+        "commands/init/shared.rs",
+        "init reads the kept template's values to infer `required` and to warn about a live credential",
+    ),
+    (
+        "commands/migrate/",
+        "a destination prints commands or sends values (a terminal gets <hidden>)",
+    ),
+    (
+        "commands/diff.rs",
+        "diff --show-values, --format patch and the interactive merge write values",
+    ),
+    (
+        "commands/sync/executor.rs",
+        "sync writes .env and .env.example and refuses a credential in a template",
+    ),
+    (
+        "commands/validate/checks.rs",
+        "checks read values for shape, length and placeholders; findings name keys only",
+    ),
+    (
+        "commands/validate/fixer.rs",
+        "the fixer writes repaired values to .env",
+    ),
+    (
+        "commands/validate/mod.rs",
+        "--fix reads the old value and masks what it reports",
+    ),
+    (
+        "commands/template.rs",
+        "template renders values into the output",
+    ),
 ];
 
 /// `expose()` is the only way to read a `Secret`. It may appear only in files

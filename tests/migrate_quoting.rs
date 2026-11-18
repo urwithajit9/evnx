@@ -17,7 +17,7 @@ mod support;
 
 use std::path::Path;
 
-use support::{run_with, Project};
+use support::{Project, run_with};
 
 /// Values that each break one quoting mistake or another.
 const VALUES: &[(&str, &str)] = &[

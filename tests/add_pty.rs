@@ -15,9 +15,9 @@
 
 mod support;
 
-use support::pty::{Pty, DOWN, ENTER};
+use support::pty::{DOWN, ENTER, Pty};
 use support::snapshot::{check_golden, normalise};
-use support::{run, Project};
+use support::{Project, run};
 
 /// A project with one existing variable in each file.
 fn project() -> Project {
@@ -435,9 +435,10 @@ fn t_i247_loop_hides_a_secret_value() {
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
     assert!(!rest.contains("sk_live_typed_unseen"), "{rest}");
-    assert!(p
-        .read(".env")
-        .contains("\nSTRIPE_SECRET_KEY=sk_live_typed_unseen\n"));
+    assert!(
+        p.read(".env")
+            .contains("\nSTRIPE_SECRET_KEY=sk_live_typed_unseen\n")
+    );
     assert!(!p.read(".env.example").contains("sk_live_typed_unseen"));
 }
 

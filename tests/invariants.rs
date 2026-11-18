@@ -17,7 +17,7 @@
 mod support;
 
 use std::collections::BTreeMap;
-use support::{run, Project};
+use support::{Project, run};
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
 

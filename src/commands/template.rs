@@ -1169,10 +1169,12 @@ mod tests {
 
         let result = process_template(template, &vars);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not a valid integer"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("not a valid integer")
+        );
     }
 
     #[test]

@@ -901,7 +901,7 @@ mod tests {
         let mut registry = DetectorRegistry::new();
         let initial_count = registry.detector_count();
         registry.register(HeuristicDetector); // Register again for test
-                                              // ✅ Test that count increased by 1
+        // ✅ Test that count increased by 1
         assert_eq!(registry.detector_count(), initial_count + 1);
     }
 

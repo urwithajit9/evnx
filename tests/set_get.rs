@@ -15,7 +15,7 @@
 mod support;
 
 use support::snapshot::check_golden;
-use support::{evnx_bin, run, run_with, Project};
+use support::{Project, evnx_bin, run, run_with};
 
 /// A file with a comment on every other line, `export`, all three quote
 /// styles, spacing around `=`, an inline comment, a multiline value, CRLF-free.
@@ -206,10 +206,12 @@ fn set_writes_through_a_symlink() {
         .file("real.env", "A=1\n")
         .symlink("real.env", ".env");
     run(p.path(), &["set", "A=2", "--yes"]).assert_code(0);
-    assert!(std::fs::symlink_metadata(p.join(".env"))
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    assert!(
+        std::fs::symlink_metadata(p.join(".env"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
     assert_eq!(p.read("real.env"), "A=2\n");
 }
 
@@ -256,9 +258,10 @@ fn no_value_and_no_terminal_is_exit_4_and_names_stdin() {
 fn a_value_on_stdin_is_used_without_its_line_ending() {
     let p = project();
     run_with(p.path(), &["set", "PORT", "--yes"], &[], Some(b"9090\n")).assert_code(0);
-    assert!(p
-        .read(".env")
-        .contains("export PORT=\"9090\" # the web port"));
+    assert!(
+        p.read(".env")
+            .contains("export PORT=\"9090\" # the web port")
+    );
 }
 
 #[test]

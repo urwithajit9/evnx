@@ -51,7 +51,7 @@
 //! **Unknown keys warn; they never fail**, for the same reason. But a typo must
 //! not be silent either, so the warning names the key.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -1468,11 +1468,13 @@ vault = "my-api/production"
         let dir = TempDir::new().unwrap();
         write(dir.path(), "[defaults]\nenv_name = \"production\"\n");
 
-        assert!(load(dir.path())
-            .unwrap()
-            .config
-            .security_overrides()
-            .is_empty());
+        assert!(
+            load(dir.path())
+                .unwrap()
+                .config
+                .security_overrides()
+                .is_empty()
+        );
     }
 }
 

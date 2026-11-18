@@ -6,7 +6,7 @@
 mod support;
 
 use std::fs;
-use support::{run, Project};
+use support::{Project, run};
 
 const IGNORE: &str = ".env*\n!.env.example\n";
 

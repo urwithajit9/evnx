@@ -73,9 +73,9 @@ use crate::utils::ui;
 pub use detector::{Detection, DetectorRegistry, SecretDetector};
 pub use filters::FileFilter;
 pub use models::{Confidence, Finding, ScanResults};
-pub use output::{render, OutputFormat};
+pub use output::{OutputFormat, render};
 pub use patternset::{PatternMatch, PatternSet};
-pub use runner::{preview_value, ScanRunner};
+pub use runner::{ScanRunner, preview_value};
 
 /// Everything `evnx scan` was asked to do, resolved from flags and `.evnx.toml`.
 ///

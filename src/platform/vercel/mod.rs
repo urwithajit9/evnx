@@ -183,7 +183,11 @@ impl Session {
             eprintln!(
                 "warning: {} production variable{} hidden from this token, so not listed or compared.",
                 listing.hidden_production,
-                if listing.hidden_production == 1 { " is" } else { "s are" }
+                if listing.hidden_production == 1 {
+                    " is"
+                } else {
+                    "s are"
+                }
             );
         }
         if sel.skipped_branch > 0 && self.git_branch.is_some() {
@@ -196,7 +200,11 @@ impl Session {
             eprintln!(
                 "warning: {} preview variable{} scoped to a git branch skipped (use --git-branch <branch> with --target preview to work on one).",
                 sel.skipped_branch,
-                if sel.skipped_branch == 1 { " is" } else { "s are" }
+                if sel.skipped_branch == 1 {
+                    " is"
+                } else {
+                    "s are"
+                }
             );
         }
         for key in &sel.ambiguous {

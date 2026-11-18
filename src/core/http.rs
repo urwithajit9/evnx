@@ -240,7 +240,9 @@ fn is_untrusted_issuer(text: &str) -> bool {
 /// `root` with the fix appended when `chain` is an unknown-issuer failure.
 fn with_tls_hint(chain: &str, root: String) -> String {
     if is_untrusted_issuer(chain) {
-        format!("{root} (the server's certificate is not signed by a trusted authority; {UNTRUSTED_ROOT_HINT})")
+        format!(
+            "{root} (the server's certificate is not signed by a trusted authority; {UNTRUSTED_ROOT_HINT})"
+        )
     } else {
         root
     }

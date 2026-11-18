@@ -22,7 +22,7 @@ mod support;
 use assert_cmd::cargo::cargo_bin_cmd;
 use std::path::Path;
 use std::time::Duration;
-use support::pty::{Pty, CTRL_C, DOWN, ENTER, ESC, SPACE};
+use support::pty::{CTRL_C, DOWN, ENTER, ESC, Pty, SPACE};
 use tempfile::TempDir;
 
 /// One interactive `evnx init <args>` in `dir`. The driver itself is shared,

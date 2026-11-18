@@ -12,7 +12,7 @@
 //! it) gets past it.
 
 use crate::core::secret::Vars;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 
@@ -601,13 +601,15 @@ mod tests {
         assert!(err.contains("--allow-unsafe-names"), "{err}");
         assert!(!err.contains("API_KEY"), "{err}");
         assert!(check_names(&v, true, "the vault", "push to this vault").is_ok());
-        assert!(check_names(
-            &vars(&[("API_KEY", "k")]),
-            false,
-            "the vault",
-            "push to this vault"
-        )
-        .is_ok());
+        assert!(
+            check_names(
+                &vars(&[("API_KEY", "k")]),
+                false,
+                "the vault",
+                "push to this vault"
+            )
+            .is_ok()
+        );
     }
 
     /// A missing command is an io::ErrorKind::NotFound, which `run` turns into
@@ -622,7 +624,7 @@ mod tests {
 
     fn env_of(
         pairs: &[(&'static str, &'static str)],
-    ) -> impl Fn(&str) -> Option<std::ffi::OsString> {
+    ) -> impl Fn(&str) -> Option<std::ffi::OsString> + use<> {
         let m: Vec<(&'static str, &'static str)> = pairs.to_vec();
         move |n| m.iter().find(|(k, _)| *k == n).map(|(_, v)| (*v).into())
     }

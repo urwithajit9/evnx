@@ -7,7 +7,7 @@
 //! with no filter and no list (I-103). Now [`require_include`] refuses to read
 //! it without `--include`, and the caller names what it will send.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use indexmap::IndexMap;
 
 /// Names never read from the environment, whatever `--include` says: the

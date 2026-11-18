@@ -3,8 +3,8 @@
 
 mod support;
 
-use support::pty::Pty;
 use support::Project;
+use support::pty::Pty;
 
 const TYPED: &str = "typed-secret-5e8d21";
 

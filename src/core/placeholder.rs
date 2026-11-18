@@ -211,7 +211,7 @@ impl Default for PlaceholderConfig {
 ///   `false` (SYNC-3: `MAX_CONN=25` became `YOUR_VALUE_HERE`). A port is the
 ///   caller's (`8000`, `8080`).
 pub fn typed(key: &str, value: Option<&str>) -> Option<String> {
-    use crate::core::classify::{has_word, is_secret_name, Strictness};
+    use crate::core::classify::{Strictness, has_word, is_secret_name};
 
     if has_word(key, &["DEBUG"]) {
         return Some("false".to_string());

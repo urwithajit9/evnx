@@ -985,10 +985,12 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&docs[0]).unwrap();
         assert_eq!(v["run"]["schema_version"], 2);
         assert_eq!(v["schema_version"], 2);
-        assert!(v["run"]["ruleset"]
-            .as_str()
-            .unwrap()
-            .starts_with("builtin@"));
+        assert!(
+            v["run"]["ruleset"]
+                .as_str()
+                .unwrap()
+                .starts_with("builtin@")
+        );
         assert!(v.get("summary").is_some());
     }
 

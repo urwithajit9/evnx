@@ -61,11 +61,7 @@ impl VersionFrom {
 const RUN_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn exe_name() -> &'static str {
-    if cfg!(windows) {
-        "evnx.exe"
-    } else {
-        "evnx"
-    }
+    if cfg!(windows) { "evnx.exe" } else { "evnx" }
 }
 
 /// Folders installers write to that may not be on `PATH`.

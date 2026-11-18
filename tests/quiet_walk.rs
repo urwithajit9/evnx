@@ -19,7 +19,7 @@ mod support;
 
 use std::collections::BTreeSet;
 
-use support::{run, Project};
+use support::{Project, run};
 
 /// A success path that `-q` must make silent.
 struct Case {

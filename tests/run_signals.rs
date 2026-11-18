@@ -33,11 +33,7 @@ const QUIT: i32 = libc::SIGQUIT;
 const INT: i32 = libc::SIGINT;
 
 fn flag(masked: bool) -> &'static str {
-    if masked {
-        "--mask"
-    } else {
-        "--no-mask"
-    }
+    if masked { "--mask" } else { "--no-mask" }
 }
 
 struct Done {
@@ -506,8 +502,8 @@ fn s9_secrets_are_not_printed_by_the_signal_paths() {
 mod cloud {
     use super::*;
     use evnx_crypto::{
-        b64_encode, derive_master_key, encrypt_private_key, encrypt_vault, generate_keypair,
-        generate_salt, salt_to_base64, vault_aad, wrap_vault_key_with_master_key, VaultKey,
+        VaultKey, b64_encode, derive_master_key, encrypt_private_key, encrypt_vault,
+        generate_keypair, generate_salt, salt_to_base64, vault_aad, wrap_vault_key_with_master_key,
     };
 
     const PW: &str = "correct horse battery staple";

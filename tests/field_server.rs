@@ -7,7 +7,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 /// The server's shape. `.env.example` is the development template; production
 /// keeps its own names in `.env.prod.example`.

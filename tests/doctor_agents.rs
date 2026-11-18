@@ -11,7 +11,7 @@
 mod support;
 
 use serde_json::Value;
-use support::{run, Project};
+use support::{Project, run};
 
 /// The `ai_agents` check from `doctor --format json`.
 fn agents(p: &Project) -> Value {

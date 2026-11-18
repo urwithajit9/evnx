@@ -22,12 +22,12 @@
 use crate::core::http;
 use crate::core::secret::Vars;
 use crate::utils::prompt;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 
 use indicatif::{ProgressBar, ProgressStyle};
-use reqwest::blocking::{Client, RequestBuilder, Response};
 use reqwest::Method;
+use reqwest::blocking::{Client, RequestBuilder, Response};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Duration;
@@ -551,8 +551,8 @@ fn upload_secret(api: &Api, pk: &PublicKey, key: &str, value: &str, verbose: boo
 /// 2. `crypto_box`'s `seal` is behind the crate's `seal` feature, which was not
 ///    enabled, so the suggested code would not have compiled as written.
 fn encrypt_for_github(public_key_b64: &str, value: &str) -> Result<String> {
-    use base64::{engine::general_purpose, Engine as _};
-    use crypto_box::{aead::OsRng, PublicKey};
+    use base64::{Engine as _, engine::general_purpose};
+    use crypto_box::{PublicKey, aead::OsRng};
 
     let pk_bytes = general_purpose::STANDARD
         .decode(public_key_b64)
@@ -578,8 +578,8 @@ fn encrypt_for_github(public_key_b64: &str, value: &str) -> Result<String> {
 mod tests {
     use super::*;
     use crate::core::secret::Vars;
-    use base64::{engine::general_purpose, Engine as _};
-    use crypto_box::{aead::OsRng, SecretKey};
+    use base64::{Engine as _, engine::general_purpose};
+    use crypto_box::{SecretKey, aead::OsRng};
 
     /// The test that matters: seal with the public key, then **open it with the
     /// private key** and get the original back.

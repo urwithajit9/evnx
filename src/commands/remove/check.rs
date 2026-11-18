@@ -15,9 +15,9 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
-use super::{check_arguments, contract, edit, in_dir, Kind, Options};
+use super::{Kind, Options, check_arguments, contract, edit, in_dir};
 use crate::core::config::Template;
 use crate::core::verdict::Verdict;
 use crate::core::{env_name, glob::glob_match};

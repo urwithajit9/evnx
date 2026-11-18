@@ -1089,9 +1089,11 @@ fn one_component_is_singular() {
 fn a_from_source_append_carries_no_stamp() {
     let d = sourced_project();
     std::fs::write(d.path().join(".env.example"), "HAND_WRITTEN=1\n").unwrap();
-    assert!(init_in(d.path(), &["--from-source", "--yes"])
-        .status
-        .success());
+    assert!(
+        init_in(d.path(), &["--from-source", "--yes"])
+            .status
+            .success()
+    );
     let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
     // ADD-3 (WP-7): no dated stamp from init or add.
     assert!(!example.contains("# Added by"), "{example}");
@@ -1170,9 +1172,11 @@ fn nothing_detected_says_so_and_writes_the_same_file() {
 fn from_source_append_writes_gitignore_and_env() {
     let d = sourced_project();
     std::fs::write(d.path().join(".env.example"), "HAND_WRITTEN=1\n").unwrap();
-    assert!(init_in(d.path(), &["--from-source", "--yes"])
-        .status
-        .success());
+    assert!(
+        init_in(d.path(), &["--from-source", "--yes"])
+            .status
+            .success()
+    );
 
     let gitignore = std::fs::read_to_string(d.path().join(".gitignore")).unwrap();
     assert!(
@@ -1187,9 +1191,11 @@ fn from_source_append_writes_gitignore_and_env() {
 
     // A second run changes nothing.
     let before = std::fs::read(d.path().join(".env")).unwrap();
-    assert!(init_in(d.path(), &["--from-source", "--yes"])
-        .status
-        .success());
+    assert!(
+        init_in(d.path(), &["--from-source", "--yes"])
+            .status
+            .success()
+    );
     assert_eq!(std::fs::read(d.path().join(".env")).unwrap(), before);
 }
 
@@ -1199,9 +1205,11 @@ fn from_source_never_replaces_an_existing_env() {
     let d = sourced_project();
     std::fs::write(d.path().join(".env.example"), "HAND_WRITTEN=1\n").unwrap();
     std::fs::write(d.path().join(".env"), "SECRET=real\n").unwrap();
-    assert!(init_in(d.path(), &["--from-source", "--yes"])
-        .status
-        .success());
+    assert!(
+        init_in(d.path(), &["--from-source", "--yes"])
+            .status
+            .success()
+    );
     let env = std::fs::read_to_string(d.path().join(".env")).unwrap();
     assert!(env.starts_with("SECRET=real\n"), "{env}");
 }
@@ -1327,9 +1335,11 @@ fn from_source_finds_import_meta_env_deno_and_bun() {
         "const a = import.meta.env.VITE_X1;\nconst b = Deno.env.get(\"DENO_X1\");\nconst c = Bun.env.BUN_X1;\nconst p = process.env.NODE_X1;\n",
     )
     .unwrap();
-    assert!(init_in(d.path(), &["--from-source", "--yes"])
-        .status
-        .success());
+    assert!(
+        init_in(d.path(), &["--from-source", "--yes"])
+            .status
+            .success()
+    );
     let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
     for name in ["VITE_X1", "DENO_X1", "BUN_X1", "NODE_X1"] {
         assert!(

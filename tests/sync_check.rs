@@ -19,8 +19,8 @@
 
 mod support;
 
-use serde_json::{json, Value};
-use support::{run, Project};
+use serde_json::{Value, json};
+use support::{Project, run};
 
 fn json_of(out: &support::Output) -> Value {
     serde_json::from_str(&out.stdout)

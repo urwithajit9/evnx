@@ -26,14 +26,14 @@
 //! up silently. That is the failure this prevents — not the inconvenience of
 //! typing `pull`.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::Colorize;
 use std::time::Duration;
 
 use super::client::Client;
 use super::config::CloudConfig;
 use super::sync::{
-    key_delta, key_delta_line, list_versions, my_user_id, resolve_target, VersionSummary,
+    VersionSummary, key_delta, key_delta_line, list_versions, my_user_id, resolve_target,
 };
 use super::vault;
 
@@ -183,7 +183,7 @@ pub fn run(
                                  \x20 Check the connection and your login (`evnx auth status`), \
                                  then run `evnx cloud watch` again."
                             ),
-                        ))
+                        ));
                     }
                 }
                 continue;

@@ -5,7 +5,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const ENV: &str = "PORT=8080\nAPI_KEY=   # fill this in later\nPW=Tr0ub4dor#3\n";
 
@@ -228,10 +228,12 @@ fn p0_8_a_compose_project_hears_about_dollar_dollar() {
         found[0]["message"],
         "PW (line 1): Docker Compose reads `$$` as a single `$`, while evnx reads it as written"
     );
-    assert!(found[0]["suggestion"]
-        .as_str()
-        .unwrap()
-        .starts_with("Single-quote the value"));
+    assert!(
+        found[0]["suggestion"]
+            .as_str()
+            .unwrap()
+            .starts_with("Single-quote the value")
+    );
     assert!(!out.stdout.contains("s3cr3t"), "{}", out.stdout);
 }
 

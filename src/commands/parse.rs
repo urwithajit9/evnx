@@ -8,10 +8,10 @@
 use anyhow::Result;
 use serde::Serialize;
 
+use crate::core::Parser;
 use crate::core::classify::{self, Strictness};
 use crate::core::parser::Document;
 use crate::core::verdict::Verdict;
-use crate::core::Parser;
 
 /// `--format json`. `schema_version` changes only when a field changes meaning.
 #[derive(Serialize)]

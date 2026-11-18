@@ -9,7 +9,7 @@ mod support;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use support::{run, Output, Project};
+use support::{Output, Project, run};
 
 /// In every value, comment and malformed line below; never in a key name or a
 /// file name, so it may never appear in output.
@@ -476,10 +476,12 @@ fn permissions_are_kept_and_a_symlink_is_written_through() {
         .mode()
         & 0o777;
     assert_eq!(mode, 0o640);
-    assert!(std::fs::symlink_metadata(p.join(".env.dev"))
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    assert!(
+        std::fs::symlink_metadata(p.join(".env.dev"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
     assert!(p.read("real/.env.dev").contains("DB_HOST=2\nDB_PORT=1\n"));
     let leftovers: Vec<_> = std::fs::read_dir(p.join("real"))
         .unwrap()

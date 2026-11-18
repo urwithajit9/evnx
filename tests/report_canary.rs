@@ -12,7 +12,7 @@
 
 mod support;
 
-use support::{run, Output, Project};
+use support::{Output, Project, run};
 
 fn canary() -> String {
     const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";

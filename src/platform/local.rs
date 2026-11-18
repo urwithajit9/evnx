@@ -12,7 +12,7 @@
 use crate::core::secret::Vars;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use indexmap::IndexMap;
 use zeroize::Zeroizing;
 

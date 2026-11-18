@@ -56,7 +56,7 @@
 
 use super::{Confidence, Severity};
 use crate::core::config::PatternRule;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 
 /// Ceiling on the compiled size of a single pattern.
@@ -680,9 +680,10 @@ mod tests {
     fn empty_set_never_matches() {
         let set = PatternSet::empty();
         assert!(set.is_empty());
-        assert!(set
-            .find_all("ACME-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345")
-            .is_empty());
+        assert!(
+            set.find_all("ACME-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345")
+                .is_empty()
+        );
     }
 
     #[test]

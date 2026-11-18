@@ -15,9 +15,9 @@
 //! master password, so the bundle alone opens nothing. It is still stored like
 //! the token, as a CI secret, and never printed unless the user asks.
 
-use anyhow::{anyhow, Context, Result};
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 
 /// Environment variable holding the bundle.

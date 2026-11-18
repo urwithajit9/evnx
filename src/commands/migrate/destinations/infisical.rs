@@ -14,7 +14,7 @@
 
 use crate::core::secret::Vars;
 use crate::core::shell;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::Colorize;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};

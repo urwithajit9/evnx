@@ -417,10 +417,12 @@ mod tests {
             }
             other => panic!("expected Wrote, got {other:?}"),
         }
-        assert!(std::fs::symlink_metadata(d.path().join(".evnx.toml"))
-            .unwrap()
-            .file_type()
-            .is_symlink());
+        assert!(
+            std::fs::symlink_metadata(d.path().join(".evnx.toml"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         let real = std::fs::read_to_string(d.path().join("real.toml")).unwrap();
         assert!(real.contains("[vars.B]"), "{real}");
     }

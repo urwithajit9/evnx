@@ -2,10 +2,10 @@
 //! `evnx cloud run` injects a vault. The command never reads the file itself,
 //! and with masking its output carries `***` for the secrets.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
-use crate::core::inject;
 use crate::core::Parser;
+use crate::core::inject;
 
 /// What `evnx run` was asked for.
 pub struct RunOptions<'a> {

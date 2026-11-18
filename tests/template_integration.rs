@@ -10,7 +10,7 @@
 
 mod support;
 
-use support::{run, Output, Project};
+use support::{Output, Project, run};
 
 fn project(template: &str) -> Project {
     Project::new()

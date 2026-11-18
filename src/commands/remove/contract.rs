@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use toml_edit::DocumentMut;
 
 /// The names `[vars]` declares, or none. Malformed TOML is an error (C-R4).

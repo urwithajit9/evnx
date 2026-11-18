@@ -6,7 +6,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 #[cfg(unix)]
 fn mode(p: &Project, f: &str) -> u32 {

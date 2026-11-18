@@ -30,7 +30,7 @@
 //! knows nothing about; rewriting it from a typed struct would quietly discard
 //! all three. The bytes are written by `config::save`, atomically.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::path::{Path, PathBuf};
 
 /// File that carries the binding.
@@ -85,7 +85,7 @@ pub fn read(start: &Path) -> Result<Option<Bound>> {
                 "{} has an empty `[cloud] file`. Set it with \
                  `evnx cloud link <vault> --env <path>`, or remove the line.",
                 path.display()
-            ))
+            ));
         }
         Some(f) => Some(path.parent().unwrap_or(Path::new(".")).join(f)),
     };

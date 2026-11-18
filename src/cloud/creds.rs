@@ -28,7 +28,7 @@
 //! anything the allocator has already handed back. Treated as defence in depth,
 //! not as a guarantee — the file permissions are the real control.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Write;

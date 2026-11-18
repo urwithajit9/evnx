@@ -16,11 +16,11 @@
 //!
 //! ⛔ A value is never part of an error message: this module handles secrets.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use super::envfile;
 use super::parser::{
-    closing_quote_index, is_env_key, strip_inline_comment, Document, Entry, Parser, ParserConfig,
+    Document, Entry, Parser, ParserConfig, closing_quote_index, is_env_key, strip_inline_comment,
 };
 
 /// What [`set`] decided.

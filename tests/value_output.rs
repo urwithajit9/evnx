@@ -27,7 +27,7 @@
 
 mod support;
 
-use support::{run, Output, Project};
+use support::{Output, Project, run};
 
 /// One command line, run in a fresh project.
 struct Case {

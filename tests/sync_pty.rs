@@ -10,8 +10,8 @@
 
 mod support;
 
-use support::pty::{Pty, DOWN, ENTER};
 use support::Project;
+use support::pty::{DOWN, ENTER, Pty};
 
 const TOKEN: &str = "sk_live_51H1234567890abcdefghijk";
 const DB_URL: &str = "postgres://admin:s3cr3t@db.internal:5432/app";

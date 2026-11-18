@@ -9,7 +9,7 @@
 
 mod support;
 
-use support::{run_with, Output, Project};
+use support::{Output, Project, run_with};
 
 const FILE_PW: &str = "file_secret_value_AAA1";
 const ENV_PW: &str = "env_secret_value_BBB2";
@@ -253,8 +253,8 @@ fn p7_an_unknown_side_is_a_usage_error_listing_both() {
 mod cloud {
     use super::*;
     use evnx_crypto::{
-        b64_encode, derive_master_key, encrypt_private_key, encrypt_vault, generate_keypair,
-        generate_salt, salt_to_base64, vault_aad, wrap_vault_key_with_master_key, VaultKey,
+        VaultKey, b64_encode, derive_master_key, encrypt_private_key, encrypt_vault,
+        generate_keypair, generate_salt, salt_to_base64, vault_aad, wrap_vault_key_with_master_key,
     };
 
     const PW: &str = "correct horse battery staple";

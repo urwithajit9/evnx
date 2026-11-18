@@ -5,7 +5,7 @@
 //! structurally one of these lists, so this is the general case and blueprints
 //! are the shorthand.
 
-use super::shared::{aborted, write, Outcome, Target, WriteOptions};
+use super::shared::{Outcome, Target, WriteOptions, aborted, write};
 use crate::schema::models::{VarCollection, VarMetadata, VarSource};
 use crate::schema::{component, formatter};
 use crate::utils::string::pluralize;

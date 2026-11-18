@@ -4,7 +4,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn sentinel() -> String {
     format!("SENTINEL_{}{}", "4d1c", "_beefed")

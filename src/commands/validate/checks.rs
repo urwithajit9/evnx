@@ -294,7 +294,7 @@ pub fn check_partial_presence(
     env_path: &str,
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
-    use crate::core::presence::{partial, EnvNames};
+    use crate::core::presence::{EnvNames, partial};
     if ignore.contains(IssueType::PartialPresence.as_str()) || siblings.is_empty() {
         return Vec::new();
     }
@@ -1362,10 +1362,10 @@ pub fn check_spec_keys(spec: &Spec, ignore: &HashSet<String>) -> Vec<Issue> {
                         // D12: `[vars.spring.datasource.url]` is nested tables in
                         // TOML, not one variable whose name has dots.
                         (Some(full), _) => format!(
-                        "TOML reads the dots in [vars.{full}] as nested tables. To declare the \
+                            "TOML reads the dots in [vars.{full}] as nested tables. To declare the \
                          variable {full}, quote its name: [vars.{}]",
-                        crate::core::spec::toml_key(&full)
-                    ),
+                            crate::core::spec::toml_key(&full)
+                        ),
                         (None, Some(k)) => format!("Did you mean `{k}`?"),
                         (None, None) => format!(
                             "Remove it; [vars.{}] understands {}",
@@ -1465,14 +1465,16 @@ mod spec_check_tests {
     #[test]
     fn a_production_only_variable_is_ignored_in_staging() {
         let s = spec("[vars.PROD_KEY]\nenvironments = [\"production\"]\n");
-        assert!(check_spec_required(
-            &env(&[]),
-            &s,
-            Some("staging"),
-            ".env.staging",
-            &HashSet::new()
-        )
-        .is_empty());
+        assert!(
+            check_spec_required(
+                &env(&[]),
+                &s,
+                Some("staging"),
+                ".env.staging",
+                &HashSet::new()
+            )
+            .is_empty()
+        );
         assert_eq!(
             check_spec_required(
                 &env(&[]),
@@ -1490,11 +1492,13 @@ mod spec_check_tests {
     fn a_description_reaches_the_suggestion() {
         let s = spec("[vars.DATABASE_URL]\ndescription = \"Primary Postgres\"\n");
         let issues = check_spec_required(&env(&[]), &s, None, ".env", &HashSet::new());
-        assert!(issues[0]
-            .suggestion
-            .as_ref()
-            .unwrap()
-            .contains("Primary Postgres"));
+        assert!(
+            issues[0]
+                .suggestion
+                .as_ref()
+                .unwrap()
+                .contains("Primary Postgres")
+        );
     }
 
     #[test]
@@ -1541,14 +1545,16 @@ mod spec_check_tests {
     #[test]
     fn a_variable_absent_from_the_spec_is_left_alone() {
         let s = spec("[vars.KNOWN]\nformat = \"int\"\n");
-        assert!(check_spec_format(
-            &env(&[("UNDECLARED", "anything at all")]),
-            &s,
-            None,
-            ".env",
-            &HashSet::new()
-        )
-        .is_empty());
+        assert!(
+            check_spec_format(
+                &env(&[("UNDECLARED", "anything at all")]),
+                &s,
+                None,
+                ".env",
+                &HashSet::new()
+            )
+            .is_empty()
+        );
     }
 
     #[test]

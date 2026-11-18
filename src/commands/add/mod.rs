@@ -6,7 +6,7 @@
 //! - `blueprint <id>`  — Add variables from a stack blueprint
 //! - `custom`          — Interactive custom variable addition
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use colored::*;
 use std::path::Path;
 

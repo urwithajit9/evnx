@@ -15,7 +15,7 @@
 
 mod support;
 
-use support::{run, run_with, Project};
+use support::{Project, run, run_with};
 
 // ── I-120: placeholder rules ────────────────────────────────────────────────
 

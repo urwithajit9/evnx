@@ -959,9 +959,11 @@ mod tests {
             .recv_timeout(std::time::Duration::from_secs(60))
             .expect("exposures did not return within 60 s: git check-ignore deadlocked");
         assert_eq!(views.len(), 5000);
-        assert!(views
-            .iter()
-            .all(|v| v.as_ref().map(|v| v.exposure) == Some(Exposure::Protected)));
+        assert!(
+            views
+                .iter()
+                .all(|v| v.as_ref().map(|v| v.exposure) == Some(Exposure::Protected))
+        );
     }
 
     /// I-157 through the batch: committed first and ignored later is tracked.
@@ -1027,9 +1029,11 @@ mod tests {
         fs::write(&g, "node_modules/\n.env*\n").unwrap();
         let added = append_entries(&g, &[".env*", "!.env.example"]).unwrap();
         assert_eq!(added, vec!["!.env.example".to_string()]);
-        assert!(append_entries(&g, &[".env*", "!.env.example"])
-            .unwrap()
-            .is_empty());
+        assert!(
+            append_entries(&g, &[".env*", "!.env.example"])
+                .unwrap()
+                .is_empty()
+        );
     }
 
     /// A-28: a CRLF `.gitignore` stays CRLF.

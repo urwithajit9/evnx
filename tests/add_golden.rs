@@ -26,7 +26,7 @@
 mod support;
 
 use support::snapshot::{check_golden, normalise};
-use support::{run, Project};
+use support::{Project, run};
 
 /// Every blueprint id, in the order `evnx add blueprint <unknown>` lists them.
 /// `blueprint_list_matches_the_binary` keeps this in step with the schema.

@@ -394,8 +394,7 @@ mod tests {
 
     #[test]
     fn python_expressions_are_not_literals() {
-        let text =
-            "password = os.environ[\"X\"]\ntoken = os.getenv(\"Y\")\nsecret = settings.SECRET\n\
+        let text = "password = os.environ[\"X\"]\ntoken = os.getenv(\"Y\")\nsecret = settings.SECRET\n\
                     a = f\"{x}\"\nb = \"a\" + c\nc = \"\"\nd = \"\"\"doc\"\"\"\nif p == \"abc\":\n\
                     def f(password: str):\ne: str\nf = (\"x\")\nreturn password != \"\"\n";
         assert!(

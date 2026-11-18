@@ -17,8 +17,8 @@
 mod support;
 
 use std::time::Duration;
-use support::pty::{Pty, DOWN, ENTER};
 use support::Project;
+use support::pty::{DOWN, ENTER, Pty};
 
 const BACKSPACE: &str = "\x7f";
 

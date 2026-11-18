@@ -8,7 +8,7 @@ mod support;
 
 use serde_json::Value;
 use support::cloud::signed_in;
-use support::{run_with, Output, Project};
+use support::{Output, Project, run_with};
 
 const ORG_ID: &str = "11111111-1111-1111-1111-111111111111";
 const VAULT_ID: &str = "22222222-2222-2222-2222-222222222222";
@@ -19,11 +19,13 @@ fn doc(out: &Output) -> Value {
         .unwrap_or_else(|e| panic!("not one JSON document ({e}):\n{}", out.stdout));
     assert_eq!(v["run"]["tool"], "evnx", "{v}");
     assert_eq!(v["run"]["version"], env!("CARGO_PKG_VERSION"), "{v}");
-    assert!(v["run"]["features"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|f| f == "cloud"));
+    assert!(
+        v["run"]["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f == "cloud")
+    );
     assert!(v["run"].get("timestamp").is_none());
     v
 }

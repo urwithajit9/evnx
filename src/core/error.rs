@@ -24,8 +24,8 @@ use colored::Colorize;
 use super::backup_error::BackupError;
 use super::restore_error::RestoreError;
 use super::verdict::{
-    self, Footed, NeedsConfirmation, Said, Stage, Stopped, Verdict, EXIT_ASIDE, EXIT_DECLINED,
-    EXIT_ERROR,
+    self, EXIT_ASIDE, EXIT_DECLINED, EXIT_ERROR, Footed, NeedsConfirmation, Said, Stage, Stopped,
+    Verdict,
 };
 
 /// Why a command did not reach a verdict, or reached "no" without a finding.

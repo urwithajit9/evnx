@@ -27,7 +27,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use super::permissions;
 
@@ -950,10 +950,12 @@ mod tests {
             let w = write_shared(&link, b"NEW=1\n").unwrap();
             assert!(w.through_link);
             assert_eq!(w.target, d.path().join("shared/real.example"));
-            assert!(std::fs::symlink_metadata(&link)
-                .unwrap()
-                .file_type()
-                .is_symlink());
+            assert!(
+                std::fs::symlink_metadata(&link)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+            );
             assert_eq!(std::fs::read_to_string(&real).unwrap(), "NEW=1\n");
         }
 

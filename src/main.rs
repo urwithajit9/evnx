@@ -12,7 +12,7 @@ use evnx::cli::{
 };
 use evnx::commands;
 use evnx::core::converter::KeyTransform;
-use evnx::core::error::{report, EvnxError};
+use evnx::core::error::{EvnxError, report};
 use evnx::core::verdict::Verdict;
 
 /// Resolve which `.env.<name>` a command operates on, or fail with
@@ -59,7 +59,7 @@ fn resolve_files(
     quiet: bool,
     verbose: bool,
 ) -> Result<evnx::core::resolve::Resolved, EvnxError> {
-    use evnx::core::resolve::{resolve, Flags};
+    use evnx::core::resolve::{Flags, resolve};
     let flags = Flags {
         env,
         env_name,
@@ -645,7 +645,7 @@ fn run() -> Result<Verdict, EvnxError> {
                                 Some(Err(e)) => {
                                     return Err(EvnxError::Config(anyhow::anyhow!(
                                         ".evnx.toml [scan] max_file_size: {e}"
-                                    )))
+                                    )));
                                 }
                                 None => None,
                             },

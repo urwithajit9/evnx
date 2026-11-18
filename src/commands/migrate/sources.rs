@@ -8,7 +8,7 @@
 //! | `environment`   | Read from current process environment vars |
 
 use crate::core::secret::Vars;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::core::Parser;
 
@@ -101,9 +101,11 @@ mod tests {
     fn test_load_secrets_unsupported_source() {
         let result = load_secrets("vault", "", false);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unsupported source"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unsupported source")
+        );
     }
 }

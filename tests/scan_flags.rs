@@ -201,11 +201,13 @@ fn t_i057_no_ignore_placeholders_overrides_the_config() {
         1
     );
     // The last of the pair wins.
-    assert!(locations(
-        &d,
-        &[".env", "--no-ignore-placeholders", "--ignore-placeholders"]
-    )
-    .is_empty());
+    assert!(
+        locations(
+            &d,
+            &[".env", "--no-ignore-placeholders", "--ignore-placeholders"]
+        )
+        .is_empty()
+    );
 }
 
 // ── I-061 ───────────────────────────────────────────────────────────────────

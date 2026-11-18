@@ -16,7 +16,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const NO_VERDICT: &str = "No verdict";
 

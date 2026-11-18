@@ -28,8 +28,8 @@ mod support;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use support::surface::{entries, Entry};
-use support::{run, Project};
+use support::surface::{Entry, entries};
+use support::{Project, run};
 
 const ALLOWED: &[u64] = &[0, 1, 2, 4, 5, 10, 11, 12, 13, 14, 15, 141];
 
@@ -657,7 +657,10 @@ fn docs_exit_codes_md_is_current() {
     }
     let want = render_doc();
     if std::env::var_os("UPDATE_GOLDEN").is_some() {
-        assert!(full, "rewrite docs/exit-codes.md with --all-features: the commands column needs every command");
+        assert!(
+            full,
+            "rewrite docs/exit-codes.md with --all-features: the commands column needs every command"
+        );
         std::fs::write(&path, &want).unwrap();
         return;
     }

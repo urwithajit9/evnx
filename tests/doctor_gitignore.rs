@@ -10,7 +10,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn healthy() -> Project {
     let p = Project::new().git().example("A=\n").env("A=1\n");

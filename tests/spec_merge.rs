@@ -9,7 +9,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn app() -> Project {
     Project::new()

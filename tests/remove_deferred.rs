@@ -9,7 +9,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn evnx(p: &Project, args: &[&str]) -> support::run::Output {
     run(p.path(), args)

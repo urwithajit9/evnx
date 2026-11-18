@@ -14,7 +14,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::runner;
 use crate::cli::args::ValidateFormat;

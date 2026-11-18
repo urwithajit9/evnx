@@ -3,7 +3,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const ENV: &str = "APP_NAME=shop\n\
 PORT=8080\n\

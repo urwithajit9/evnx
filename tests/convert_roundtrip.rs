@@ -6,7 +6,7 @@
 mod support;
 
 use evnx::core::Parser;
-use support::{run, run_with, Project};
+use support::{Project, run, run_with};
 
 /// The `.env` the tests start from: every kind of value that needs quoting.
 const TRICKY: &str = concat!(
@@ -254,9 +254,10 @@ fn wp14_kind_configmap_shape() {
         &["--to", "kubernetes", "--name", "app", "--kind", "configmap"],
     );
     out.assert_code(0);
-    assert!(out
-        .stdout
-        .starts_with("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n"));
+    assert!(
+        out.stdout
+            .starts_with("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n")
+    );
     assert!(
         out.stdout.contains("\ndata:\n  APP_NAME: \"demo\"\n"),
         "{}",

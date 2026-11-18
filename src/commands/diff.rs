@@ -1,7 +1,7 @@
+use crate::core::Parser;
 use crate::core::mask::{Disclosure, ValueState};
 use crate::core::secret::{Secret, Vars};
 use crate::core::verdict::Verdict;
-use crate::core::Parser;
 use crate::docs;
 use crate::utils::string::pluralize;
 use crate::utils::ui;

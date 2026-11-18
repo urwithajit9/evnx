@@ -523,7 +523,9 @@ fn table(now: &Report, baseline: Option<&Report>) -> String {
 
 /// The same table for a GitHub job summary.
 fn markdown(now: &Report) -> String {
-    let mut s = String::from("### Scan quality (RM-70)\n\n| scope | TP | FP | FN | precision | recall |\n|---|--:|--:|--:|--:|--:|\n");
+    let mut s = String::from(
+        "### Scan quality (RM-70)\n\n| scope | TP | FP | FN | precision | recall |\n|---|--:|--:|--:|--:|--:|\n",
+    );
     let mut row = |name: String, c: &Score| {
         let _ = writeln!(
             s,
@@ -714,8 +716,8 @@ fn the_manifest_and_the_templates_agree() {
 /// the template holds a secret.
 #[test]
 fn templates_hold_no_secret_shaped_values() {
-    use evnx::core::secretscan::rules::builtin_rules;
     use evnx::core::secretscan::PatternSet;
+    use evnx::core::secretscan::rules::builtin_rules;
 
     let rules = builtin_rules();
     let set = PatternSet::compile(&rules).unwrap();

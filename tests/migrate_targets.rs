@@ -26,7 +26,7 @@
 
 mod support;
 
-use support::{run, run_with, Project};
+use support::{Project, run, run_with};
 
 fn migrate(p: &Project, args: &[&str]) -> support::Output {
     let mut full = vec!["migrate", "--from", "env-file"];

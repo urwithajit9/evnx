@@ -31,7 +31,7 @@
 //! fetched. A refusal that arrives after minutes of decryption teaches people to
 //! pass `--force` by reflex.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 use serde_json::json;
 use std::path::{Path, PathBuf};

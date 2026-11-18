@@ -118,7 +118,7 @@ pub const BACKUP_FORMAT_V1: u8 = 1;
 /// never checked for ignore or permissions (I-160). A truncated backup still
 /// counts: it is ciphertext, whatever `restore` makes of it.
 pub fn is_evnx_backup(content: &str) -> bool {
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
 
     let text = content.trim();
     let body = text.trim_end_matches('=');

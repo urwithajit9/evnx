@@ -44,11 +44,7 @@ pub fn word(s: &str) -> String {
             c.is_ascii_alphanumeric()
                 || matches!(c, '_' | '.' | '/' | ':' | '@' | '%' | '+' | ',' | '=' | '-')
         });
-    if safe {
-        s.to_string()
-    } else {
-        quote(s)
-    }
+    if safe { s.to_string() } else { quote(s) }
 }
 
 /// `KEY=value` as one shell word, for tools that take assignments

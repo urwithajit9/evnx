@@ -11,7 +11,7 @@
 //! report's business and stays in the runner.
 
 use super::detector::{Detection, DetectorRegistry};
-use crate::core::parser::{strip_export, Document, Parser, ParserConfig};
+use crate::core::parser::{Document, Parser, ParserConfig, strip_export};
 use crate::core::secret::Secret;
 
 /// How to read the text: as a `.env`, through the parser, as a structured

@@ -30,17 +30,16 @@
 
 use crate::cloud::client::api_path;
 use crate::core::shell::word;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
 use super::client::Client;
 use super::config::CloudConfig;
-use super::role::{parse_role, ORG_OWNER, ORG_ROLES};
+use super::role::{ORG_OWNER, ORG_ROLES, parse_role};
 
 /// The sentence that has to survive every copy edit in this module.
-const NOT_VAULT_ACCESS: &str =
-    "An organisation decides which plan's limits apply. It does not give anyone \
+const NOT_VAULT_ACCESS: &str = "An organisation decides which plan's limits apply. It does not give anyone \
      access to a vault — share one with `evnx vault share`.";
 
 #[derive(Deserialize)]

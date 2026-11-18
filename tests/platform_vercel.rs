@@ -13,8 +13,8 @@
 mod support;
 
 use mockito::{Matcher, Mock, Server, ServerGuard};
-use serde_json::{json, Value};
-use support::{run_with, Output, Project};
+use serde_json::{Value, json};
+use support::{Output, Project, run_with};
 
 const TOKEN: &str = "vcp_test_token_9f8e7d6c5b4a";
 
@@ -1076,7 +1076,7 @@ fn pull_failures_use_the_same_exit_codes_and_write_nothing() {
 #[cfg(unix)]
 #[test]
 fn declining_the_pull_exits_4_and_changes_nothing() {
-    use support::pty::{Pty, ENTER};
+    use support::pty::{ENTER, Pty};
     let v = Vercel::start();
     let p = pull_project();
     let url = v.url();
@@ -1198,7 +1198,7 @@ fn f4_without_a_terminal_the_state_file_gets_the_hint_and_the_flag_adds_the_entr
 #[cfg(unix)]
 #[test]
 fn f4_on_a_terminal_without_yes_the_state_file_gets_the_gitignore_question() {
-    use support::pty::{Pty, ENTER};
+    use support::pty::{ENTER, Pty};
     for (answer, added) in [("y", true), ("n", false)] {
         let v = Vercel::start();
         let p = pull_project().git().file(".gitignore", ".env*\n");
@@ -1799,7 +1799,7 @@ fn push_without_a_terminal_needs_yes() {
 #[cfg(unix)]
 #[test]
 fn declining_the_push_exits_4_and_sends_nothing() {
-    use support::pty::{Pty, ENTER};
+    use support::pty::{ENTER, Pty};
     let mut v = Vercel::start_for_diff();
     let writes = v.no_writes();
     let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"));

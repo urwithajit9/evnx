@@ -868,12 +868,14 @@ REDIS_URL=redis://dev
     fn a_multiline_value_moves_whole() {
         let target = "DB_PORT=1\nREDIS_URL=\"line1\n# not a comment\n\nline4\"\nDB_HOST='-----BEGIN\nKEY\n-----END'\n";
         let p = align(REF, target);
-        assert!(p
-            .output
-            .contains("DB_HOST='-----BEGIN\nKEY\n-----END'\nDB_PORT=1\n"));
-        assert!(p
-            .output
-            .ends_with("REDIS_URL=\"line1\n# not a comment\n\nline4\"\n"));
+        assert!(
+            p.output
+                .contains("DB_HOST='-----BEGIN\nKEY\n-----END'\nDB_PORT=1\n")
+        );
+        assert!(
+            p.output
+                .ends_with("REDIS_URL=\"line1\n# not a comment\n\nline4\"\n")
+        );
         assert_eq!(p.target_comments, 0, "inside a value is not a comment");
     }
 

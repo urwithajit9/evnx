@@ -81,8 +81,8 @@ use dialoguer::Select;
 
 use crate::cli::args::ConvertFrom;
 use crate::core::{
-    converter::{Collisions, ConvertOptions, KeyTransform},
     Parser,
+    converter::{Collisions, ConvertOptions, KeyTransform},
 };
 use crate::docs;
 use crate::formats::{self, Targets};

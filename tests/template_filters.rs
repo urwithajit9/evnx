@@ -11,7 +11,7 @@
 
 mod support;
 
-use support::{run, Output, Project};
+use support::{Output, Project, run};
 
 /// Render `template` with `env` to stdout.
 fn render(env: &str, template: &str) -> (Project, Output) {

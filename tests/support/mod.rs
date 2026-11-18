@@ -53,7 +53,7 @@ pub mod stub;
 pub mod surface;
 
 pub use project::Project;
-pub use run::{run, run_with, Output};
+pub use run::{Output, run, run_with};
 
 /// The evnx binary under test, as cargo builds it for integration tests.
 pub fn evnx_bin() -> &'static str {

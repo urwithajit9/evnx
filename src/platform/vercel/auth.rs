@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use zeroize::Zeroizing;
 
 use crate::platform::secret::SecretString;
@@ -109,10 +109,12 @@ mod tests {
         assert!(e.contains("gone") && e.contains("does not exist"), "{e}");
         let empty = d.path().join("empty");
         std::fs::write(&empty, "\n").unwrap();
-        assert!(resolve(Some(&empty), no_env)
-            .unwrap_err()
-            .to_string()
-            .contains("empty"));
+        assert!(
+            resolve(Some(&empty), no_env)
+                .unwrap_err()
+                .to_string()
+                .contains("empty")
+        );
     }
 
     #[test]

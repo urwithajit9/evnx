@@ -26,7 +26,7 @@ mod report;
 pub(crate) mod shared;
 mod source;
 
-pub use shared::{target_config, write_env_files, WriteOptions};
+pub use shared::{WriteOptions, target_config, write_env_files};
 
 /// What `evnx init` was asked for.
 pub struct InitOptions {

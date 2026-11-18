@@ -321,7 +321,10 @@ fn t_i256_publish_fails_fast_on_auth() {
         assert_eq!(out.status.code(), Some(1), "{}", text(&out));
         assert!(text(&out).contains("check NPM_TOKEN"), "{}", text(&out));
         assert_eq!(r.calls("view"), 1, "only the exists check, no polling");
-        assert!(started.elapsed().as_secs() < 20, "an auth failure must not wait");
+        assert!(
+            started.elapsed().as_secs() < 20,
+            "an auth failure must not wait"
+        );
     }
 }
 

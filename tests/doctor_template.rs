@@ -10,7 +10,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const IGNORE: &str = ".env*\n!.env.example\n!.env.sample\n!.env.template\n";
 

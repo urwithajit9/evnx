@@ -80,7 +80,7 @@ impl Target {
 
     /// The env file and template by the one rule (`core::resolve`, WP-5).
     fn resolve(&mut self) -> Result<()> {
-        use crate::core::resolve::{resolve, Flags, Need, TemplateFrom};
+        use crate::core::resolve::{Flags, Need, TemplateFrom, resolve};
         let flags = Flags {
             env: None,
             env_name: self.env_name.as_deref(),
@@ -368,7 +368,7 @@ pub(crate) fn keep<'a>(
     target: &'a Target,
     written: &VarCollection,
     whole: &VarCollection,
-) -> impl FnOnce() + 'a {
+) -> impl FnOnce() + 'a + use<'a> {
     let recorded = super::contract::record(target, written, whole);
     move || {
         recorded();

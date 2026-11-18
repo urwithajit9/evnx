@@ -4,7 +4,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn project() -> Project {
     Project::new()
@@ -126,7 +126,7 @@ fn dry_run_says_the_value_would_be_kept() {
 #[cfg(unix)]
 mod next_steps {
     use super::*;
-    use support::pty::{Pty, ENTER};
+    use support::pty::{ENTER, Pty};
 
     fn answer_and_finish(p: &Project, arg: &str) -> String {
         let mut s = Pty::spawn(p.path(), &["add", "custom", arg]);

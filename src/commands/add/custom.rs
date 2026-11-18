@@ -16,11 +16,11 @@
 //! confirmation, and `--yes` still needed a terminal (I-020), so nothing
 //! automated could use it.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use dialoguer::{Input, Password, Select};
 use std::path::Path;
 
-use super::shared::{aborted, confirm_and_apply, Flow, Mode, Outcome};
+use super::shared::{Flow, Mode, Outcome, aborted, confirm_and_apply};
 use crate::schema::models::{VarCollection, VarMetadata, VarSource};
 use crate::utils::prompt::{require_terminal, yes_no};
 use crate::utils::string::count;
@@ -293,11 +293,7 @@ fn prompt_loop(
                 ))
                 .allow_empty_password(true)
                 .interact()?;
-            if v.is_empty() {
-                placeholder
-            } else {
-                v
-            }
+            if v.is_empty() { placeholder } else { v }
         } else {
             Input::new()
                 .with_prompt(format!(

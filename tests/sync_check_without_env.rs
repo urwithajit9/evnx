@@ -15,7 +15,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const SPEC: &str = "[vars.APP]\n[vars.DB_URL]\n[vars.SENTRY_DSN]\nrequired = false\n";
 

@@ -9,10 +9,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::cli::{NamingPolicy, SyncDirection};
+use crate::core::Parser;
 use crate::core::envfile::{self, only_in};
 use crate::core::output::{Mode, Out, Report};
-use crate::core::placeholder::{generate_placeholder, is_generated_value, PlaceholderConfig};
-use crate::core::Parser;
+use crate::core::placeholder::{PlaceholderConfig, generate_placeholder, is_generated_value};
 use crate::docs;
 use crate::utils::string::{count, pluralize};
 use crate::utils::ui;
@@ -512,19 +512,11 @@ pub(super) fn fix_command(paths: &SyncPaths, direction: SyncDirection) -> String
 }
 
 fn is_are(n: usize) -> &'static str {
-    if n == 1 {
-        "is"
-    } else {
-        "are"
-    }
+    if n == 1 { "is" } else { "are" }
 }
 
 fn it_them(n: usize) -> &'static str {
-    if n == 1 {
-        "it"
-    } else {
-        "them"
-    }
+    if n == 1 { "it" } else { "them" }
 }
 
 /// The names only the template has (two-way, DEC-S17). `sync` only adds, so
@@ -1577,7 +1569,7 @@ fn convert_to_example_preview(vars: &Vars, config: &PlaceholderConfig) -> Result
 /// placeholder-looking value is generated, through the project's
 /// `--template-config` (which reverse used to ignore for a built-in default).
 fn reverse_value(key: &str, template: Option<&str>, config: &PlaceholderConfig) -> (String, bool) {
-    use crate::core::classify::{is_placeholder, Strictness};
+    use crate::core::classify::{Strictness, is_placeholder};
     match template {
         Some(v) if !v.trim().is_empty() && !is_placeholder(key, v, Strictness::Lenient) => {
             (v.to_string(), false)
@@ -1869,12 +1861,16 @@ mod tests {
 
         assert_eq!(preview.len(), 2);
         assert!(preview.iter().all(|v| v.is_placeholder));
-        assert!(preview
-            .iter()
-            .any(|v| v.key == "API_KEY" && v.new_value == "YOUR_KEY_HERE"));
-        assert!(preview
-            .iter()
-            .any(|v| v.key == "PORT" && v.new_value == "8000"));
+        assert!(
+            preview
+                .iter()
+                .any(|v| v.key == "API_KEY" && v.new_value == "YOUR_KEY_HERE")
+        );
+        assert!(
+            preview
+                .iter()
+                .any(|v| v.key == "PORT" && v.new_value == "8000")
+        );
     }
 
     // NEW: Integration-style tests with temp files

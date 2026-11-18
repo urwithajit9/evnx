@@ -41,7 +41,7 @@ pub(crate) fn record(
     target: &Target,
     written: &VarCollection,
     whole: &VarCollection,
-) -> impl FnOnce() {
+) -> impl FnOnce() + use<> {
     let verbose = target.verbose;
     let template = target.template_name().to_string();
     let skipped = target.no_contract;

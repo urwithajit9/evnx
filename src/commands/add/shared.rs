@@ -191,7 +191,7 @@ fn resolve_with(
     example: Option<&str>,
     config: &crate::core::config::Config,
 ) -> Result<crate::core::resolve::Resolved> {
-    use crate::core::resolve::{resolve, Flags, Need};
+    use crate::core::resolve::{Flags, Need, resolve};
     let flags = Flags {
         env: None,
         env_name,

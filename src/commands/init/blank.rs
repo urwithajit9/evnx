@@ -2,7 +2,7 @@ use crate::schema::models::VarCollection;
 use crate::utils::ui::{info, print_header, success};
 use anyhow::Result;
 
-use super::shared::{write, Outcome, Target, WriteOptions};
+use super::shared::{Outcome, Target, WriteOptions, write};
 
 /// Handle Blank mode: create minimal .env files
 pub fn handle(target: &Target, opts: WriteOptions, _verbose: bool) -> Result<Outcome> {

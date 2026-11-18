@@ -7,7 +7,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const STRIPE: &str = "STRIPE_SECRET_KEY=sk_live_51H8xQ2eZvKYlo2CpR4mN7bV9\n";
 

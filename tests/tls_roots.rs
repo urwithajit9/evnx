@@ -11,7 +11,7 @@
 mod support;
 
 use support::cloud::login;
-use support::{run_with, Output, Project};
+use support::{Output, Project, run_with};
 
 const CA: &str = include_str!("fixtures/tls/ca-a.pem");
 

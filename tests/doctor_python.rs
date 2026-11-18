@@ -7,7 +7,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn assert_detected(p: &Project, args: &[&str]) -> support::Output {
     let out = run(p.path(), args);

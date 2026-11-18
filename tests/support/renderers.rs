@@ -8,7 +8,7 @@
 //! What the two outputs *say* is format-specific; this returns both so the
 //! caller can compare the parts that matter for its command.
 
-use super::{run, Output, Project};
+use super::{Output, Project, run};
 use std::collections::BTreeMap;
 use std::path::Path;
 

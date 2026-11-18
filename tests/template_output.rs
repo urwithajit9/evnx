@@ -14,7 +14,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn project() -> Project {
     Project::new()
@@ -176,10 +176,12 @@ fn t_i140_a_symlinked_output_is_written_through() {
     run(p.path(), &[RENDER, &["--force"]].concat())
         .assert_code(0)
         .assert_contains("wrote through out.yml -> deploy/real.yml");
-    assert!(std::fs::symlink_metadata(p.join("out.yml"))
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    assert!(
+        std::fs::symlink_metadata(p.join("out.yml"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
     assert!(p.read("deploy/real.yml").contains("db.internal"));
 }
 

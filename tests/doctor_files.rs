@@ -17,7 +17,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const IGNORE: &str = ".env*\n!.env.example\n!.env.sample\n!.env.template\n";
 
@@ -133,7 +133,7 @@ fn t_dec_d18_every_plaintext_copy_is_an_error_until_ignored() {
 fn t_i160_an_evnx_backup_is_not_a_finding() {
     let mut raw = vec![1u8];
     raw.extend((0..200u8).map(|i| i.wrapping_mul(37)));
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     let blob = general_purpose::STANDARD.encode(raw);
 
     let p = healthy()

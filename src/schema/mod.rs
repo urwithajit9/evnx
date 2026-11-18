@@ -8,7 +8,7 @@ pub mod query;
 pub mod resolver;
 
 // Re-export commonly used types
-pub use component::{catalogue, Component, Kind};
+pub use component::{Component, Kind, catalogue};
 pub use formatter::{
     format_addition, format_addition_from, format_env_example, format_env_template,
     generate_preview,

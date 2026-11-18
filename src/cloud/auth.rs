@@ -17,15 +17,15 @@
 //! the verifier offline would hand over the vaults too. `evnx-crypto` also passes
 //! a distinct domain tag into each derivation as Argon2's secret parameter.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use super::client::{jwt_exp, reword, Client};
+use super::client::{Client, jwt_exp, reword};
 use super::config::CloudConfig;
 use super::creds::{SecretString, Session, Store};
-use crate::utils::secret_source::{resolve_master, MasterInputs, MasterSource};
+use crate::utils::secret_source::{MasterInputs, MasterSource, resolve_master};
 
 /// Shortest master password accepted.
 ///
@@ -939,8 +939,7 @@ pub(crate) struct Unlocked {
 ///
 /// `rotate-master-password`'s sentence, which it said before any other command
 /// checked the password at all.
-const WRONG_PASSWORD: &str =
-    "that master password did not open your keypair, so it is not the one \
+const WRONG_PASSWORD: &str = "that master password did not open your keypair, so it is not the one \
      this account was registered with. Nothing has been changed.\n\
      \x20 If you have already changed it on another machine, use the new one.";
 
@@ -971,15 +970,13 @@ pub(crate) fn unlock(client: &Client, password: &Zeroizing<String>) -> Result<Un
 
 /// What a master password that does not open a **key bundle** means: the
 /// bundle was made under an earlier password, or the password is mistyped.
-const WRONG_PASSWORD_BUNDLE: &str =
-    "that master password did not open the key bundle in EVNX_KEY_BUNDLE.\n\
+const WRONG_PASSWORD_BUNDLE: &str = "that master password did not open the key bundle in EVNX_KEY_BUNDLE.\n\
      \x20 If the master password was changed after the bundle was made, the old bundle no \
      longer unlocks: regenerate the key bundle with `evnx auth key-bundle` on a signed-in \
      machine and replace the CI secret. Otherwise check the password.";
 
 /// The message for a server that no longer gives key material to API tokens.
-const NO_KEY_MATERIAL_FOR_TOKENS: &str =
-    "this server no longer gives key material to API tokens: create a key bundle with \
+const NO_KEY_MATERIAL_FOR_TOKENS: &str = "this server no longer gives key material to API tokens: create a key bundle with \
      `evnx auth key-bundle` on a signed-in machine and store it as EVNX_KEY_BUNDLE";
 
 /// [`unlock`] for an API token.
@@ -1020,7 +1017,7 @@ pub(crate) fn unlock_with(
     password: &Zeroizing<String>,
 ) -> Result<Unlocked> {
     use evnx_crypto::{
-        decrypt_private_key, derive_master_key, salt_from_base64, EncryptedPrivateKey,
+        EncryptedPrivateKey, decrypt_private_key, derive_master_key, salt_from_base64,
     };
 
     let salt = salt_from_base64(argon2_salt)
@@ -1281,7 +1278,7 @@ struct BackfillPublicKeysRequest {
 /// that into a login error would be a strictly worse outcome, so this warns and
 /// returns.
 fn backfill_mlkem_key(client: &Client, password: &Zeroizing<String>, verbose: bool) {
-    use evnx_crypto::{decrypt_private_key, salt_from_base64, EncryptedPrivateKey};
+    use evnx_crypto::{EncryptedPrivateKey, decrypt_private_key, salt_from_base64};
 
     // An API token is not given key material by `/auth/me`, and a login is the
     // only moment the password and a user session are both in hand.

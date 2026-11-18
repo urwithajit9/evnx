@@ -6,7 +6,7 @@
 //! per-target temp directory, so the binary can be hard-linked rather than
 //! copied (a debug build is large); a copy is the fallback.
 
-use super::run::{run_program, Output};
+use super::run::{Output, run_program};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
