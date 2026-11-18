@@ -138,6 +138,13 @@ impl ScanRunner {
         self
     }
 
+    /// Report short values under strong secret names (WP-13, D5); see
+    /// [`DetectorRegistry::with_short_values`].
+    pub fn with_short_values(mut self, on: bool) -> Self {
+        self.registry = std::mem::take(&mut self.registry).with_short_values(on);
+        self
+    }
+
     pub fn with_follow_symlinks(mut self, follow: bool) -> Self {
         self.filter = self.filter.with_follow_symlinks(follow);
         self

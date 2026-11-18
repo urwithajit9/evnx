@@ -305,6 +305,28 @@ new `network` field below.
 
 ### Added
 
+- **`evnx scan --policy FILE` (or `EVNX_POLICY`): a floor the repository cannot
+  lower.** A committed `.evnx.toml` can disable a detector or raise the
+  severity floor for everyone who scans the repository. A policy file kept
+  outside it says what that may not do: `required_rules` may not be disabled
+  (and `scan.builtins = false` conflicts), `max_severity_floor` is the highest
+  `--severity` or `[scan] severity` allowed, and `allow_disable` is `false` or
+  the only detectors a repository may disable. A conflict exits 2 before any
+  file is read and names the key and the policy file; a missing or invalid
+  file exits 2. The policy is read after `.evnx.toml`, is not dropped by
+  `--no-config`, and `--policy` wins over `EVNX_POLICY`.
+- **`evnx scan --exit-only`.** Prints nothing at all, not even an error, and
+  answers with the exit code: 0 clean, 1 findings, 2 could not run. The global
+  `-q` keeps its meaning (findings still print). Cannot be combined with
+  `--format` or `--json`.
+- **`evnx scan --strict`.** An unknown key in `.evnx.toml` exits 2 instead of
+  a warning. Unknown keys in every section now get a "did you mean" hint, and
+  for `scan` the warning is shown under `-q`.
+- **Short values under secret names.** With `--confidence low` named (or
+  `[scan] confidence = "low"`), a 4 to 7 character value under `PASSWORD`,
+  `PASSWD`, `SECRET`, `TOKEN`, `API_KEY` or `PRIVATE_KEY` is reported as
+  `Sensitive config key`, medium severity and low confidence, without its
+  value. A default scan reports the same findings as before.
 - **`evnx cloud run --min-version N` (or `EVNX_MIN_VERSION`).** Refuses to
   run, with exit 2, when a vault is below version N, so a server that serves an
   old version cannot make a deploy run with stale secrets. It applies to each

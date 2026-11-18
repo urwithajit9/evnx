@@ -4,6 +4,47 @@
 //! its stdout goes away, and what it leaves on the terminal when interrupted.
 //! Both apply to every command.
 
+/// Point stdout and stderr at the null device for the rest of the process
+/// (`scan --exit-only`, WP-13). Nothing evnx or a dependency prints afterwards
+/// can reach the terminal, whichever helper prints it, and the exit code still
+/// carries the answer.
+///
+/// Best effort: if the null device cannot be opened the streams are left alone.
+#[cfg(unix)]
+pub fn silence_output() {
+    use std::os::unix::io::AsRawFd;
+    if let Ok(null) = std::fs::OpenOptions::new().write(true).open("/dev/null") {
+        // SAFETY: `dup2` on three valid descriptors; the original is closed by
+        // `null` dropping after both targets hold their own copy.
+        unsafe {
+            libc::dup2(null.as_raw_fd(), libc::STDOUT_FILENO);
+            libc::dup2(null.as_raw_fd(), libc::STDERR_FILENO);
+        }
+    }
+}
+
+/// See the Unix version. Rust's stdout and stderr ask Windows for the standard
+/// handle on every write, so replacing it with `NUL` takes effect at once.
+#[cfg(windows)]
+pub fn silence_output() {
+    use std::os::windows::io::IntoRawHandle;
+    extern "system" {
+        fn SetStdHandle(which: u32, handle: *mut std::ffi::c_void) -> i32;
+    }
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+    if let Ok(null) = std::fs::OpenOptions::new().write(true).open("NUL") {
+        // The handle is leaked on purpose: it must outlive the process's prints.
+        let handle = null.into_raw_handle();
+        // SAFETY: a valid, open handle, set as the process's standard output
+        // and error.
+        unsafe {
+            SetStdHandle(STD_OUTPUT_HANDLE, handle);
+            SetStdHandle(STD_ERROR_HANDLE, handle);
+        }
+    }
+}
+
 /// Exit status for "the reader of stdout went away": 128 + SIGPIPE, the value a
 /// shell reports for `yes | head -1`, so scripts and CI read it as they would
 /// for any other well-behaved tool.

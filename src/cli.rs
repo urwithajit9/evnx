@@ -2992,6 +2992,39 @@ pub enum Commands {
         /// outside the folder, or to a folder, is skipped either way.
         #[arg(long)]
         follow_symlinks: bool,
+
+        /// A policy file the repository's `.evnx.toml` cannot lower.
+        ///
+        /// Read after `.evnx.toml`, and also with `--no-config`. TOML with
+        /// three optional keys: `required_rules` (detectors that may not be
+        /// disabled), `max_severity_floor` (the highest `--severity` or
+        /// `[scan] severity` allowed) and `allow_disable` (`false`, or the
+        /// only detectors a repository may disable). A setting that conflicts
+        /// exits 2 before any file is read, naming the key and this file. A
+        /// missing or invalid file exits 2. Also read from `EVNX_POLICY`; the
+        /// flag wins. A hook installed by `evnx scan hook install` honours
+        /// `EVNX_POLICY` too.
+        #[arg(long, value_name = "FILE", env = "EVNX_POLICY")]
+        policy: Option<String>,
+
+        /// Treat an unknown key in `.evnx.toml` as an error (exit 2).
+        ///
+        /// Without it an unknown key is a warning, with a "did you mean"
+        /// when it is close to a known one, and the key is ignored. A
+        /// misspelt `severty` then lowers nothing and raises nothing; for a
+        /// CI gate that is better stopped.
+        #[arg(long)]
+        strict: bool,
+
+        /// Print nothing; the exit code is the answer: 0 clean, 1 findings,
+        /// 2 could not run.
+        ///
+        /// Not even an error message or the config line: for a script that
+        /// only branches on the code. The global `-q` still prints findings.
+        /// Cannot be combined with `--format` or `--json`. A usage error from
+        /// the command line itself is still printed.
+        #[arg(long, conflicts_with_all = ["format", "json"])]
+        exit_only: bool,
     },
 
     /// Compare two env files: keys missing or extra, and values between environments.

@@ -404,6 +404,60 @@ pub fn name_suggests_secret(key: &str, value: &str) -> bool {
     v.len() >= 8 && !is_ref && !is_path && !is_number && !plainly_an_address(v)
 }
 
+/// A 4 to 7 character value under a strong secret name (WP-13, D5):
+/// `PASSWORD=admin`, `API_KEY=abc123`.
+///
+/// [`name_suggests_secret`] needs 8 characters, because below that the value is
+/// more often a flag, a mode or a count than a credential. A short value under
+/// one of the six names that mean "credential" and not "something about a
+/// credential" is still worth a look, at `Low` confidence. Not a placeholder,
+/// a number, a path, a reference, an address, a boolean or a dummy word.
+pub fn short_secret_value(key: &str, value: &str) -> bool {
+    const NAMES: [&str; 6] = [
+        "PASSWORD",
+        "PASSWD",
+        "SECRET",
+        "TOKEN",
+        "API_KEY",
+        "PRIVATE_KEY",
+    ];
+    // A word that is a setting, not a secret: `SECRET_MODE=local`.
+    const NOT_SECRETS: [&str; 22] = [
+        "true", "false", "none", "null", "nil", "yes", "no", "on", "off", "test", "demo", "dummy",
+        "fake", "local", "basic", "bearer", "empty", "unset", "todo", "tbd", "enabled", "disabled",
+    ];
+    let v = value.trim();
+    if !(4..=7).contains(&v.len()) || key.is_empty() {
+        return false;
+    }
+    let upper = key.to_ascii_uppercase();
+    if !NAMES.iter().any(|n| upper.contains(n)) || names_a_public_key(key) {
+        return false;
+    }
+    if is_publishable_key(v) || names_a_cache_digest(key, v) {
+        return false;
+    }
+    let lower = v.to_ascii_lowercase();
+    let is_ref = v.starts_with('$') || (v.starts_with('%') && v.ends_with('%'));
+    let is_path = v.starts_with('/') || v.starts_with("./") || v.starts_with("~/");
+    let is_number = v.bytes().all(|b| b.is_ascii_digit());
+    let is_dummy = NOT_SECRETS.contains(&lower.as_str())
+        || lower.contains("change")
+        || lower.contains("example")
+        || lower.contains("xxx")
+        || lower.contains("***")
+        || lower.starts_with("<")
+        || lower.starts_with('{')
+        || lower.starts_with("your");
+    !(is_ref
+        || is_path
+        || is_number
+        || is_dummy
+        || looks_like_placeholder_secret(v)
+        || crate::core::classify::is_stand_in(v)
+        || plainly_an_address(v))
+}
+
 /// `NEXTAUTH_URL=http://localhost:3000`, `AUTH0_DOMAIN=myapp.us.auth0.com`,
 /// `SECRET_MANAGER_REGION=us-east-1`: the name matched (`AUTH`, `SECRET`) and
 /// the value is an address (I-287).

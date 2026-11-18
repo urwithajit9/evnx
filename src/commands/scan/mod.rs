@@ -144,6 +144,10 @@ pub struct ScanOptions {
     pub builtins_disabled: bool,
     /// Other repository settings that hide findings, recorded in the report.
     pub repo_settings: models::RepoSettings,
+    /// The confidence floor was set to `low` on purpose (`--confidence low` or
+    /// `[scan] confidence = "low"`): report short values under strong secret
+    /// names too (WP-13, D5).
+    pub short_values: bool,
 }
 
 impl Default for ScanOptions {
@@ -174,6 +178,7 @@ impl Default for ScanOptions {
             config_files: Vec::new(),
             builtins_disabled: false,
             repo_settings: Default::default(),
+            short_values: false,
         }
     }
 }
@@ -329,6 +334,7 @@ pub fn run(opts: ScanOptions) -> Result<Verdict, anyhow::Error> {
         .with_disabled(disabled, &opts.disable)
         .with_follow_symlinks(opts.follow_symlinks)
         .with_include_dirs(&opts.include_dirs)
+        .with_short_values(opts.short_values)
         .with_effective_config(effective);
         if opts.staged {
             runner.run_staged(opts.paths.clone(), output_format)

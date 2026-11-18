@@ -126,6 +126,19 @@ Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
 \x20 and the heuristics: Sensitive config key, High-entropy string,\n\
 \x20 AWS Secret Access Key.\n\
 \n\
+A short value under a secret name (PASSWORD=admin, 4 to 7 characters) is\n\
+reported as Sensitive config key, medium severity and low confidence, only\n\
+when --confidence low (or [scan] confidence = \"low\") is given.\n\
+\n\
+A policy the repository cannot lower:\n\
+\x20 evnx scan --policy ci/scan-policy.toml        (or EVNX_POLICY)\n\
+\x20 required_rules = [\"AWS Access Key\"]    detectors .evnx.toml may not disable\n\
+\x20 max_severity_floor = \"medium\"          highest --severity or [scan] severity\n\
+\x20 allow_disable = false | [\"Slack Token\"]   what .evnx.toml may disable\n\
+\x20 A conflict exits 2 before any file is read, naming the key and the policy.\n\
+\x20 --strict makes an unknown key in .evnx.toml exit 2; --exit-only prints\n\
+\x20 nothing and answers with the exit code: 0 clean, 1 findings, 2 could not run.\n\
+\n\
 Full guide: https://docs.evnx.dev/cli/commands/scan",
 };
 

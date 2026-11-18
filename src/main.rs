@@ -119,6 +119,28 @@ fn run() -> Result<Verdict, EvnxError> {
         }
     };
     evnx::utils::ui::set_quiet(cli.quiet);
+    // `scan --exit-only` (WP-13, D4): the exit code is the whole answer, so
+    // nothing printed from here on, a config warning or an error included, may
+    // reach either stream. A usage error was already printed by clap above.
+    let scan_flags = match &cli.command {
+        Commands::Scan {
+            action: None,
+            strict,
+            exit_only,
+            policy,
+            severity,
+            ..
+        } => Some((
+            *strict,
+            *exit_only,
+            policy.clone(),
+            severity.map(|s| s.as_str().to_string()),
+        )),
+        _ => None,
+    };
+    if matches!(scan_flags, Some((_, true, _, _))) {
+        evnx::utils::term::silence_output();
+    }
 
     // Configure colored output
     if cli.no_color {
@@ -179,6 +201,32 @@ fn run() -> Result<Verdict, EvnxError> {
     if no_config && !cli.quiet {
         eprintln!("  config    ignored (--no-config): built-in defaults");
     }
+    // `scan --strict` (D10): an unknown key is "evnx could not run", exit 2.
+    // `scan --policy` / `EVNX_POLICY` (WP-13): read after `.evnx.toml`, and
+    // checked against it and the flags before any file is scanned.
+    if let Some((strict, _, policy, severity)) = &scan_flags {
+        if *strict && !loaded.unknown.is_empty() {
+            return Err(EvnxError::Config(anyhow::anyhow!(
+                "--strict: unknown key in the config\n  {}",
+                loaded.unknown.join("\n  ").replace(" (ignored)", "")
+            )));
+        }
+        if let Some(file) = policy.as_deref().filter(|f| !f.is_empty()) {
+            let policy = evnx::core::policy::Policy::load(Path::new(file)).and_then(|p| {
+                p.check(&loaded.config.scan, severity.as_deref())
+                    .map(|()| p)
+            });
+            if let Err(e) = policy {
+                return Err(EvnxError::Config(e));
+            }
+            if !cli.quiet {
+                eprintln!(
+                    "  policy    {}",
+                    evnx::utils::ui::short_path(Path::new(file))
+                );
+            }
+        }
+    }
     if let Some(source) = &loaded.source {
         let overrides = loaded.config.security_overrides();
         // I-060: `-q` is findings only — except, for `scan`, the line saying a
@@ -188,8 +236,11 @@ fn run() -> Result<Verdict, EvnxError> {
             cli.quiet && !(matches!(cli.command, Commands::Scan { .. }) && !overrides.is_empty());
         evnx::utils::ui::config_banner(source, &overrides, quiet);
     }
+    // Shown under `-q` for `scan`, like the overrides line above: a misspelt
+    // `severty` is a setting that did not apply (D10).
+    let warn_quiet = cli.quiet && !matches!(cli.command, Commands::Scan { .. });
     for warning in &loaded.warnings {
-        evnx::utils::ui::config_warning(warning, cli.quiet);
+        evnx::utils::ui::config_warning(warning, warn_quiet);
     }
     // D2, FLD-11: outside a git repository a parent folder's config is not
     // used; say which, under -v, so a missing policy is explainable.
@@ -497,6 +548,9 @@ fn run() -> Result<Verdict, EvnxError> {
             no_config,
             follow_symlinks,
             include_dir,
+            policy: _,
+            strict: _,
+            exit_only: _,
         } => {
             let builtins = cfg.scan.builtins;
             let repo_settings = commands::scan::models::RepoSettings {
@@ -563,6 +617,16 @@ fn run() -> Result<Verdict, EvnxError> {
                     cfg.scan.severity,
                     "low".to_string(),
                 ),
+                // D5: short values under secret names need the floor named,
+                // not merely defaulted to `low`.
+                short_values: (confidence.is_some() || cfg.scan.confidence.is_some())
+                    && evnx::core::config::pick(
+                        confidence.map(|c| c.as_str().to_string()),
+                        cfg.scan.confidence.clone(),
+                        "low".to_string(),
+                    )
+                    .parse::<evnx::core::secretscan::Confidence>()
+                    .is_ok_and(|c| c == evnx::core::secretscan::Confidence::Low),
                 confidence: evnx::core::config::pick(
                     confidence.map(|c| c.as_str().to_string()),
                     cfg.scan.confidence,
