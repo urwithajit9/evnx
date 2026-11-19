@@ -246,33 +246,48 @@ mod tests {
     }
 
     /// RUST-9: the handler is installed with `sigaction` and `SA_RESETHAND`, so
-    /// the kernel, not the handler, restores the default action.
+    /// the kernel, not the handler, restores the default action. Tested by
+    /// behaviour, not by reading `sa_flags` back: macOS honours
+    /// `SA_RESETHAND` but does not report it in the flags it returns.
     #[cfg(unix)]
     #[test]
     fn the_cursor_handler_resets_itself_on_entry() {
-        // The handler is only installed on a terminal, so test the installed
-        // disposition of a signal we own instead: install the same way here.
         use std::mem::MaybeUninit;
+        use std::sync::atomic::Ordering;
+        // The handler is only installed on a terminal, so test a signal we own,
+        // installed the same way.
         let mut old = MaybeUninit::<libc::sigaction>::uninit();
         // SAFETY: reads SIGUSR2's current action into `old`.
         let rc = unsafe { libc::sigaction(libc::SIGUSR2, std::ptr::null(), old.as_mut_ptr()) };
         assert_eq!(rc, 0);
         // SAFETY: initialised by the successful call above.
         let old = unsafe { old.assume_init() };
-        assert_eq!(old.sa_flags & libc::SA_RESETHAND, 0, "precondition");
-        install_reset_handler(libc::SIGUSR2, noop_handler);
+
+        RAN.store(false, Ordering::SeqCst);
+        install_reset_handler(libc::SIGUSR2, flag_handler);
+        // SAFETY: `raise` delivers SIGUSR2 to this thread before it returns;
+        // the handler installed above only stores to an atomic.
+        unsafe { libc::raise(libc::SIGUSR2) };
+        assert!(RAN.load(Ordering::SeqCst), "the handler ran once");
+
         let mut now = MaybeUninit::<libc::sigaction>::uninit();
         // SAFETY: as above.
         unsafe { libc::sigaction(libc::SIGUSR2, std::ptr::null(), now.as_mut_ptr()) };
         // SAFETY: initialised by the call above.
         let now = unsafe { now.assume_init() };
-        assert_ne!(now.sa_flags & libc::SA_RESETHAND, 0);
+        let reset = now.sa_sigaction == libc::SIG_DFL;
         // SAFETY: puts back what was there.
         unsafe { libc::sigaction(libc::SIGUSR2, &old, std::ptr::null_mut()) };
+        assert!(reset, "after one delivery the action is the default again");
     }
 
     #[cfg(unix)]
-    extern "C" fn noop_handler(_: libc::c_int) {}
+    static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    #[cfg(unix)]
+    extern "C" fn flag_handler(_: libc::c_int) {
+        RAN.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
 
     #[test]
     fn only_a_closed_pipe_is_treated_as_quiet() {
