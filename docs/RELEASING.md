@@ -79,8 +79,10 @@ links that are dead on the live site, and `pnpm check:links` is what catches it.
 cargo check          # updates Cargo.lock's own entry
 ```
 
-Nothing else in the repo carries the version. The packaging artefacts all derive
-it from the tag.
+Two pins in `README.md` also carry it (the `ghcr.io/urwithajit9/evnx:X.Y.Z` Docker
+example and the pre-commit `rev: vX.Y.Z`); `grep -n 'X\.Y\.Z' README.md` before the tag.
+The packaging artefacts (npm, PyPI, Homebrew, Scoop, winget) all derive the version from
+the tag.
 
 ### 4 · CHANGELOG, and say why the number
 
@@ -142,17 +144,22 @@ is how unused imports under default features survived.
 ### 7a · The install URL and the install script (WP-16)
 
 The one address in every doc and in `evnx update` is `https://evnx.dev/install.sh`
-(`core::build::INSTALL_URL`). It lives outside this repository, so check it before
-tagging, from a machine that can reach it:
+(`core::build::INSTALL_URL`). It lives outside this repository: `evnx.dev/install.sh`
+answers 308 with a redirect to `https://www.evnx.dev/install.sh`, which serves the script as
+`text/plain` from `main`, and `dotenv.space/install.sh` redirects to `evnx.dev/install.sh`
+(the owner is setting that up; until then it serves the script itself). The `install-url`
+workflow (`.github/workflows/install-url.yml`) checks both addresses against `main`'s
+`scripts/install.sh` every day and on demand. It does not run on pull requests or pushes,
+because the site updates up to an hour after a merge. Check by hand before tagging, from a
+machine that can reach it:
 
 ```bash
 curl -fsSL https://evnx.dev/install.sh | diff - scripts/install.sh && echo same
-curl -sI https://dotenv.space/install.sh | head -3     # a redirect to the address above
+curl -fsSL https://dotenv.space/install.sh | diff - scripts/install.sh && echo same   # follows its redirect
+curl -sI https://dotenv.space/install.sh | head -3     # a redirect to evnx.dev once set up
 ```
 
-When `evnx.dev/install.sh` serves `scripts/install.sh` from `main`, enable the `install-url`
-job in `.github/workflows/ci.yml` (it carries `if: false` and a comment saying what to put
-instead). The install script ships on merge to `main`, not with the tag; the
+The install script ships on merge to `main`, not with the tag; the
 `install-script` job runs its stubbed tests on every pull request, but only a run on a
 clean machine proves the live path:
 

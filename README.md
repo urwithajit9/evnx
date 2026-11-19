@@ -84,7 +84,7 @@ prints the script; see [`evnx completions`](#evnx-completions).
 ### Docker
 
 ```bash
-docker run --rm -v "$PWD:/work" ghcr.io/urwithajit9/evnx:0.14.1 scan
+docker run --rm -v "$PWD:/work" ghcr.io/urwithajit9/evnx:0.15.0 scan
 ```
 
 Commands that write files need `--user "$(id -u):$(id -g)"`.
@@ -1644,7 +1644,7 @@ repos:
     # before 0.10.15 evnx-doctor had no --skip-without-env. Before 0.10.0 the
     # scan hook scanned the whole working tree on every commit, including the
     # real, gitignored `.env`, and blocked every commit.
-    rev: v0.14.1
+    rev: v0.15.0
     hooks:
       - id: evnx-scan        # blocks commit if secrets found in the staged files
       - id: evnx-validate    # blocks commit if .env misconfigured

@@ -105,11 +105,13 @@ fn squash(s: &str) -> String {
 #[test]
 fn wp16_stability_lists_every_breaking_headline() {
     let changelog = read("CHANGELOG.md");
+    // The newest section that has a "Breaking" part: `## [Unreleased]` while a
+    // release is being written, the release's own heading once it is cut.
     let unreleased = changelog
-        .split("## [Unreleased]")
-        .nth(1)
-        .and_then(|s| s.split("\n## [").next())
-        .expect("an Unreleased section");
+        .split("\n## [")
+        .skip(1)
+        .find(|section| section.contains("### Breaking\n"))
+        .expect("a CHANGELOG section with a Breaking part");
     let breaking = unreleased
         .split("### Breaking\n")
         .nth(1)

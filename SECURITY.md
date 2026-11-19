@@ -21,13 +21,13 @@ Good-faith research conducted that way will not result in action against you.
 
 ## Supported versions
 
-evnx is pre-1.0, so a "minor" is the second number: `0.14` is a minor, `0.14.2`
+evnx is pre-1.0, so a "minor" is the second number: `0.15` is a minor, `0.15.1`
 a patch of it. The policy:
 
 | Version | Receives |
 |---------|----------|
-| The latest minor (for example `0.14.x`) | Bug fixes and security fixes, as new patch releases |
-| The previous minor (for example `0.13.x`) | **Security fixes only, for 90 days** after the next minor is released |
+| The latest minor (for example `0.15.x`) | Bug fixes and security fixes, as new patch releases |
+| The previous minor (for example `0.14.x`) | **Security fixes only, for 90 days** after the next minor is released |
 | Anything older | Nothing. Upgrade |
 
 The 90 days run from the release date of the minor that replaced it. After that
