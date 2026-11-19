@@ -32,6 +32,9 @@ gh attestation verify <file> -R urwithajit9/evnx \
   --signer-workflow urwithajit9/evnx/.github/workflows/release.yml
 ```
 
+Each archive also carries the SBOM as a signed attestation. Check it with
+`gh attestation verify <archive> -R urwithajit9/evnx --predicate-type https://cyclonedx.org/bom`.
+
 The SBOM can be scanned with Grype, Trivy or OSV-Scanner. Steps, a login-free check with
 `cosign`, and the results for 0.15.0:
 https://www.evnx.dev/blog/sbom-what-it-is-and-how-evnx-ships-one

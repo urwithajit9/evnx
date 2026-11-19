@@ -235,6 +235,14 @@ gh attestation verify evnx-<version>.cdx.json -R urwithajit9/evnx \
 grype sbom:evnx-<version>.cdx.json      # or: trivy sbom …, osv-scanner scan source -L …
 ```
 
+The SBOM is also attached to each archive as a signed CycloneDX attestation, so one
+archive is enough to see what is inside it:
+
+```bash
+gh attestation verify <archive> -R urwithajit9/evnx \
+  --predicate-type https://cyclonedx.org/bom
+```
+
 How it is built and every check, with the 0.15.0 results:
 [SBOM: what it is and how evnx ships one](https://www.evnx.dev/blog/sbom-what-it-is-and-how-evnx-ships-one).
 

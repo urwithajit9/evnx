@@ -14,7 +14,7 @@ one of them:
 
 | Workflow | Fires on | Publishes |
 |---|---|---|
-| `release.yml` | `v*` tag | build provenance per archive; `sbom` (CycloneDX, attested) → GitHub Release (18 assets, the SBOM and its `.sha256` among them) → ghcr.io image, Homebrew tap, Scoop bucket, **winget**, **crates.io** (`publish-crate`, RM-27); `verify-provenance` checks the published assets |
+| `release.yml` | `v*` tag | build provenance per archive; `sbom` (CycloneDX, attested) and `attest-sbom` (the SBOM attached to every archive) → GitHub Release (18 assets, the SBOM and its `.sha256` among them) → ghcr.io image, Homebrew tap, Scoop bucket, **winget**, **crates.io** (`publish-crate`, RM-27); `verify-provenance` checks the published assets |
 | `python-publish.yml` | `v*` tag | PyPI, by trusted publishing (RM-27) |
 | `npm-publish.yml` | **`release.yml` completing** | npm — 5 platform packages, then `@evnx/cli` |
 
@@ -270,6 +270,19 @@ gh attestation verify evnx-x86_64-unknown-linux-musl.tar.gz -R urwithajit9/evnx 
   --signer-workflow urwithajit9/evnx/.github/workflows/release.yml \
   --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
 ```
+
+The `attest-sbom` job runs after the builds and the `sbom` job and attaches the
+CycloneDX SBOM to every archive as a second attestation (predicate type
+`https://cyclonedx.org/bom`). It has the same one-retry pattern, and `release`
+waits for it. `verify-provenance` checks it on one archive:
+
+```bash
+gh attestation verify evnx-x86_64-unknown-linux-musl.tar.gz -R urwithajit9/evnx \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+The `actions/attest-sbom` step is pinned by tag until the owner replaces it with the full
+commit SHA (`TODO(owner)` in the workflow).
 
 ⓘ **One failed attempt is retried by the build itself** (since v0.11.0): the first
 attest step may fail, and after 60 seconds a second one runs. A yellow warning,
