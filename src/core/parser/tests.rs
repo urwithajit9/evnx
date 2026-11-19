@@ -1356,3 +1356,21 @@ fn p1_d12_references_to_dotted_names() {
     assert_eq!(vars("my-key=1\nA=${my-key}\n")["A"], "key");
     assert_eq!(vars("my=X\nmy-key=1\nA=${my-key}\n")["A"], "X");
 }
+
+/// PARSER-DOLLAR-DOC: `ab$cd` with `cd` unset stays `ab$cd`. Docker Compose
+/// reads it as `ab`. evnx keeps the text so a password containing `$` is never
+/// shortened without a word; `${cd:-}` is how a file asks for the Compose
+/// reading (the variable, or nothing). `${cd}` unset stays an error.
+#[test]
+fn a_bare_dollar_name_that_is_unset_stays_literal() {
+    let p = Parser::default();
+    let vars = p.parse_content("PASS=ab$cd\n").unwrap();
+    assert_eq!(vars["PASS"], "ab$cd");
+
+    let vars = p.parse_content("PASS=ab${cd:-}\n").unwrap();
+    assert_eq!(vars["PASS"], "ab");
+    let vars = p.parse_content("cd=X\nPASS=ab${cd:-}\n").unwrap();
+    assert_eq!(vars["PASS"], "abX");
+
+    assert!(p.parse_content("PASS=ab${cd}\n").is_err());
+}
