@@ -122,7 +122,10 @@ Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
 \x20 Supabase Personal Access Token, Supabase Secret Key, age Secret Key, New\n\
 \x20 Relic User API Key, Grafana Service Account Token, Grafana Cloud Access\n\
 \x20 Policy Token, Postman API Key, Notion Integration Token, GitLab CI/CD\n\
-\x20 Job Token, Fly.io Access Token, Azure DevOps Personal Access Token;\n\
+\x20 Job Token, Fly.io Access Token, Azure DevOps Personal Access Token,\n\
+\x20 GitLab Feed Token, GitLab Incoming Email Token, GitLab Agent for\n\
+\x20 Kubernetes Token, GitLab Webhook Token, GitLab SCIM Token, GitLab Feature\n\
+\x20 Flags Client Token, GitLab OAuth Application Secret;\n\
 \x20 and the heuristics: Sensitive config key, High-entropy string,\n\
 \x20 AWS Secret Access Key.\n\
 \n\

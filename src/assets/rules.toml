@@ -852,3 +852,104 @@ keywords = ["azdo"]
 confidence = "high"
 severity = "high"
 url = "https://dev.azure.com/_usersSettings/tokens"
+
+# ── GitLab tokens with no earlier rule (SCAN-GITLAB) ─────────────────────────
+# ⚠️ TO BE VERIFIED AGAINST GITLAB'S DOCUMENTATION BY THE OWNER. These seven
+# prefixes are the ones GitLab's "Token overview" lists
+# (https://docs.gitlab.com/security/tokens/) and nothing else about their format
+# was checked: no length or charset is documented that this file could cite. So,
+# as for `glcbt-` above, the body is any 20+ characters of the URL-safe set, and
+# confidence is medium until the owner has confirmed each prefix, length and
+# charset. A prefix that turns out not to be documented is to be deleted, with
+# its fixture file, as C12 did.
+
+# Reads the feeds (RSS and calendar) of everything its owner can see, including private issues.
+# Format: to be verified against GitLab docs (prefix `glft-`, body unverified).
+[[rules]]
+id = "gitlab-feed-token"
+name = "GitLab Feed Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglft-[A-Za-z0-9_-]{20,}'
+keywords = ["glft-"]
+confidence = "medium"
+severity = "medium"
+url = "https://docs.gitlab.com/user/profile/personal_access_tokens/#feed-token"
+
+# Lets whoever holds it create issues and merge requests as its owner by email.
+# Format: to be verified against GitLab docs (prefix `glimt-`, body unverified).
+[[rules]]
+id = "gitlab-incoming-mail-token"
+name = "GitLab Incoming Email Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglimt-[A-Za-z0-9_-]{20,}'
+keywords = ["glimt-"]
+confidence = "medium"
+severity = "medium"
+url = "https://docs.gitlab.com/administration/incoming_email/"
+
+# Authenticates a cluster's agent to GitLab.
+# Format: to be verified against GitLab docs (prefix `glagent-`, body unverified).
+[[rules]]
+id = "gitlab-agent-token"
+name = "GitLab Agent for Kubernetes Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglagent-[A-Za-z0-9_-]{20,}'
+keywords = ["glagent-"]
+confidence = "medium"
+severity = "high"
+url = "https://docs.gitlab.com/user/clusters/agent/"
+
+# A secret that authenticates webhook calls.
+# Format: to be verified against GitLab docs (prefix `glwt-`, body unverified).
+[[rules]]
+id = "gitlab-webhook-token"
+name = "GitLab Webhook Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglwt-[A-Za-z0-9_-]{20,}'
+keywords = ["glwt-"]
+confidence = "medium"
+severity = "medium"
+url = "https://docs.gitlab.com/user/project/integrations/webhooks/"
+
+# Provisions and removes users in a group through SCIM.
+# Format: to be verified against GitLab docs (prefix `glsoat-`, body unverified).
+[[rules]]
+id = "gitlab-scim-token"
+name = "GitLab SCIM Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglsoat-[A-Za-z0-9_-]{20,}'
+keywords = ["glsoat-"]
+confidence = "medium"
+severity = "high"
+url = "https://docs.gitlab.com/user/group/saml_sso/scim_setup/"
+
+# Read-only token an application uses to fetch its feature flags; designed to ship in a client.
+# Format: to be verified against GitLab docs (prefix `glffct-`, body unverified).
+[[rules]]
+id = "gitlab-feature-flag-token"
+name = "GitLab Feature Flags Client Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglffct-[A-Za-z0-9_-]{20,}'
+keywords = ["glffct-"]
+confidence = "medium"
+severity = "low"
+url = "https://docs.gitlab.com/operations/feature_flags/"
+
+# The secret of an OAuth application: with the application id it can request tokens for users who authorised it.
+# Format: to be verified against GitLab docs (prefix `gloas-`, body unverified).
+[[rules]]
+id = "gitlab-oauth-secret"
+name = "GitLab OAuth Application Secret"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bgloas-[A-Za-z0-9_-]{20,}'
+keywords = ["gloas-"]
+confidence = "medium"
+severity = "high"
+url = "https://docs.gitlab.com/integration/oauth_provider/"

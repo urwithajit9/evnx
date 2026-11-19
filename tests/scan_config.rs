@@ -161,7 +161,7 @@ fn t_i058_verbose_counts_built_in_rules_and_custom_patterns_apart() {
     let d = project(&[(".env", "A=1\n")]);
     let (_, _, stderr) = run(&d, &["scan", ".", "-v"]);
     assert!(
-        stderr.contains("63 built-in rules, 0 custom patterns"),
+        stderr.contains("70 built-in rules, 0 custom patterns"),
         "{stderr}"
     );
     assert!(!stderr.contains("custom pattern(s) active"), "{stderr}");
@@ -169,7 +169,7 @@ fn t_i058_verbose_counts_built_in_rules_and_custom_patterns_apart() {
 
     let (_, _, stderr) = run(&d, &["scan", ".", "-v", "--pattern", "ACME-[0-9]{8}"]);
     assert!(
-        stderr.contains("63 built-in rules, 1 custom pattern"),
+        stderr.contains("70 built-in rules, 1 custom pattern"),
         "{stderr}"
     );
 

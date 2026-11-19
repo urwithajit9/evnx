@@ -1,0 +1,16 @@
+# Fixtures for `gitlab-agent-token` (SCAN-GITLAB). Values are written as parts joined at test time, so this
+# file never holds a whole token. Format: to be verified against GitLab docs by the owner.
+
+expect_severity = "high"
+
+positive = [
+  ["glagent-", "9gYGzNHaoGSHdbJ1ZPI4"],
+  ["glagent-", "I4ZbgOZLXqf0L3aNqb2BfTkSH2_EwyTvfPi-peNlcg"],
+]
+
+near_miss = [
+  # Too short a body.
+  ["glagent-", "IfjFwoqGuqUD"],
+  # Not at a word boundary.
+  ["x", "glagent-", "dFzfuwDgViKGtXZSZEOMdNtA"],
+]

@@ -1,0 +1,16 @@
+# Fixtures for `gitlab-scim-token` (SCAN-GITLAB). Values are written as parts joined at test time, so this
+# file never holds a whole token. Format: to be verified against GitLab docs by the owner.
+
+expect_severity = "high"
+
+positive = [
+  ["glsoat-", "JJruxKxNaCwWHr3ZaQHn"],
+  ["glsoat-", "YmMWvcXbBWM0FN8Ya4yDlNaxuq_jVChZWBp-JaP9UK"],
+]
+
+near_miss = [
+  # Too short a body.
+  ["glsoat-", "ZDYC3Zo2vcp7"],
+  # Not at a word boundary.
+  ["x", "glsoat-", "CJ59AKv4MqlSnqla91BDH50h"],
+]

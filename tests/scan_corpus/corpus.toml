@@ -94,6 +94,18 @@ as = ".gitlab-ci.yml"
 expect = [{ line = 3, rule = "gitlab-pat" }]
 
 [[case]]
+id = "pos-vcs-gitlab-more-dotenv"
+family = "vcs"
+format = "dotenv"
+as = ".env"
+expect = [
+  { line = 2, rule = "gitlab-feed-token" },
+  { line = 3, rule = "gitlab-agent-token" },
+  { line = 4, rule = "gitlab-scim-token" },
+  { line = 5, rule = "gitlab-oauth-secret" },
+]
+
+[[case]]
 id = "pos-vcs-github-shell"
 family = "vcs"
 format = "shell"
@@ -463,6 +475,12 @@ id = "neg-jwt-docs"
 family = "jwt"
 format = "text"
 as = "auth.txt"
+
+[[case]]
+id = "neg-gitlab-near-misses"
+family = "vcs"
+format = "dotenv"
+as = ".env"
 
 [[case]]
 id = "neg-chat-near-misses"

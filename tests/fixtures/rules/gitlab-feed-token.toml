@@ -1,0 +1,16 @@
+# Fixtures for `gitlab-feed-token` (SCAN-GITLAB). Values are written as parts joined at test time, so this
+# file never holds a whole token. Format: to be verified against GitLab docs by the owner.
+
+expect_severity = "medium"
+
+positive = [
+  ["glft-", "XeeSaOcAa2qtQPoOAST0"],
+  ["glft-", "VqJ8vmTByO9mQB5JzmqoBddmot_SOyTXQay-FWfbhp"],
+]
+
+near_miss = [
+  # Too short a body.
+  ["glft-", "L8kSlCSF1yAh"],
+  # Not at a word boundary.
+  ["x", "glft-", "XPfJTTUddEKseu2Ac13fA61e"],
+]
