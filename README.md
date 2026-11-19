@@ -226,7 +226,17 @@ steps: [Installation](https://docs.evnx.dev/guides/getting-started/installation#
 Each release also carries a CycloneDX software bill of materials,
 `evnx-<version>.cdx.json` (every crate in `Cargo.lock`, all features on), with
 its own `.sha256` and the same kind of attestation:
-`gh attestation verify evnx-<version>.cdx.json -R urwithajit9/evnx`.
+
+```bash
+sha256sum -c evnx-<version>.cdx.json.sha256
+gh attestation verify evnx-<version>.cdx.json -R urwithajit9/evnx \
+  --signer-workflow urwithajit9/evnx/.github/workflows/release.yml
+# without a GitHub login: cosign verify-blob-attestation (see the post below)
+grype sbom:evnx-<version>.cdx.json      # or: trivy sbom …, osv-scanner scan source -L …
+```
+
+How it is built and every check, with the 0.15.0 results:
+[SBOM: what it is and how evnx ships one](https://www.evnx.dev/blog/sbom-what-it-is-and-how-evnx-ships-one).
 
 `--version` is the same whether or not a feature is compiled in; `evnx commands`
 says `built with: net, migrate, backup, cloud` for a full build.

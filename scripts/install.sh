@@ -13,8 +13,8 @@
 #
 # ⚠️ This file goes live on merge to `main`: https://evnx.dev/install.sh
 # redirects (308) to https://www.evnx.dev/install.sh, which serves it, up to an
-# hour after the merge. dotenv.space/install.sh redirects to evnx.dev (the owner
-# is setting that up). Review a change to it like a release.
+# hour after the merge. dotenv.space/install.sh serves the same file (200), so old
+# copies of the install command keep working. Review a change to it like a release.
 # Tests: tests/install/run.sh (stubbed curl, uname, ldd; no network).
 
 # ⚠️ `-o pipefail` is not free on this script and two pipelines had to be

@@ -146,8 +146,11 @@ is how unused imports under default features survived.
 The one address in every doc and in `evnx update` is `https://evnx.dev/install.sh`
 (`core::build::INSTALL_URL`). It lives outside this repository: `evnx.dev/install.sh`
 answers 308 with a redirect to `https://www.evnx.dev/install.sh`, which serves the script as
-`text/plain` from `main`, and `dotenv.space/install.sh` redirects to `evnx.dev/install.sh`
-(the owner is setting that up; until then it serves the script itself). The `install-url`
+`text/plain` from `main`, and `dotenv.space/install.sh` serves the same file itself (200).
+Both are kept answering 200 on purpose: install commands get copied without `curl -L`, and
+a redirect turns those into a silent no-op (evnx-web's `next.config.js` explains the same
+choice for its own rewrite). Making `evnx.dev` the primary domain, so it answers without the
+`www` hop, is a host setting, not a change here. The `install-url`
 workflow (`.github/workflows/install-url.yml`) checks both addresses against `main`'s
 `scripts/install.sh` every day and on demand. It does not run on pull requests or pushes,
 because the site updates up to an hour after a merge. Check by hand before tagging, from a
@@ -155,8 +158,8 @@ machine that can reach it:
 
 ```bash
 curl -fsSL https://evnx.dev/install.sh | diff - scripts/install.sh && echo same
-curl -fsSL https://dotenv.space/install.sh | diff - scripts/install.sh && echo same   # follows its redirect
-curl -sI https://dotenv.space/install.sh | head -3     # a redirect to evnx.dev once set up
+curl -fsSL https://dotenv.space/install.sh | diff - scripts/install.sh && echo same
+curl -sI https://evnx.dev/install.sh | head -1           # 200 once evnx.dev is the primary domain
 ```
 
 The install script ships on merge to `main`, not with the tag; the
@@ -233,7 +236,7 @@ It reads the compiled feature list from `evnx commands --json`, so it covers
 | PyPI | install the wheel and run the binary — **and run `scripts/check-build-features.sh` on it** | ⚠️ Built with `--features full` until 0.9.0, and `full` excludes `cloud`. Five releases of wheels had no `auth`, `vault`, `cloud` or `org`. Fixed to `--all-features`; **verify it on the first release after 0.9.0.** |
 | Homebrew / Scoop | formula and manifest bumped | |
 | ghcr.io | new digest, not the old one | |
-| **winget** | a PR against microsoft/winget-pkgs | Validation has blocked this package twice. See below. |
+| **winget** | a PR against microsoft/winget-pkgs | 8 of 34 versions held up, for three different reasons. See "Winget validation" below. |
 
 ⚠️ **Checking crates.io needs a `User-Agent`.** Their API refuses an anonymous
 request and answers with HTML, so a naive `curl | python3 -c 'json.load(...)'`
@@ -296,17 +299,61 @@ explained: a published archive does not match what the build signed.
 
 ### Winget validation
 
-⚠️ **It has blocked this package twice**, as `Trojan:Win32/Sprisky.U!cl` — a
-cloud-delivered ML verdict, not a signature match, so it is **not stable across
-releases in either direction**. A clean pass is not proof the problem is gone.
-
-The root cause is that the Windows binary is **unsigned**, which is what Defender's
-heuristics target. Clearance goes through
-`microsoft.com/en-us/wdsi/filesubmission` — upload the **.exe**, not the ZIP.
+Every tag opens a PR on `microsoft/winget-pkgs` for `urwithajit9.evnx` (the
+`publish-winget` job). Microsoft's bot installs the release on a test VM, scans it with
+Defender and runs it; a community moderator then approves. Most releases merge the same day.
+When one does not, the bot's message is generic, so read the moderator's "Validation ended
+with" comment to see which of the causes below it is.
 
 ⚠️ Do not read a merged PR's final labels as its history: `Validation-Defender-Error`
-is *removed* once cleared, so a blocked-then-cleared PR looks identical to one that
-sailed through. Read `/issues/{n}/events` instead.
+is *removed* once cleared, so a blocked-then-cleared PR looks identical to one that sailed
+through. `scripts/trace-winget-history.sh` reads the label *events* and comments of every
+evnx PR and prints the table below (needs `gh` logged in and `jq`).
+
+#### The record (traced 2026-11-19)
+
+35 PRs since the first submission (34 versions and one metadata change). 27 merged with no
+hold-up, all on the day or within two days. Six were held up and then merged, one was closed
+and one is still open:
+
+| Version | PR | Opened → merged | What blocked it | How it cleared |
+|---|---|---|---|---|
+| 0.3.7 | [#350273](https://github.com/microsoft/winget-pkgs/pull/350273) | 03-20 → 03-23 (3 d) | Defender flagged the unsigned `evnx.exe` ("Installer failed security check … 0x80004005"; ML verdict `Trojan:Win32/Sprisky.U!cl`). A re-run then hit an installation error. | Moderator re-ran (`@wingetbot run`); a later run passed |
+| 0.3.8 | [#353869](https://github.com/microsoft/winget-pkgs/pull/353869) | 03-30 → 04-01 (2 d) | The same Defender security-check failure (0x80004005) | A re-run passed |
+| 0.10.9 | [#456321](https://github.com/microsoft/winget-pkgs/pull/456321) | 10-19 → **still open** | `Validation-Executable-Error`: `evnx.exe` returned `-1073741515` (`0xC0000135`, STATUS_DLL_NOT_FOUND). The test VM had no Visual C++ runtime (`VCRUNTIME140.dll`). | Never cleared; later versions superseded it. The cause was fixed on 2026-11-12 (`+crt-static`, "build evnx.exe with the C runtime linked in"). **Close it.** |
+| 0.10.12 | [#457033](https://github.com/microsoft/winget-pkgs/pull/457033) | 10-20 → 11-10 (21 d) | `Validation-Defender-Error`, four runs in a row. A WDSI submission (`c08dbec2…`) came back "No malware detected", but re-runs still failed. | A moderator read the log: "Another scan already in progress … Defender race condition". Cleared and approved 11-10. |
+| 0.12.0 | [#467535](https://github.com/microsoft/winget-pkgs/pull/467535) | 11-01 → 11-10 (9 d) | `Validation-Defender-Error`, twice | Same Defender race; moderator cleared 11-10 |
+| 0.13.0 | [#474876](https://github.com/microsoft/winget-pkgs/pull/474876) | 11-08 → **closed** | `Validation-Installation-Error` ("issue with installing the application"). Built before the 11-12 C-runtime fix, so most likely the same missing DLL. The `.exe` itself scanned clean on WDSI. | Closed as superseded by 0.14.0, which passed |
+| 0.14.1 | [#479702](https://github.com/microsoft/winget-pkgs/pull/479702) | 11-13 → 11-19 (6 d) | `Validation-Defender-Error` | Defender race; moderator cleared 11-16, approved 11-19 |
+| 0.15.0 | [#483997](https://github.com/microsoft/winget-pkgs/pull/483997) | 11-19 → 11-19 | `Validation-Defender-Error` | Defender race; moderator cleared and approved within the hour |
+
+#### Three different causes behind the same message
+
+1. **A real Defender verdict on the unsigned binary** (0.3.7, 0.3.8; March 2026). A
+   cloud-delivered ML verdict, `Trojan:Win32/Sprisky.U!cl`, not a signature match, so it is
+   **not stable across releases in either direction**. Clearance: submit the **.exe** (not
+   the ZIP) at `microsoft.com/en-us/wdsi/filesubmission` as an incorrect detection, then ask
+   for a re-run. The lasting fix is code-signing the Windows binary.
+2. **The validator's own Defender race** (0.10.12, 0.12.0, 0.14.1, 0.15.0; since October
+   2026). The log says `MpScan … ERROR: Another scan already in progress, cannot start scan`.
+   Nothing is wrong with evnx; re-runs often hit the same race, and a moderator clears it by
+   hand. A WDSI submission does not help here.
+3. **A missing Visual C++ runtime** (0.10.9, most likely 0.13.0). `0xC0000135` /
+   `-1073741515` when the bot runs `evnx.exe`. Fixed for good on 2026-11-12 by linking the C
+   runtime statically (`+crt-static` in `release.yml`); 0.14.0 and later passed this step.
+
+#### When the bot blocks a release
+
+1. Wait for the moderator's "Automatic Validation ended with" comment, or open the linked
+   Azure pipeline run, and match it to a cause above.
+2. **Defender race:** comment once, quoting the `MpScan … Another scan already in progress`
+   line, and ask for a re-run or a manual clear. Do not change the URL or hash.
+3. **Real Defender verdict:** submit the `.exe` to WDSI, post the submission ID and the
+   result on the PR, then `@wingetbot run`.
+4. **Executable or installation error:** reproduce on a clean Windows VM without the Visual
+   C++ Redistributable before anything else.
+5. A PR that is superseded by a later version: close it with a one-line note, so it does not
+   sit open (0.10.9 still does).
 
 ---
 
