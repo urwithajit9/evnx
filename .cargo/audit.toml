@@ -20,4 +20,40 @@ ignore = [
     #
     # Remove this the moment http3 is enabled for any reason.
     "RUSTSEC-2026-0185",
+
+    # ── Accepted "unmaintained" notices (checked 2026-11-19, offline) ─────────
+    #
+    # ⚠️ TODO(owner): the IDs below were written without access to the advisory
+    # database. Run `cargo audit` once and make each ID match its crate; an ID
+    # that matches nothing is harmless, a missing one fails the audit job.
+
+    # serde_yaml 0.9.34+deprecated (and its unsafe-libyaml port).
+    #
+    # Accepted, not replaced. evnx only reads YAML (the scan engine's structured
+    # leaves and `init` detection; every YAML writer is hand-written), so there
+    # is no untrusted-input write path and the notice is about maintenance, not
+    # a vulnerability. A pure-Rust reader (yaml-rust2, saphyr, serde_norway)
+    # was not available when this was decided, so the swap waits for one.
+    # `cargo tree -e normal --all-features -i unsafe-libyaml` prints
+    # unsafe-libyaml -> serde_yaml -> evnx. Its own advisory ID is not recorded
+    # here yet (see the TODO above).
+    "RUSTSEC-2024-0320",
+
+    # number_prefix 0.4.0, through indicatif 0.17.11. Used only to format byte
+    # sizes in progress bars. indicatif 0.17.11 is the newest release available
+    # to this build; move to the release that drops it when one is.
+    # `cargo tree -e normal --all-features -i number_prefix` prints
+    # number_prefix -> indicatif -> evnx.
+    "RUSTSEC-2025-0119",
+
+    # chrono 0.4: kept on purpose (25 call sites; replacing it with jiff or time
+    # is a separate change). Read the advisory before each release: if evnx
+    # reaches the affected code, patch instead of ignoring.
+    "RUSTSEC-2026-0543",
+
+    # pin-utils 0.1.0 (unmaintained), reached through hyper 1.x (reqwest, the
+    # cloud feature) and through nix. No replacement is available without a
+    # change in those crates. `cargo tree -e normal --all-features -i pin-utils`
+    # prints pin-utils -> hyper -> hyper-rustls / hyper-util -> reqwest -> evnx.
+    # Its advisory ID is not recorded here yet (see the TODO above).
 ]
