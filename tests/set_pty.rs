@@ -48,3 +48,29 @@ fn answering_no_changes_nothing_and_exits_4() {
     assert_eq!(code, 4, "{rest}");
     assert_eq!(p.read(".env"), "PORT=3000\n");
 }
+
+#[test]
+fn a_value_from_a_file_is_confirmed_and_never_shown() {
+    const CANARY: &str = "file-canary-7c41e0";
+    let p = Project::new()
+        .env("PORT=3000\n")
+        .file("v.txt", &format!("{CANARY}\nsecond line\n"));
+    let mut s = Pty::spawn(p.path(), &["set", "PORT", "--from-file", "v.txt"]);
+    s.wait_for("Replace PORT in ./.env?");
+    s.type_line("y");
+    let (rest, code) = s.finish();
+    assert_eq!(code, 0, "{rest}");
+    assert!(!rest.contains(CANARY), "the value was shown:\n{rest}");
+    assert!(rest.contains("value hidden; "), "{rest}");
+    assert_eq!(p.read(".env"), format!("PORT=\"{CANARY}\\nsecond line\"\n"));
+}
+
+#[test]
+fn from_file_dash_on_a_terminal_is_refused() {
+    let p = Project::new().env("PORT=3000\n");
+    let mut s = Pty::spawn(p.path(), &["set", "PORT", "--from-file", "-", "--yes"]);
+    s.wait_for("standard input is a terminal");
+    let (rest, code) = s.finish();
+    assert_eq!(code, 2, "{rest}");
+    assert_eq!(p.read(".env"), "PORT=3000\n");
+}

@@ -64,7 +64,13 @@ pub enum AddTarget {
     /// Examples:
     ///   evnx add custom API_URL=https://api.example.com DEBUG=false --yes
     ///   evnx add custom STRIPE_WEBHOOK_SECRET --desc "Stripe webhook signing secret" --required
+    ///   evnx add custom GOOGLE_CREDENTIALS --from-file service-account.json --yes
     ///   evnx add custom            (asks for each variable)
+    ///
+    /// `--from-file PATH` (or `-` for standard input) reads one value from a
+    /// file: a certificate, a key, a service-account JSON. It takes exactly one
+    /// NAME and no `=value`. At most 64 KiB of text; a binary file needs
+    /// `--base64`. The value is never printed: a dry run says its size.
     ///
     /// A name without `=value` gets a placeholder. When it looks like a secret
     /// (`*_SECRET`, `*_TOKEN`, `*_KEY`, `*_PASSWORD`, `*_PWD`, …) and there is a
@@ -97,6 +103,9 @@ pub enum AddTarget {
         /// the run says how to make them optional (`evnx spec init`).
         #[arg(long, conflicts_with = "required")]
         optional: bool,
+
+        #[command(flatten)]
+        file: args::FromFileArgs,
     },
 }
 
@@ -2432,6 +2441,10 @@ pub enum Commands {
     /// (`API_TOKEN`, `DB_PASSWORD`) is asked for with no echo, and a value
     /// typed on the command line works but warns: your shell keeps it.
     ///
+    /// `--from-file PATH` (or `-` for standard input) reads the value from a
+    /// file: a certificate, a key, a service-account JSON. Several lines are
+    /// fine; the value is never printed.
+    ///
     /// A value that is replaced is confirmed first, unless --yes. With no
     /// terminal and no value on stdin, the exit code is 4.
     #[command(after_help = docs::SET.after_help, arg_required_else_help = true)]
@@ -2451,6 +2464,9 @@ pub enum Commands {
         /// Do nothing when the name is already in the file.
         #[arg(long)]
         if_missing: bool,
+
+        #[command(flatten)]
+        file: args::FromFileArgs,
 
         #[command(flatten)]
         dry: args::DryRunArgs,

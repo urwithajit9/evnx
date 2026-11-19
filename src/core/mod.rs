@@ -40,6 +40,7 @@ pub mod shell;
 pub mod signals;
 pub mod spec;
 pub mod value;
+pub mod value_file;
 pub mod verdict;
 
 // Re-export commonly used types

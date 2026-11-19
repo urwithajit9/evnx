@@ -26,6 +26,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   attestation: `gh attestation verify <archive> -R urwithajit9/evnx
   --predicate-type https://cyclonedx.org/bom`.
 
+- **`evnx add custom NAME --from-file <path|->` and `evnx set NAME --from-file
+  <path|->`** read one value from a file or from standard input: a certificate,
+  a private key, a service-account JSON. Several lines are fine; the value is
+  written double-quoted with `\n` escapes, so `evnx get` and every dotenv
+  reader get it back exactly. At most 64 KiB; one final line break is dropped
+  (`--keep-trailing-newline` keeps it); a binary file needs `--base64`; the
+  command takes exactly one NAME and no `NAME=value`. The value is never
+  printed: a dry run says `118 bytes, 4 lines`. A source file inside a git
+  repository that is tracked or not ignored gets a warning.
+
 ### Changed
 
 - `evnx run --help` and `evnx cloud run --help` show `-- <COMMAND>...` in the
@@ -41,6 +51,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own
   environment while it is read (that needed `unsafe`); `run` still keeps every
   `EVNX_*` variable out of the command it starts.
+
 
 ---
 

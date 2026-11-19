@@ -4,6 +4,8 @@ Only that line changes: its position, comments, `export` prefix and quoting stay
 
 Without a value, it is read from standard input when that is piped, and asked for when there is a terminal. A name that looks secret (`API_TOKEN`, `DB_PASSWORD`) is asked for with no echo, and a value typed on the command line works but warns: your shell keeps it.
 
+`--from-file PATH` (or `-` for standard input) reads the value from a file: a certificate, a key, a service-account JSON. Several lines are fine; the value is never printed.
+
 A value that is replaced is confirmed first, unless --yes. With no terminal and no value on stdin, the exit code is 4.
 
 Usage: evnx set [OPTIONS] <NAME[=VALUE]>
@@ -44,6 +46,18 @@ Files:
   -C, --dir <DIR>
           Project folder to work in. Defaults to the current folder
 
+Value:
+      --from-file <PATH|->
+          Read the one value from a file, or from standard input with `-`.
+          
+          For a certificate, a key or a service-account JSON. At most 64 KiB of text; one final line break is dropped. The value is written on one line, in double quotes, and never printed.
+
+      --base64
+          With --from-file: store the file's bytes as base64 text (binary files)
+
+      --keep-trailing-newline
+          With --from-file: keep the file's final line break
+
 Confirmation:
   -y, --yes
           Do not ask for confirmation
@@ -64,6 +78,7 @@ Examples:
   printf %s "$TOKEN" | evnx set API_TOKEN   from a pipe, nothing in shell history
   evnx set LOG_LEVEL=info --if-missing      only when the name is not there yet
   evnx set PORT=8080 --dry-run              show the change, write nothing
+  evnx set TLS_KEY --from-file key.pem      a certificate or key from a file; never printed
 
 Exit codes:
     0  Ran, nothing to report

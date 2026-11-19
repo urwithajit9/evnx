@@ -112,6 +112,7 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
             category,
             required,
             optional,
+            file,
         } => custom::handle(
             output_path,
             custom::Args {
@@ -120,6 +121,7 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
                 category,
                 required,
                 optional,
+                from_file: file.request(),
             },
             &mode,
         )?,

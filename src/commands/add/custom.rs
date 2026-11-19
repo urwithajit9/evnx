@@ -45,6 +45,8 @@ pub struct Args {
     pub required: bool,
     /// `--optional` (I-036, DEC-VA2). Conflicts with `required` in clap.
     pub optional: bool,
+    /// `--from-file` (N14-4): the one value comes from a file or stdin.
+    pub from_file: Option<crate::core::value_file::FromFile>,
 }
 
 /// One custom variable, before it is written.
@@ -72,7 +74,17 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
         .as_deref()
         .map(canonical_category)
         .transpose()?;
-    let customs = if args.vars.is_empty() {
+    let customs = if let Some(file) = &args.from_file {
+        vec![from_file(
+            &args.vars,
+            file,
+            args.desc,
+            category,
+            args.required,
+            args.optional,
+            mode,
+        )?]
+    } else if args.vars.is_empty() {
         // With no arguments every variable is typed at a prompt: `--yes`
         // cannot stand in for a terminal here (I-020).
         crate::utils::prompt::require_terminal_for_input(
@@ -117,6 +129,67 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
         say_how_to_make_optional(output_path, &customs, mode);
     }
     Ok(outcome)
+}
+
+/// `NAME --from-file PATH`: one variable whose value is a file's text.
+///
+/// Exactly one name, with no `=value`: two sources for one value is a usage
+/// error. The value is checked and read before anything is asked or written,
+/// and is never printed: the run says its size.
+fn from_file(
+    vars: &[String],
+    file: &crate::core::value_file::FromFile,
+    desc: Option<String>,
+    category: Option<String>,
+    required: bool,
+    optional: bool,
+    mode: &Mode,
+) -> Result<Custom> {
+    let [raw] = vars else {
+        return Err(crate::core::verdict::usage(
+            "--from-file takes exactly one NAME: evnx add custom NAME --from-file PATH \
+             (one value per file; run it again for the next name).",
+        ));
+    };
+    if raw.contains('=') {
+        return Err(crate::core::verdict::usage(
+            "--from-file and NAME=value both give the value. Use one: \
+             evnx add custom NAME --from-file PATH",
+        ));
+    }
+    let name = raw.trim().to_string();
+    if !crate::core::parser::is_valid_key(&name) {
+        bail!(
+            "`{name}` is not a valid variable name.\n\n\
+             Names start with a letter or underscore and contain only letters, \
+             digits and underscores. Nothing was written."
+        );
+    }
+    if mode.interactive() {
+        require_terminal(&format!(
+            "evnx add custom {name} --from-file {} --yes",
+            file.source
+        ))?;
+    }
+    let value = file.read()?;
+    if let Some(warning) = crate::core::value_file::exposure_warning(&file.source) {
+        crate::utils::ui::warning(warning);
+    }
+    if !mode.json {
+        crate::utils::ui::say(format!(
+            "  {name}: {}",
+            crate::core::value_file::describe(&value)
+        ));
+    }
+    Ok(Custom {
+        name,
+        value: value.expose().to_string(),
+        given: true,
+        description: desc,
+        category,
+        required,
+        optional,
+    })
 }
 
 /// `--optional` with no `[vars]` contract to write it into (I-036, DEC-VA2).

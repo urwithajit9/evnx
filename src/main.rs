@@ -412,10 +412,12 @@ fn run() -> Result<Verdict, EvnxError> {
             env,
             dir,
             if_missing,
+            file,
             dry,
             confirm,
             output,
         } => commands::set::run(commands::set::Options {
+            from_file: file.request(),
             assignment,
             dir: project_dir(dir),
             env: env.env,

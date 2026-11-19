@@ -465,6 +465,7 @@ pub const SET: CommandDoc = CommandDoc {
   printf %s \"$TOKEN\" | evnx set API_TOKEN   from a pipe, nothing in shell history
   evnx set LOG_LEVEL=info --if-missing      only when the name is not there yet
   evnx set PORT=8080 --dry-run              show the change, write nothing
+  evnx set TLS_KEY --from-file key.pem      a certificate or key from a file; never printed
 
 Full guide: https://docs.evnx.dev/cli/commands/set",
 };

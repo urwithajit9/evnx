@@ -316,9 +316,18 @@ evnx add framework nextjs         # --language is optional
 evnx add blueprint t3_modern      # a whole stack
 evnx add custom API_URL=https://api.example.com DEBUG=false --yes   # your own: values go to .env only, .env.example gets placeholders
 evnx add custom                   # ... or one prompt at a time
+evnx add custom GOOGLE_CREDENTIALS --from-file service-account.json --yes   # one value from a file (or `-` for stdin)
 evnx add --list                   # every id
 evnx add service redis --dry-run  # what would be written; --json for scripts
 ```
+
+`--from-file` is for values that are several lines long: a certificate, a private
+key, a service-account JSON. It takes exactly one `NAME` and no `=value`; the file
+may be up to 64 KiB of text (a binary file needs `--base64`), and one final line
+break is dropped (`--keep-trailing-newline` keeps it). The value is written in
+double quotes with `\n` escapes, so it reads back exactly, and it is never printed:
+a dry run says `NAME: 1,842 bytes, 31 lines`. A name `.env` already has is kept.
+The same flag works on `evnx set`.
 
 `--dir` names the folder that holds `.env.example` and `.env`. When the project keeps a
 contract, the new names are recorded in the nearest `.evnx.toml` at or above that folder,
@@ -336,6 +345,7 @@ evnx set API_TOKEN                         # a secret-looking name is typed with
 printf %s "$TOKEN" | evnx set API_TOKEN    # nothing in your shell history
 evnx set LOG_LEVEL=info --if-missing       # only when the name is not there yet
 evnx set PORT=8080 --dry-run               # the change, nothing written
+evnx set TLS_KEY --from-file key.pem       # a value from a file (several lines are fine); never printed
 
 PORT=$(evnx get PORT)                      # the value alone, no sourcing
 evnx get --exists DATABASE_URL             # prints nothing; exit 0 when set, 1 when not

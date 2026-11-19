@@ -9,7 +9,10 @@
 //!
 //! 1. `NAME=VALUE` on the command line. For a secret-looking name this works
 //!    and prints a warning (the shell keeps its history).
-//! 2. Standard input, when it is piped.
+//! 2. `--from-file PATH` (or `-`): a file's text, several lines allowed
+//!    (a certificate, a key); see [`crate::core::value_file`]. Its value is
+//!    never printed, whatever the name: the run says its size.
+//!    Standard input, when it is piped.
 //! 3. A prompt, when there is a terminal; a secret-looking name is typed with
 //!    no echo.
 //! 4. Otherwise nothing: exit 4, naming stdin.
@@ -42,6 +45,8 @@ pub struct Options {
     pub dry_run: bool,
     pub yes: bool,
     pub json: bool,
+    /// `--from-file`: the value is a file's text (or stdin's).
+    pub from_file: Option<crate::core::value_file::FromFile>,
 }
 
 /// What the run did to the name.
@@ -197,6 +202,12 @@ fn shown(value: &str) -> String {
 /// Run `evnx set`.
 pub fn run(opts: Options) -> Result<()> {
     let (name, given) = split(&opts.assignment)?;
+    if opts.from_file.is_some() && given.is_some() {
+        return Err(crate::core::verdict::usage(
+            "--from-file and NAME=value both give the value. Use one: \
+             evnx set NAME --from-file PATH",
+        ));
+    }
     if opts.json {
         ui::set_quiet(true);
     }
@@ -236,7 +247,17 @@ pub fn run(opts: Options) -> Result<()> {
     }
 
     // ── The value.
+    let mut size = None;
     let value = match given {
+        None if opts.from_file.is_some() => {
+            let file = opts.from_file.as_ref().expect("checked");
+            let v = file.read()?;
+            if let Some(warning) = crate::core::value_file::exposure_warning(&file.source) {
+                ui::warning(warning);
+            }
+            size = Some(crate::core::value_file::describe(&v));
+            v.expose().to_string()
+        }
         Some(v) => {
             if secret_name {
                 ui::warning(
@@ -249,7 +270,9 @@ pub fn run(opts: Options) -> Result<()> {
         }
         None => ask_for_value(name, secret_name)?,
     };
+    // A value from a file is never shown, whatever it looks like.
     let secret = secret_name
+        || size.is_some()
         || classify::holds_secret(name, &value)
         || now
             .as_ref()
@@ -274,10 +297,14 @@ pub fn run(opts: Options) -> Result<()> {
             edit.assignments, edit.line
         ));
     }
+    let hidden = match &size {
+        Some(s) => format!("value hidden; {s}"),
+        None => "value hidden".to_string(),
+    };
     let line = match (&edit.old, secret) {
-        (Some(_), true) => format!("{name}  changed (value hidden)"),
+        (Some(_), true) => format!("{name}  changed ({hidden})"),
         (Some(old), false) => format!("{name}  {} → {}", shown(old), shown(&value)),
-        (None, true) => format!("{name}  added (value hidden)"),
+        (None, true) => format!("{name}  added ({hidden})"),
         (None, false) => format!("{name}  added: {}", shown(&value)),
     };
     let status = if edit.added {

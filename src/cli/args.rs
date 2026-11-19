@@ -121,6 +121,41 @@ pub struct DryRunArgs {
     pub dry_run: bool,
 }
 
+/// `--from-file`, and the two flags that change how the file is read.
+#[derive(Args, Debug, Clone, Default)]
+pub struct FromFileArgs {
+    /// Read the one value from a file, or from standard input with `-`.
+    ///
+    /// For a certificate, a key or a service-account JSON. At most 64 KiB of
+    /// text; one final line break is dropped. The value is written on one
+    /// line, in double quotes, and never printed.
+    #[arg(long, value_name = "PATH|-", help_heading = "Value")]
+    pub from_file: Option<String>,
+
+    /// With --from-file: store the file's bytes as base64 text (binary files).
+    #[arg(long, requires = "from_file", help_heading = "Value")]
+    pub base64: bool,
+
+    /// With --from-file: keep the file's final line break.
+    #[arg(long, requires = "from_file", help_heading = "Value")]
+    pub keep_trailing_newline: bool,
+}
+
+impl FromFileArgs {
+    /// The request, when `--from-file` was given.
+    pub fn request(&self) -> Option<crate::core::value_file::FromFile> {
+        self.from_file
+            .as_ref()
+            .map(|source| crate::core::value_file::FromFile {
+                source: source.clone(),
+                options: crate::core::value_file::Options {
+                    base64: self.base64,
+                    keep_trailing_newline: self.keep_trailing_newline,
+                },
+            })
+    }
+}
+
 /// The env file, chosen by path or by name, and the template to compare it with.
 #[derive(Args, Debug, Clone, Default)]
 pub struct FileArgs {
