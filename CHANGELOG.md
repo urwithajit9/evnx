@@ -10,16 +10,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
-- **A "no" at a confirmation prompt now exits 4.** These commands printed
-  "Cancelled" and exited 0 when you answered no: `vault delete`, `vault leave`,
-  `vault revoke`, `vault rekey`, `org seats`, `org remove`, `org delete`,
-  `org leave`, `cloud push` (the shrink question and the production-file
-  question), `cloud delete-version`, `auth rotate-master-password`,
-  `auth token revoke`, `auth sessions revoke`, `auth sessions revoke-others`
-  and `auth devices disavow`. They now exit 4 after the same message, like
-  `set`, `remove` and `platform`. A script that treated a "no" as success
-  should accept 4 or pass `--yes`.
-
 ### Added
 
 - **The SBOM is attached to each release archive** as a signed CycloneDX
@@ -46,6 +36,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `doctor --help` says that `--all` validates a project that has only a
   `[vars]` contract in `.evnx.toml` and no template.
 
+- **Every built-in scan rule declares keywords.** The scan tries a rule only on
+  text that contains one of its literal prefixes (one pass for all rules),
+  instead of running every expression everywhere. Findings do not change. A
+  test fails for a rule with no keywords unless it is listed with a reason.
+
 ### Fixed
 
 - A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own
@@ -64,7 +59,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A tracked source file with secrets gets a warning to untrack it and rotate
   them. `web.config` is not supported yet.
 
-### Fixed
 
 - **`add custom NAME=value` now writes the value to `.env` when the template
   lists NAME with another value** (such as an empty `NAME=`). It used to report

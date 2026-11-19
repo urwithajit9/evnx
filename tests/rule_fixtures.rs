@@ -52,6 +52,29 @@ fn every_rule_has_a_fixture_file_and_every_file_a_rule() {
     assert!(orphans.is_empty(), "fixture files for no rule: {orphans:?}");
 }
 
+/// SCAN-KEYWORDS: a keyword gates its rule, so every positive must contain at
+/// least one of the rule's keywords (lowercased), or the rule would never run
+/// on it. Rules with no keywords are exempt by name in `KEYWORD_EXEMPT`.
+#[test]
+fn every_positive_contains_one_of_its_rules_keywords() {
+    let rules = builtin_rules();
+    let mut failures = Vec::new();
+    for (id, f) in fixtures() {
+        let rule = rules.iter().find(|r| r.id.as_deref() == Some(&id)).unwrap();
+        let kws = rule.keywords.clone().unwrap_or_default();
+        if kws.is_empty() {
+            continue;
+        }
+        for parts in &f.positive {
+            let value = parts.concat().to_ascii_lowercase();
+            if !kws.iter().any(|k| value.contains(&k.to_ascii_lowercase())) {
+                failures.push(format!("{id}: a positive contains none of {kws:?}"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// Each positive is reported by its own rule, and that rule wins: no other
 /// rule claims the value. Each near miss is not reported by the rule. The
 /// severity is the one the fixture expects.
