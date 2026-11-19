@@ -325,7 +325,7 @@ pub fn rotate(
         )?
     {
         println!("  Nothing was changed.");
-        return Ok(());
+        return Err(crate::utils::prompt::Declined.into());
     }
 
     // ── The new password ────────────────────────────────────────────────────

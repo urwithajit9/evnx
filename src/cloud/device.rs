@@ -178,7 +178,7 @@ pub fn disavow(
             "evnx auth devices disavow <device> --yes",
         )? {
             println!("  Nothing changed.");
-            return Ok(());
+            return Err(crate::utils::prompt::Declined.into());
         }
     }
 

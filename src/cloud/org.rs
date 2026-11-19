@@ -735,7 +735,7 @@ pub fn seats(
     )?;
     if !ok {
         println!("  Cancelled; the seat count was not changed.");
-        return Ok(());
+        return Err(crate::utils::prompt::Declined.into());
     }
 
     let body = serde_json::json!({ "seats": if unlimited { serde_json::Value::Null } else { serde_json::json!(set) } });
@@ -1075,7 +1075,7 @@ pub fn remove(
         );
         if !crate::utils::prompt::confirm("Remove them?", false, &example)? {
             println!("  Cancelled.");
-            return Ok(());
+            return Err(crate::utils::prompt::Declined.into());
         }
     }
 
@@ -1162,7 +1162,7 @@ pub fn delete(
             &format!("evnx org delete --org {} --yes", word(&target.slug)),
         )? {
             println!("  Cancelled.");
-            return Ok(());
+            return Err(crate::utils::prompt::Declined.into());
         }
     }
 
@@ -1222,7 +1222,7 @@ pub fn leave(
             &format!("evnx org leave --org {} --yes", word(&target.slug)),
         )? {
             println!("  Cancelled.");
-            return Ok(());
+            return Err(crate::utils::prompt::Declined.into());
         }
     }
 

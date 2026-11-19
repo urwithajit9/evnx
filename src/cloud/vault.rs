@@ -373,7 +373,7 @@ pub fn delete(
             crate::utils::prompt::confirm_typed(&full, &format!("evnx vault delete {full} --yes"))?;
         if !ok {
             println!("  Cancelled; nothing was deleted.");
-            return Ok(());
+            return Err(crate::utils::prompt::Declined.into());
         }
     }
 
@@ -691,7 +691,7 @@ pub fn leave(
         &format!("evnx vault leave {target} --yes"),
     )? {
         println!("  Cancelled; nothing was changed.");
-        return Ok(());
+        return Err(crate::utils::prompt::Declined.into());
     }
 
     client.delete(&api_path(&["vaults", &vault.id, "members", &me.user_id])?)?;
@@ -1393,7 +1393,7 @@ pub fn revoke(
         )?;
         if !ok {
             println!("  Cancelled; nothing was changed.");
-            return Ok(());
+            return Err(crate::utils::prompt::Declined.into());
         }
     }
 
@@ -1583,7 +1583,7 @@ pub fn rekey(
         )?;
         if !ok {
             println!("  Cancelled; nothing was changed.");
-            return Ok(());
+            return Err(crate::utils::prompt::Declined.into());
         }
     }
 

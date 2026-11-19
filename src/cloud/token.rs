@@ -498,7 +498,7 @@ pub fn revoke(
         )?;
         if !ok {
             println!("  Cancelled; nothing was revoked.");
-            return Ok(());
+            return Err(crate::utils::prompt::Declined.into());
         }
     }
 
