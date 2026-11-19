@@ -1029,7 +1029,6 @@ const OVERLAPPING: &str = r#"{
 /// invocations, which is also how a user meets it: `evnx sync` today and again
 /// tomorrow, writing a different `.env.example` each time into a committed file.
 #[test]
-#[serial]
 fn d1_repeated_syncs_of_one_env_produce_one_answer() -> Result<()> {
     let f = SyncTestFixture::new()?;
     f.write_config(OVERLAPPING)?;
@@ -1065,7 +1064,6 @@ fn d1_repeated_syncs_of_one_env_produce_one_answer() -> Result<()> {
 }
 
 #[test]
-#[serial]
 fn d2_allow_actual_writes_configuration_values_through() -> Result<()> {
     let f = SyncTestFixture::new()?;
     f.write_config(
@@ -1097,7 +1095,6 @@ fn d2_allow_actual_writes_configuration_values_through() -> Result<()> {
 /// RM-05 (I-284): a real value written through `allow_actual` gets the
 /// `[AUDIT]` line, the run says so, and the preview marks it as real.
 #[test]
-#[serial]
 fn rm05_allow_actual_writes_are_audited_and_said() -> Result<()> {
     let f = SyncTestFixture::new()?;
     f.write_config(r#"{ "default": "REPLACE_ME", "allow_actual": ["LOG_LEVEL"] }"#)?;
@@ -1143,7 +1140,6 @@ fn rm05_allow_actual_writes_are_audited_and_said() -> Result<()> {
 
 /// The guard that makes `allow_actual` safe to have at all.
 #[test]
-#[serial]
 fn d2_a_credential_in_allow_actual_fails_the_sync_and_writes_nothing() -> Result<()> {
     let f = SyncTestFixture::new()?;
     f.write_config(
@@ -1199,7 +1195,6 @@ fn d2_a_credential_in_allow_actual_fails_the_sync_and_writes_nothing() -> Result
 /// coverage of the case it most needs is pinned to the rule rather than to a second
 /// implementation that could drift from it.
 #[test]
-#[serial]
 fn d15_the_scan_detectors_catch_a_connection_string_password() -> Result<()> {
     let f = SyncTestFixture::new()?;
     f.write_env("DATABASE_URL=postgresql://admin:s3cr3tp4ss@db.prod.example.com:5432/main\n")?;
@@ -1222,7 +1217,6 @@ fn d15_the_scan_detectors_catch_a_connection_string_password() -> Result<()> {
 }
 
 #[test]
-#[serial]
 fn a_template_pattern_that_does_not_compile_is_refused_at_load() -> Result<()> {
     let f = SyncTestFixture::new()?;
     f.write_config(r#"{ "patterns": { "API_(": "x" } }"#)?;
@@ -1254,7 +1248,6 @@ fn a_template_pattern_that_does_not_compile_is_refused_at_load() -> Result<()> {
 /// from the docs — but silence would let an operator believe a policy is in force
 /// that is not.
 #[test]
-#[serial]
 fn naming_convention_in_the_template_config_says_it_is_not_read() -> Result<()> {
     let f = SyncTestFixture::new()?;
     f.write_config(

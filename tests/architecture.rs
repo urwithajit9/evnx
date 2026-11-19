@@ -527,7 +527,7 @@ fn t_wp9b_json_on_stdout_goes_through_core_json() {
     );
 }
 
-/// Files (relative to `src/`, a trailing `/` means a directory) that may call
+/// Files (relative to `src/`, one entry per file) that may call
 /// `expose()`, `serialize_exposed` or `exposed_map`, each with the reason.
 ///
 /// WP-17: a value is a `core::secret::Secret`; reading its text is a deliberate
@@ -536,20 +536,64 @@ fn t_wp9b_json_on_stdout_goes_through_core_json() {
 const EXPOSE_ALLOW: &[(&str, &str)] = &[
     ("core/secret.rs", "the type and its serde bridges"),
     (
-        "core/",
-        "parsing, classification, masking, converting, injecting and the one safe writer work on the text",
+        "core/converter.rs",
+        "writes values in another syntax (shell, JSON, YAML quoting)",
     ),
     (
-        "formats/",
-        "a converter's job is to write values in another syntax",
+        "core/dialect.rs",
+        "re-reads a raw line under another dialect's rules to tell where they differ",
     ),
     (
-        "platform/",
-        "reads and pushes values to a hosting platform; tokens go in headers",
+        "core/env_set.rs",
+        "turns parsed entries into plain values for the set and unset operations",
     ),
     (
-        "cloud/",
-        "encryption, upload, credentials file and request bodies",
+        "core/inject.rs",
+        "hands values to the child process in its environment block",
+    ),
+    (
+        "core/layout.rs",
+        "compares raw line text to keep a file's layout when it writes back",
+    ),
+    (
+        "core/parser/document.rs",
+        "the parsed document stores and re-emits the value text",
+    ),
+    (
+        "core/parser/expand.rs",
+        "`${VAR}` expansion substitutes one value into another",
+    ),
+    (
+        "core/secretscan/engine.rs",
+        "the scanner reads values to match rules and to compare shadowed duplicates; findings carry fingerprints, not text",
+    ),
+    (
+        "platform/vercel/api.rs",
+        "the bearer token goes in a header and request bodies carry the values pushed",
+    ),
+    (
+        "platform/vercel/plan.rs",
+        "classifies a value (secret or config) to plan a push",
+    ),
+    (
+        "platform/vercel/pull.rs",
+        "writes the values Vercel can return into the local file",
+    ),
+    (
+        "platform/vercel/push.rs",
+        "sends the changed values to Vercel",
+    ),
+    (
+        "cloud/creds.rs",
+        "the credentials file stores the session tokens (serde bridge)",
+    ),
+    (
+        "cloud/merge.rs",
+        "writes the merged vault values out as .env text",
+    ),
+    (
+        "cloud/rotate.rs",
+        "checks that re-wrapped key material unwraps to the same key",
     ),
     (
         "commands/get.rs",
@@ -560,15 +604,11 @@ const EXPOSE_ALLOW: &[(&str, &str)] = &[
         "parse reports a value's length, class and, with --values, the value",
     ),
     (
-        "commands/convert.rs",
-        "convert reads the values it rewrites",
-    ),
-    (
         "commands/remove/edit.rs",
         "remove reads values to find references to a removed key",
     ),
     (
-        "commands/restore/",
+        "commands/restore/core.rs",
         "restore reads a refused line to name the key it looks like",
     ),
     (
@@ -580,8 +620,40 @@ const EXPOSE_ALLOW: &[(&str, &str)] = &[
         "init reads the kept template's values to infer `required` and to warn about a live credential",
     ),
     (
-        "commands/migrate/",
-        "a destination prints commands or sends values (a terminal gets <hidden>)",
+        "commands/migrate/destinations/aws.rs",
+        "sends values to AWS Secrets Manager (a terminal gets <hidden>)",
+    ),
+    (
+        "commands/migrate/destinations/azure.rs",
+        "sends values to Azure Key Vault",
+    ),
+    (
+        "commands/migrate/destinations/doppler.rs",
+        "sends values to Doppler",
+    ),
+    (
+        "commands/migrate/destinations/gcp.rs",
+        "sends values to Google Secret Manager",
+    ),
+    (
+        "commands/migrate/destinations/github.rs",
+        "encrypts values for GitHub Actions secrets",
+    ),
+    (
+        "commands/migrate/destinations/heroku.rs",
+        "sends values to Heroku config vars",
+    ),
+    (
+        "commands/migrate/destinations/infisical.rs",
+        "sends values to Infisical",
+    ),
+    (
+        "commands/migrate/destinations/railway.rs",
+        "sends values to Railway",
+    ),
+    (
+        "commands/migrate/destinations/vercel.rs",
+        "sends values to Vercel",
     ),
     (
         "commands/diff.rs",
@@ -622,7 +694,7 @@ fn t_wp17_expose_only_in_allow_list() {
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
-        if EXPOSE_ALLOW.iter().any(|(p, _)| rel.starts_with(p)) || rel.ends_with("/tests.rs") {
+        if EXPOSE_ALLOW.iter().any(|(p, _)| rel == *p) || rel.ends_with("/tests.rs") {
             continue;
         }
         let text = std::fs::read_to_string(&f).unwrap();
@@ -644,6 +716,32 @@ fn t_wp17_expose_only_in_allow_list() {
             .map(|(p, why)| format!("  {p}: {why}"))
             .collect::<Vec<_>>()
             .join("\n")
+    );
+}
+
+/// Every allow-list entry names a file that exists and really calls `expose()`
+/// (or the serde bridges) outside its test module, so the list cannot keep a
+/// file that no longer needs the permission.
+#[test]
+fn t_wp17_expose_allow_list_has_no_stale_entries() {
+    let mut stale = Vec::new();
+    for (rel, _) in EXPOSE_ALLOW {
+        let path = src().join(rel);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            stale.push(format!("{rel}: no such file"));
+            continue;
+        };
+        let calls = code_lines(&text).iter().any(|(_, l)| {
+            l.contains(".expose()") || l.contains("serialize_exposed") || l.contains("exposed_map")
+        });
+        if !calls {
+            stale.push(format!("{rel}: does not call expose()"));
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "remove these from EXPOSE_ALLOW:\n{}",
+        stale.join("\n")
     );
 }
 

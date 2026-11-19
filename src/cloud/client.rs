@@ -1070,7 +1070,6 @@ mod tests {
     use super::*;
     use crate::cloud::creds::Session;
     use crate::cloud::testutil::ConfigDirGuard;
-    use serial_test::serial;
 
     fn signed_in(server: &str, expires_at: i64) -> Store {
         let mut store = Store::default();
@@ -1108,7 +1107,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn health_reports_the_server_version() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1126,7 +1124,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_request_without_a_session_says_to_sign_in() {
         let _g = ConfigDirGuard::new();
         let server = mockito::Server::new();
@@ -1139,7 +1136,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn the_bearer_token_and_user_agent_are_sent() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1159,7 +1155,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn email_not_verified_is_distinguished_from_forbidden() {
         // Both are HTTP 403. Telling them apart is the reason ApiError keys on
         // `code`: one means "click the link in your inbox", the other means
@@ -1203,7 +1198,6 @@ mod tests {
     /// one issued before the link was opened says "unverified" for up to 15
     /// minutes. A refresh reissues it from the database.
     #[test]
-    #[serial]
     fn t_i301_a_session_issued_before_verifying_is_refreshed_once_and_retried() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1253,7 +1247,6 @@ mod tests {
 
     /// Genuinely unverified: one refresh, one retry, then today's message.
     #[test]
-    #[serial]
     fn t_i301_still_unverified_after_the_refresh_is_reported_after_one_retry() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1287,7 +1280,6 @@ mod tests {
     /// A refresh that fails is not the answer to "is my email verified":
     /// the original refusal is.
     #[test]
-    #[serial]
     fn t_i301_a_failed_refresh_still_reports_not_verified() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1317,7 +1309,6 @@ mod tests {
 
     /// RM-58: `reason: PLAN_LIMIT` under `code: FORBIDDEN` is a plan limit too.
     #[test]
-    #[serial]
     fn rm58_a_plan_limit_reason_under_forbidden_is_a_plan_limit() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1342,7 +1333,6 @@ mod tests {
     /// one considered) fell back to the status, and 403 printed "unexpected
     /// response from …: HTTP 403" — the sentence explaining the refusal lost.
     #[test]
-    #[serial]
     fn t_i306_an_unknown_code_keeps_the_servers_sentence() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1376,7 +1366,6 @@ mod tests {
 
     /// No sentence to keep — a proxy's error page — still names the status.
     #[test]
-    #[serial]
     fn t_i306_a_body_without_a_sentence_still_names_the_status() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1400,7 +1389,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn every_server_error_code_maps_to_its_own_variant() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1438,7 +1426,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn an_unrecognised_code_falls_back_to_the_status() {
         // A proxy or load balancer can answer with HTML the server never wrote.
         let _g = ConfigDirGuard::new();
@@ -1481,7 +1468,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn rm56_forbidden_reasons_add_one_hint_each() {
         let e = failure(
             403,
@@ -1517,7 +1503,6 @@ mod tests {
     /// RM-56: evnx-server V0 also sends `TOKEN_READ_ONLY` for a read-only
     /// token that tried to write.
     #[test]
-    #[serial]
     fn rm56_a_read_only_token_is_told_how_to_get_a_writing_one() {
         let e = failure(
             403,
@@ -1529,7 +1514,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn rm56_forbidden_without_a_reason_is_todays_message() {
         let e = failure(403, &[], r#"{"error":"nope","code":"FORBIDDEN"}"#);
         assert_eq!(e.to_string(), "nope");
@@ -1543,7 +1527,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn rm58_plan_limit_on_403_and_on_legacy_409() {
         for status in [403, 409] {
             let e = failure(
@@ -1560,7 +1543,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn i203_a_json_500_is_a_server_error_and_a_proxy_page_is_not_evnx() {
         let e = failure(500, &[], r#"{"error":"boom","code":"INTERNAL_ERROR"}"#);
         assert!(
@@ -1587,7 +1569,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn retry_after_is_read_for_429_and_503() {
         let e = failure(
             429,
@@ -1731,7 +1712,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_401_triggers_one_refresh_and_a_retry() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1776,7 +1756,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn the_rotated_refresh_token_is_written_to_disk() {
         // The server revokes the old refresh token on use. If the new one is not
         // persisted, the next command is signed out with no way back.
@@ -1818,7 +1797,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_dead_refresh_token_fails_once_instead_of_looping() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1849,7 +1827,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn an_expired_access_token_refreshes_before_the_request_not_after() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1883,7 +1860,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn an_unreachable_server_is_a_transport_error_naming_the_host() {
         let _g = ConfigDirGuard::new();
         // Port 1 on loopback: nothing listens, so the connection is refused
@@ -1896,7 +1872,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn delete_accepts_an_empty_body() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -1912,7 +1887,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_success_body_that_is_not_the_expected_shape_is_reported_clearly() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();

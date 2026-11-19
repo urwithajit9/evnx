@@ -249,7 +249,6 @@ fn warn_and_tighten_if_permissive(_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
 
     fn session(email: &str) -> Session {
         Session {
@@ -263,7 +262,6 @@ mod tests {
     use crate::cloud::testutil::ConfigDirGuard;
 
     #[test]
-    #[serial]
     fn a_missing_file_means_signed_out_not_broken() {
         let _g = ConfigDirGuard::new();
         let store = Store::load().unwrap();
@@ -272,7 +270,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn sessions_round_trip_through_disk() {
         let _g = ConfigDirGuard::new();
         let mut store = Store::default();
@@ -292,7 +289,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn two_servers_are_signed_in_independently() {
         // The development loop is a local server on :8099 alongside the hosted
         // one; signing into one must not sign out of the other.
@@ -317,7 +313,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn removing_a_session_that_is_not_there_reports_false() {
         let _g = ConfigDirGuard::new();
         let mut store = Store::default();
@@ -325,7 +320,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_file_from_a_newer_evnx_is_refused_rather_than_guessed_at() {
         let g = ConfigDirGuard::new();
         std::fs::write(
@@ -338,7 +332,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_corrupt_file_is_an_error_naming_the_path() {
         let g = ConfigDirGuard::new();
         let path = g.path().join("credentials.json");
@@ -382,7 +375,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    #[serial]
     fn the_credentials_file_is_written_owner_only() {
         use std::os::unix::fs::PermissionsExt;
         let g = ConfigDirGuard::new();
@@ -400,7 +392,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    #[serial]
     fn rewriting_an_existing_loose_file_restores_0600() {
         // The regression that motivated write_atomic_secure: OpenOptions::mode()
         // is ignored when the file already exists, so a plain rewrite would leave
@@ -421,7 +412,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    #[serial]
     fn reading_a_world_readable_file_tightens_it() {
         use std::os::unix::fs::PermissionsExt;
         let g = ConfigDirGuard::new();
@@ -437,7 +427,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    #[serial]
     fn a_failed_save_leaves_the_previous_file_intact() {
         // Atomicity: persisting into a directory that has gone away must not
         // destroy what was already on disk.

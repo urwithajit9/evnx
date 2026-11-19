@@ -925,7 +925,6 @@ mod tests {
         VaultKey, b64_encode, derive_master_key, encrypt_private_key, generate_keypair,
         generate_salt, wrap_vault_key_with_master_key,
     };
-    use serial_test::serial;
 
     /// A master key that is genuinely derived, since the wrap functions take one.
     fn master(pw: &str) -> evnx_crypto::MasterKey {
@@ -1049,7 +1048,6 @@ mod tests {
     /// server keeping anything, so it must be written before the request and
     /// readable only by its owner.
     #[test]
-    #[serial]
     fn the_recovery_bundle_is_private_and_complete() {
         let _g = ConfigDirGuard::new();
 
