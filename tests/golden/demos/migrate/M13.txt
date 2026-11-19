@@ -2,11 +2,11 @@
 ================ M13 ================
 
 $ evnx migrate --to vercel --vercel-project prj_1 --include APP_NAME,PRICE --print-only
-printf '%s' 'demo app' | vercel env add APP_NAME production --project prj_1 --force --yes
-printf '%s' '$5' | vercel env add PRICE production --project prj_1 --force --yes
+printf '%s' 'demo app' | vercel env add APP_NAME production --project prj_1 --yes
+printf '%s' '$5' | vercel env add PRICE production --project prj_1 --yes
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 
 ✓ Loaded 8 secrets from .env
@@ -15,6 +15,7 @@ printf '%s' '$5' | vercel env add PRICE production --project prj_1 --force --yes
 · Vercel environment variable migration
 · Requires Vercel CLI
   Install: npm install -g vercel
+  To keep Vercel and a file in step without copying commands: `evnx platform push`
 
 Run these commands (each value goes to vercel on stdin):
 
@@ -37,7 +38,7 @@ railway variable set --project p-1 --environment production \
   PRICE='$5'
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 
 ✓ Loaded 8 secrets from .env
@@ -78,7 +79,7 @@ printf '%s' 'demo app' | upsert_secret app-name
 printf '%s' '$5' | upsert_secret price
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 
 ✓ Loaded 8 secrets from .env
@@ -116,7 +117,7 @@ $ evnx migrate --to infisical --project p
 ✓ Loaded 8 secrets from .env
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 Error: these values cannot be passed to `infisical secrets set` as they are:
   EMPTY: empty — infisical rejects an empty value

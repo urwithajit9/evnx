@@ -40,7 +40,7 @@ $ evnx convert --to JSON
 $ evnx convert --to bogus
 [stderr]
 error: invalid value 'bogus' for '--to <FORMAT>'
-  [possible values: json, yaml, shell, aws-secrets, gcp-secrets, azure-keyvault, github, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway]
+  [possible values: json, yaml, shell, dotenv, aws-secrets, gcp-secrets, azure-keyvault, github, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway]
 
 For more information, try '--help'.
 [exit 2]

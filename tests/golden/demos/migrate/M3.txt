@@ -31,7 +31,7 @@ Next steps:
   3. Remove your local .env file.
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 ! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate
@@ -67,7 +67,7 @@ Next steps:
   3. Add `doppler run -- <your-command>` to your CI/CD pipeline.
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 ! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate
@@ -105,7 +105,7 @@ Next steps:
   4. Setting variables redeploys the service.
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 ! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate

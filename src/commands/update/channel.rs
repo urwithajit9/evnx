@@ -78,10 +78,7 @@ impl Channel {
         ("npm", "npm install -g @evnx/cli@latest"),
         ("pip", "pip install --upgrade evnx"),
         ("pipx", "pipx upgrade evnx"),
-        (
-            "script",
-            "curl -fsSL https://dotenv.space/install.sh | bash",
-        ),
+        ("script", crate::core::build::INSTALL_COMMAND),
     ];
 
     /// Infer the channel from the running executable's path.
@@ -581,7 +578,12 @@ mod tests {
     fn up2_a_shared_folder_without_a_pip_record_is_the_script() {
         assert_eq!(
             Channel::Script.upgrade_command(),
-            Some("curl -fsSL https://dotenv.space/install.sh | bash")
+            Some("curl -fsSL https://evnx.dev/install.sh | bash")
+        );
+        // WP-16: the same spelling as the one constant.
+        assert_eq!(
+            Channel::Script.upgrade_command(),
+            Some(crate::core::build::INSTALL_COMMAND)
         );
     }
 

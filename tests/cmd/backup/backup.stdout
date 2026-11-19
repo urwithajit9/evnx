@@ -15,14 +15,14 @@ Options:
       --output <OUTPUT>
           Destination path for the encrypted backup (default: <env>.backup)
 
-      --password-file <PATH>
-          Path to a file holding the encryption password.
+      --key-file <PATH>
+          Path to a file holding the passphrase.
           
-          Enables non-interactive / CI usage. The file's contents are read and fed into Argon2id in place of a typed password. UTF-8 content is used with leading and trailing whitespace trimmed; binary content is Base64-encoded first. It must come to at least 8 characters, as a typed passphrase must.
+          Enables non-interactive / CI usage. The file's contents are read and fed into Argon2id in place of a typed passphrase. UTF-8 content is used with leading and trailing whitespace trimmed; binary content is Base64-encoded first. It must come to at least 8 characters, as a typed passphrase must.
           
           `evnx restore` takes the same flag, so one file round-trips. EVNX_PASSWORD is honoured too, at lower priority, so a scheduled backup needs no passphrase on disk; when both are set, the file wins and a warning says so.
           
-          Examples: evnx backup --password-file /run/secrets/evnx-pass EVNX_PASSWORD=$PASS evnx backup
+          Examples: evnx backup --key-file /run/secrets/evnx-pass EVNX_PASSWORD=$PASS evnx backup
 
       --keep <N>
           Number of previous backups to retain alongside the new one.
@@ -33,6 +33,14 @@ Options:
           Re-decrypt the backup after writing and verify content integrity.
           
           Costs one more Argon2id round (a fraction of a second to about a second, depending on the machine) but proves the backup is readable before you discard the source file. A failed check exits 2.
+
+      --gitignore
+          Add the backup file to .gitignore, without asking.
+          
+          The backup is encrypted: committing it is as safe as its passphrase. Without this flag or --no-gitignore, .gitignore is left alone.
+
+      --no-gitignore
+          Leave .gitignore alone and skip the reminder about committing the backup
 
       --no-color
           Disable colored output
@@ -49,8 +57,12 @@ Options:
   -V, --version
           Print version
 
-Passphrase: --password-file, then EVNX_PASSWORD, then a prompt (asked twice). A new
-backup needs at least 8 characters from any of them.
+Passphrase: --key-file, then EVNX_PASSWORD, then a prompt (asked twice). A new
+backup needs at least 8 characters from any of them, and is told when the
+passphrase is weak (under 12 characters, digits only, a common word).
+
+The backup file is encrypted: committing it is as safe as its passphrase.
+--gitignore adds it to .gitignore; --no-gitignore leaves .gitignore alone.
 
 A backup is a file you keep, behind a passphrase you choose; it needs no account
 and no network. To share and version secrets instead, see `evnx cloud push`.

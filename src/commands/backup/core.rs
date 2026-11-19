@@ -542,7 +542,7 @@ pub enum DecryptError {
         version: u8,
     },
     /// The authentication tag did not match.
-    #[error("Decryption failed. The password may be incorrect or the backup file is corrupt.")]
+    #[error("Decryption failed. The passphrase may be incorrect or the backup file is corrupt.")]
     WrongPasswordOrTampered,
     /// The envelope's schema is newer than this evnx.
     #[error("This backup's contents use schema version {schema}, made by a newer evnx. Upgrade evnx to restore it.")]

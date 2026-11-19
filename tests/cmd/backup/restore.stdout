@@ -14,7 +14,14 @@ Options:
           
           Defaults to the file the backup was made from — `.env.staging` for a backup of `.env.staging` — in the current folder. A recorded name that is not `.env` or `.env.<name>` restores to `.env`.
           
-          An existing file is never replaced silently: evnx asks, or takes --yes, and keeps the replaced file as <output>.bak. Content that is not a .env evnx can read goes to <output>.restored instead (exit 5).
+          An existing file is never replaced silently: evnx asks, or takes --yes, and keeps the replaced file as <output>.bak. Content that is not a .env evnx can read goes to <output>.restored instead (exit 5); that file is private (0600) and holds plaintext secrets.
+          
+          `-` prints the decrypted text to stdout, and every status line goes to stderr. Nothing is written, so there is no .bak and no .gitignore question. On a terminal it is refused unless --show-values.
+
+      --show-values
+          Print the decrypted text to a terminal anyway, with `--output -`.
+          
+          A value printed there stays in the scrollback. Piped, it is not needed.
 
   -y, --yes
           Replace an existing --output without asking.
@@ -37,18 +44,18 @@ Options:
           
           Example: evnx restore .env.backup --inspect
 
-      --password-file <PATH>
-          Read the decryption password from a file instead of prompting.
+      --key-file <PATH>
+          Read the passphrase from a file instead of prompting.
           
-          The file should contain only the password; leading and trailing whitespace, such as a final newline, is trimmed. Intended for CI/CD pipelines where interactive prompts are not possible.
+          The file should contain only the passphrase; leading and trailing whitespace, such as a final newline, is trimmed. Intended for CI/CD pipelines where interactive prompts are not possible.
           
           Security: less secure than the interactive prompt. The file path may appear in process listings and shell history. Use a secrets manager or a tmpfs-backed path (e.g. /run/secrets/) in production.
           
-          EVNX_PASSWORD environment variable is also accepted and takes lower priority than --password-file; when both are set, the file wins and a warning says so.
+          EVNX_PASSWORD environment variable is also accepted and takes lower priority than --key-file; when both are set, the file wins and a warning says so.
           
           `evnx backup` takes the same flag, so one file round-trips.
           
-          Examples: evnx restore .env.backup --password-file /run/secrets/evnx-pass EVNX_PASSWORD=mypass evnx restore .env.backup
+          Examples: evnx restore .env.backup --key-file /run/secrets/evnx-pass EVNX_PASSWORD=mypass evnx restore .env.backup
 
       --no-color
           Disable colored output
@@ -69,6 +76,13 @@ Replacing a file: an existing --output is never replaced silently. With a
 terminal evnx asks; without one, pass --yes. Either way the
 replaced file is kept beside it as <output>.bak. Content identical to the
 backup is left alone.
+
+Passphrase: --key-file, then EVNX_PASSWORD, then a prompt.
+
+--output - prints the decrypted text to stdout, with every status line on
+stderr; a terminal refuses it unless --show-values. Text that is not a .env
+goes to <output>.restored instead: a private file (0600) that holds plaintext
+secrets, printed with its full path.
 
 A backup file is not a vault. For evnx cloud, use `evnx cloud pull` (one
 version) or `evnx cloud export` (all of them).

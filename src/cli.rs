@@ -221,6 +221,8 @@ pub struct SyncArgs {
 
     /// Report whether the files are in step through the exit code.
     ///
+    /// `validate` checks everything; `spec check` and `sync --check` are fast name-only checks for hooks.
+    ///
     /// Implies --dry-run: nothing is ever written. This is the CI gate.
     ///
     ///   0  in sync
@@ -250,7 +252,7 @@ pub struct SyncArgs {
     ///
     /// For pre-commit hooks: a fresh clone has a template and no `.env`, and a
     /// hook that exits 2 there blocks every new contributor's first commit.
-    /// A spec (`[vars]` in `.evnx.toml`) is still checked. Forward only.
+    /// A contract (`[vars]` in `.evnx.toml`) is still checked. Forward only.
     ///
     /// Not for CI: without it, `--check` with nothing to compare exits 2, so
     /// a gate cannot pass on a check that never ran.
@@ -366,10 +368,13 @@ impl MigrateSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum MigrateTarget {
     Github,
+    #[value(aliases = ["aws-secrets", "aws"])]
     AwsSecretsManager,
     Doppler,
     Infisical,
+    #[value(aliases = ["gcp-secrets", "gcp"])]
     GcpSecretManager,
+    #[value(aliases = ["azure", "azure-key-vault"])]
     AzureKeyvault,
     Vercel,
     Heroku,
@@ -412,6 +417,10 @@ pub struct MigrateOptions {
     // ── Destination ───────────────────────────────────────────────────────────
     /// Destination system: github | aws-secrets-manager | doppler | infisical |
     /// gcp-secret-manager | azure-keyvault | vercel | heroku | railway
+    ///
+    /// The names `convert --to` takes work too: aws and aws-secrets for
+    /// aws-secrets-manager, gcp and gcp-secrets for gcp-secret-manager, azure
+    /// for azure-keyvault.
     #[arg(long, value_enum)]
     pub to: Option<MigrateTarget>,
 
@@ -455,6 +464,9 @@ pub struct MigrateOptions {
     pub skip_existing: bool,
 
     /// Overwrite secrets that already exist without prompting
+    ///
+    /// For `--to vercel` the printed commands carry `--force`, so Vercel
+    /// replaces a variable that exists. Without it Vercel refuses to.
     #[arg(long)]
     pub overwrite: bool,
 
@@ -2189,7 +2201,7 @@ pub enum CloudCommands {
     ///
     /// With no --to the files are the bytes that were pushed, verbatim:
     /// comments, ordering and quoting all survive, because that is how they
-    /// were encrypted. --to converts instead, through the same 14 formats
+    /// were encrypted. --to converts instead, through the same 15 formats
     /// `evnx convert` offers, and a conversion keeps only keys and values.
     ///
     /// Not the same as `evnx auth download-data`, which writes account
@@ -2695,6 +2707,8 @@ pub enum Commands {
     },
 
     /// Check .env against .env.example, find issues.
+    ///
+    /// `validate` checks everything; `spec check` and `sync --check` are fast name-only checks for hooks.
     #[command(after_help = docs::VALIDATE.after_help)]
     #[command(mut_arg("env", |a| a.help("Path to the environment file to check, or `-` to read stdin. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
     #[command(mut_arg("example", |a| a.help("The template to compare against. Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`")))]
@@ -2785,9 +2799,20 @@ pub enum Commands {
         #[arg(long, value_delimiter = ',')]
         ignore: Vec<String>,
 
-        /// Validate value formats: url, port, email
-        #[arg(long)]
+        /// Accepted and ignored: the URL, port and email checks are on by default.
+        #[arg(long, hide = true)]
         validate_formats: bool,
+
+        /// Turn off the URL, port and email checks by variable name.
+        ///
+        /// They are on by default and always warnings: a name ending in `_URL`,
+        /// `_URI` or `_ENDPOINT` should hold a URL, one with `PORT` a port from 1
+        /// to 65535, one with `EMAIL` an address. A variable declared in `[vars]`
+        /// is checked against its declared `format` instead, with or without
+        /// this flag. `[validate] validate_formats = false` in `.evnx.toml` does
+        /// the same for the project.
+        #[arg(long)]
+        no_formats: bool,
 
         /// The lowest severity that fails the run: `error` or `warning`.
         ///
@@ -3041,6 +3066,27 @@ pub enum Commands {
     #[command(mut_arg("example", |a| a.help("The template on the right: key names only, unless `--values` is given. Defaults to `.env.example`, or `[defaults] example`")))]
     #[command(mut_arg("format", |a| a.long_help("Output format. `patch` is a unified diff of the left file that `patch -p1` applies: it adds the missing names and, when values are compared, replaces the different ones. Keys only in the left file are kept and named in comment lines.")))]
     Diff {
+        /// The file on the left. With a second file, the two are compared
+        /// key by key and value by value.
+        ///
+        /// `evnx diff .env.staging .env.production`. With one file, it is
+        /// compared with the template (key names only). Instead of the
+        /// positionals, `--env`, `--env-name`, `--example` and `--against` name
+        /// the files.
+        #[arg(
+            value_name = "A",
+            conflicts_with_all = ["env", "env_name", "example", "against"]
+        )]
+        left: Option<String>,
+
+        /// The file on the right.
+        #[arg(
+            value_name = "B",
+            requires = "left",
+            conflicts_with_all = ["env", "env_name", "example", "against"]
+        )]
+        right: Option<String>,
+
         #[command(flatten)]
         files: args::FileArgs,
 
@@ -3124,8 +3170,9 @@ pub enum Commands {
 
     /// Transform `.env` files into multiple output formats.
     ///
-    /// Supports 14 formats including JSON, YAML, cloud configs,
-    /// CI/CD variables, and infrastructure-as-code.
+    /// Supports 15 formats including JSON, YAML, cloud configs,
+    /// CI/CD variables, and infrastructure-as-code. It writes a file or prints
+    /// one; `evnx migrate` talks to a provider instead.
     //
     // ⚠️ The examples live in `after_help` below, not here. clap strips the
     // markdown fence and collapses newlines in a doc comment, so a fenced block
@@ -3149,11 +3196,20 @@ Examples:
   # A script that creates or updates every secret in a GCP project
   evnx convert --to gcp-secrets --project my-gcp-project -o upload.sh
 
+  # A Kubernetes Secret for the secrets and a ConfigMap for the rest
+  evnx convert --to kubernetes --name myapp --kind split -o k8s.yaml
+
+  # A JSON file back into a .env, and a pipe in place of a file
+  evnx convert --from json --to dotenv --env vars.json -o .env
+  cat vars.json | evnx convert --from json --to dotenv --env -
+
   # Interactive mode (opens the format selector)
   evnx convert
 
+convert writes a file; migrate talks to a provider.
+
 Supported formats:
-  Generic:        json, yaml, shell
+  Generic:        json, yaml, shell, dotenv
   Cloud:          aws-secrets (JSON for create-secret),
                   gcp-secrets (--project), azure-keyvault (--vault-name)
   CI/CD:          github (text to paste into the GitHub web form)
@@ -3163,23 +3219,30 @@ Supported formats:
                   railway (experimental)
 
 Aliases:
-  k8s → kubernetes, tf → terraform, yml → yaml
+  k8s → kubernetes, tf → terraform, yml → yaml, env → dotenv
   compose → docker-compose
 
 Use 'evnx convert' without --to for interactive format selection.
 
 Full guide: https://docs.evnx.dev/cli/commands/convert
 ")]
-    #[command(mut_arg("env", |a| a.help("Path to input .env file. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
+    #[command(mut_arg("env", |a| a.help("Input file, or `-` to read standard input. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
     #[command(mut_arg("yes", |a| a.help("Add the --output file to .gitignore without asking; with no --to, fail instead of showing the menu").long_help("Do not ask: add the --output file to .gitignore without the prompt (as `--gitignore`). With no `--to` it is an error naming `--to`, because the format menu is a question too.")))]
     #[command(mut_arg("dry_run", |a| a.help("With --output, check everything and say what would be written, but write nothing").requires("output")))]
     Convert {
         #[command(flatten)]
         env: args::EnvArgs,
 
+        /// What the input is: `dotenv` (default) or `json`
+        ///
+        /// `json` reads a flat `{"KEY": "value"}` object, the same shape
+        /// `validate --input-format json` reads. Every value must be a string.
+        #[arg(long, value_enum, value_name = "FORMAT", default_value = "dotenv")]
+        from: args::ConvertFrom,
+
         /// Target output format (omit for interactive selection)
         ///
-        /// Supported: json, yaml, shell, aws-secrets, gcp-secrets,
+        /// Supported: json, yaml, shell, dotenv, aws-secrets, gcp-secrets,
         /// azure-keyvault, github, docker-compose, kubernetes,
         /// terraform, doppler, heroku, vercel, railway
         #[arg(long, value_enum, value_name = "FORMAT", ignore_case = true)]
@@ -3295,6 +3358,14 @@ Full guide: https://docs.evnx.dev/cli/commands/convert
         #[arg(long, value_name = "NAMESPACE")]
         namespace: Option<String>,
 
+        /// What --to kubernetes writes: `secret` (default), `configmap`, or `split`
+        ///
+        /// `configmap` writes every variable as plain text (not with --base64).
+        /// `split` writes two documents: a Secret for the variables that look
+        /// secret and a ConfigMap named `<name>-config` for the rest.
+        #[arg(long, value_enum, value_name = "KIND")]
+        kind: Option<crate::formats::KubeKind>,
+
         /// With --to terraform, write a .tf of `variable` blocks instead of
         /// the .tfvars values.
         ///
@@ -3315,6 +3386,7 @@ Full guide: https://docs.evnx.dev/cli/commands/convert
     ///
     /// For eight destinations evnx prints the commands for you to run and
     /// contacts nothing; only github uploads (over the GitHub API).
+    /// `convert` writes a file; `migrate` talks to a provider.
     // ⚠️ The first line said "Full migration workflow to secret managers", and
     // the banner "Generate destination commands" — true for eight of nine
     // (D-59). The examples were a `///` block, which clap folded into one line
@@ -3337,8 +3409,13 @@ Examples:
   # Upload to GitHub Actions from CI (token from GITHUB_TOKEN)
   evnx migrate --to github --repo owner/repo --yes --skip-existing
 
-  # Preview: no commands printed, nothing uploaded
+  # Preview: no commands printed, nothing uploaded. The target flags
+  # (--heroku-app and the like) are optional here; a real run needs them.
   evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
+  evnx migrate --to heroku --dry-run
+
+  # Vercel: the commands fail on a variable that exists unless --overwrite
+  evnx migrate --to vercel --overwrite
 
 Destinations:
   Prints commands: aws-secrets-manager (--secret-name), gcp-secret-manager (--project),
@@ -3382,14 +3459,17 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
 
     /// Generate config files from templates.
     #[command(after_help = docs::TEMPLATE.after_help)]
+    #[command(
+        override_usage = "evnx template [OPTIONS] <INPUT> <OUTPUT>\n       evnx template [OPTIONS] --input <FILE> --output <FILE>"
+    )]
     #[command(mut_arg("env", |a| a.help("The environment file to take values from. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
     #[command(mut_arg("dry_run", |a| a.long_help("Render and report what would be written, and write nothing.\n\nFails where the real run would (an unknown filter, an unresolved placeholder without `--allow-unresolved`, a missing directory without `--mkdir`). Never prints the rendered text, and leaves `.gitignore` alone.")))]
     #[command(mut_arg("yes", |a| a.help("Add the output file to .gitignore without asking").long_help("Do not ask: add the output file to .gitignore without the prompt (as `--gitignore`). An explicit `--no-gitignore` wins.")))]
     Template {
         /// The template to render. `{{VAR}}`, `${VAR}` and `$VAR` are
         /// substituted; filters are listed below.
-        #[arg(long)]
-        input: String,
+        #[arg(value_name = "INPUT", index = 1, required_unless_present = "input_flag", conflicts_with_all = ["input_flag", "output_flag"])]
+        input: Option<String>,
 
         /// Where to write the rendered file, or `-` for stdout.
         ///
@@ -3397,8 +3477,19 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         /// new file is created readable by you only (0600). An existing file is
         /// only replaced with `--force`, and keeps its mode. The template and
         /// the env file are never overwritten.
-        #[arg(long)]
-        output: String,
+        #[arg(value_name = "OUTPUT", index = 2, required_unless_present = "output_flag", conflicts_with_all = ["input_flag", "output_flag"])]
+        output: Option<String>,
+
+        /// The template to render: the same as the INPUT argument.
+        ///
+        /// Give the two arguments or the two flags, not a mix.
+        #[arg(long = "input", value_name = "FILE", conflicts_with_all = ["input", "output"])]
+        input_flag: Option<String>,
+
+        /// Where to write the rendered file, or `-` for stdout: the same as the
+        /// OUTPUT argument.
+        #[arg(long = "output", value_name = "FILE", conflicts_with_all = ["input", "output"])]
+        output_flag: Option<String>,
 
         /// Replace an existing output file.
         #[arg(long)]
@@ -3470,11 +3561,11 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         #[arg(long)]
         output: Option<String>,
 
-        /// Path to a file holding the encryption password.
+        /// Path to a file holding the passphrase.
         ///
         /// Enables non-interactive / CI usage. The file's contents are read and
-        /// fed into Argon2id in place of a typed password. UTF-8 content is used
-        /// with leading and trailing whitespace trimmed; binary content is
+        /// fed into Argon2id in place of a typed passphrase. UTF-8 content is
+        /// used with leading and trailing whitespace trimmed; binary content is
         /// Base64-encoded first. It must come to at least 8 characters, as a
         /// typed passphrase must.
         ///
@@ -3484,9 +3575,9 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         /// wins and a warning says so.
         ///
         /// Examples:
-        ///   evnx backup --password-file /run/secrets/evnx-pass
+        ///   evnx backup --key-file /run/secrets/evnx-pass
         ///   EVNX_PASSWORD=$PASS evnx backup
-        #[arg(long, value_name = "PATH")]
+        #[arg(long = "key-file", alias = "password-file", value_name = "PATH")]
         password_file: Option<String>,
 
         /// Number of previous backups to retain alongside the new one.
@@ -3506,6 +3597,18 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         /// before you discard the source file. A failed check exits 2.
         #[arg(long)]
         verify: bool,
+
+        /// Add the backup file to .gitignore, without asking.
+        ///
+        /// The backup is encrypted: committing it is as safe as its
+        /// passphrase. Without this flag or --no-gitignore, .gitignore is left
+        /// alone.
+        #[arg(long, conflicts_with = "no_gitignore")]
+        gitignore: bool,
+
+        /// Leave .gitignore alone and skip the reminder about committing the backup.
+        #[arg(long, conflicts_with = "gitignore")]
+        no_gitignore: bool,
     },
 
     /// Restore from encrypted backup.
@@ -3525,9 +3628,20 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         ///
         /// An existing file is never replaced silently: evnx asks, or takes
         /// --yes, and keeps the replaced file as <output>.bak. Content that is
-        /// not a .env evnx can read goes to <output>.restored instead (exit 5).
+        /// not a .env evnx can read goes to <output>.restored instead (exit 5);
+        /// that file is private (0600) and holds plaintext secrets.
+        ///
+        /// `-` prints the decrypted text to stdout, and every status line goes to
+        /// stderr. Nothing is written, so there is no .bak and no .gitignore
+        /// question. On a terminal it is refused unless --show-values.
         #[arg(long)]
         output: Option<String>,
+
+        /// Print the decrypted text to a terminal anyway, with `--output -`.
+        ///
+        /// A value printed there stays in the scrollback. Piped, it is not needed.
+        #[arg(long)]
+        show_values: bool,
 
         /// Replace an existing --output without asking.
         ///
@@ -3561,9 +3675,9 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         #[arg(long)]
         inspect: bool,
 
-        /// Read the decryption password from a file instead of prompting.
+        /// Read the passphrase from a file instead of prompting.
         ///
-        /// The file should contain only the password; leading and trailing
+        /// The file should contain only the passphrase; leading and trailing
         /// whitespace, such as a final newline, is trimmed. Intended for CI/CD
         /// pipelines where interactive prompts are not possible.
         ///
@@ -3572,15 +3686,15 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         /// manager or a tmpfs-backed path (e.g. /run/secrets/) in production.
         ///
         /// EVNX_PASSWORD environment variable is also accepted and takes
-        /// lower priority than --password-file; when both are set, the file
+        /// lower priority than --key-file; when both are set, the file
         /// wins and a warning says so.
         ///
         /// `evnx backup` takes the same flag, so one file round-trips.
         ///
         /// Examples:
-        ///   evnx restore .env.backup --password-file /run/secrets/evnx-pass
+        ///   evnx restore .env.backup --key-file /run/secrets/evnx-pass
         ///   EVNX_PASSWORD=mypass evnx restore .env.backup
-        #[arg(long, value_name = "PATH")]
+        #[arg(long = "key-file", alias = "password-file", value_name = "PATH")]
         password_file: Option<String>,
     },
 
@@ -3699,10 +3813,21 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         /// work says "not fixed". Nothing is deleted, nothing is committed, and
         /// no file's contents are edited.
         ///
-        /// `EVNX_AUTO_FIX=1` does the same thing. Either
-        /// saying yes is enough — a flag can turn repair on, never off.
+        /// With `--all` it repairs the same things and nothing more: it never
+        /// runs `validate --fix`.
         #[arg(long)]
         fix: bool,
+
+        /// Also run `validate`, `sync --check` and `scan`, in one report.
+        ///
+        /// Each part is the command of that name with its defaults, read from
+        /// this project's `.evnx.toml`. `sync --check` looks both ways and is
+        /// skipped, with a note, when there is no template. The verdict is the
+        /// worst of the parts: 1 if any found something, 2 if any could not run.
+        /// With `--format json`, the document has a `sections` object with
+        /// `doctor`, `validate`, `sync` and `scan` (`run.schema_version` 2).
+        #[arg(long)]
+        all: bool,
 
         /// Count warnings as problems, so they affect the exit code.
         ///
@@ -3731,7 +3856,7 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
     /// Declare what each variable is: required, format, secret.
     ///
     /// Writes `[vars.*]` into `.evnx.toml` — the contract `.env.example` cannot
-    /// express. A project with no spec behaves exactly as it does today.
+    /// express. A project with no contract behaves exactly as it does today.
     #[command(after_help = docs::SPEC.after_help)]
     Spec {
         #[command(subcommand)]
@@ -3775,8 +3900,12 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
 
     /// List what evnx reads from a `.env`: line, key and flags, never a value.
     ///
-    /// Flags say whether each value is empty, a placeholder or a secret. Every
-    /// problem in the file is listed, and the exit code is 1 when there is one.
+    /// Flags say whether each value is empty, a placeholder or a secret, and
+    /// whether the line is exported, spans several lines, is overridden by a
+    /// later line (`duplicate`) or holds a `${NAME}` reference (`expands`). The
+    /// JSON adds how it is quoted and the value's length. Every problem in the
+    /// file is listed, and the exit code is 1 when there is one. A file saved
+    /// by PowerShell's `>` is refused (exit 2): save it as UTF-8.
     /// `--format json` is what `evnx validate --input-format json` reads.
     #[command(after_help = docs::PARSE.after_help)]
     Parse {
@@ -4210,7 +4339,7 @@ pub enum RulesCommand {
 /// `evnx spec` subcommands.
 #[derive(Subcommand, Debug)]
 pub enum SpecAction {
-    /// Generate a first spec from this project, or from named components.
+    /// Generate a first contract from this project, or from named components.
     #[command(after_help = SPEC_INIT_EXIT_CODES)]
     #[command(mut_arg("env", |a| a.help("The environment file to read sample values from. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`. A file named here must exist.")))]
     #[command(mut_arg("env_name", |a| a.help("Read sample values from `.env.<NAME>` instead of `.env`.").long_help("Read sample values from `.env.<NAME>` instead of `.env`.\n\n`--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do.")))]
@@ -4247,6 +4376,8 @@ pub enum SpecAction {
 
     /// Check the contract against `.env.example`, and `.env` when there is
     /// one. Read-only; suited to a pre-commit hook and to CI.
+    ///
+    /// `validate` checks everything; `spec check` and `sync --check` are fast name-only checks for hooks.
     ///
     /// Every variable `[vars]` declares for every environment must be in the
     /// template, and every name in the template must be declared. When `.env`

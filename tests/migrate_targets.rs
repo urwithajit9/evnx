@@ -8,7 +8,7 @@
 //!
 //! - I-268: `vercel env add … --project-id P` — vercel has no `--project-id`
 //!   (64.7.0, `env/command.ts`: `--project`), and an existing variable is an
-//!   error without `--force`.
+//!   error without `--force`, which (WP-14) is printed only with `--overwrite`.
 //! - I-269: `railway --project P variables set …` — the root `railway` command
 //!   takes no arguments (v5.71.0); with `--project`, `--environment` is
 //!   required (DEC-MG1).
@@ -49,8 +49,8 @@ fn t_i268_vercel_names_the_project_with_project() {
     assert_eq!(
         lines_starting(&out.stdout, "printf "),
         [
-            "printf '%s' '1' | vercel env add A production --project prj_1 --force --yes",
-            "printf '%s' 'two words' | vercel env add B production --project prj_1 --force --yes",
+            "printf '%s' '1' | vercel env add A production --project prj_1 --yes",
+            "printf '%s' 'two words' | vercel env add B production --project prj_1 --yes",
         ],
         "{}",
         out.stdout
@@ -65,7 +65,7 @@ fn t_i268_vercel_without_a_project_uses_the_linked_one() {
     out.assert_code(0);
     assert_eq!(
         lines_starting(&out.stdout, "printf "),
-        ["printf '%s' '1' | vercel env add A production --force --yes"],
+        ["printf '%s' '1' | vercel env add A production --yes"],
         "{}",
         out.stdout
     );
@@ -135,14 +135,22 @@ fn t_i269_railway_project_needs_an_environment() {
 #[test]
 fn t_i100_gcp_requires_project_like_convert() {
     let p = Project::new().env("A=1\n");
-    for extra in [&[][..], &["--dry-run"][..]] {
-        let mut args = vec!["--to", "gcp-secret-manager"];
-        args.extend_from_slice(extra);
-        let out = migrate(&p, &args);
-        out.assert_code(2);
-        assert!(out.stderr.contains("--project"), "{}", out.stderr);
-        assert!(!out.stdout.contains("gcloud"), "{}", out.stdout);
-    }
+    let out = migrate(&p, &["--to", "gcp-secret-manager"]);
+    out.assert_code(2);
+    assert!(out.stderr.contains("--project"), "{}", out.stderr);
+    assert!(!out.stdout.contains("gcloud"), "{}", out.stdout);
+
+    // D8 (WP-14): a dry run prints no command, so it works without the flag,
+    // shows a placeholder and names the flag a real run needs.
+    let dry = migrate(&p, &["--to", "gcp-secret-manager", "--dry-run"]);
+    dry.assert_code(0);
+    assert!(dry.stdout.contains("<--project not set>"), "{}", dry.stdout);
+    assert!(
+        dry.stdout.contains("A real run needs --project"),
+        "{}",
+        dry.stdout
+    );
+    assert!(!dry.stdout.contains("gcloud secrets"), "{}", dry.stdout);
 }
 
 /// The value is in the printed command (not a shell variable the user had to
@@ -241,13 +249,13 @@ fn t_rm65_vercel_migrate_marks_secrets_sensitive() {
     out.assert_code(0);
     assert!(
         out.stdout
-            .contains("vercel env add DB_PASSWORD production --sensitive --force --yes"),
+            .contains("vercel env add DB_PASSWORD production --sensitive --yes"),
         "{}",
         out.stdout
     );
     assert!(
         out.stdout
-            .contains("vercel env add APP_NAME production --force --yes"),
+            .contains("vercel env add APP_NAME production --yes"),
         "{}",
         out.stdout
     );
@@ -273,7 +281,7 @@ fn f14_2b_vercel_environment_follows_the_env_name() {
         out.assert_code(0);
         assert!(
             out.stdout
-                .contains(&format!("vercel env add APP_NAME {env} --force --yes")),
+                .contains(&format!("vercel env add APP_NAME {env} --yes")),
             "{env}: {}",
             out.stdout
         );
@@ -450,6 +458,10 @@ fn q1_the_eight_command_printing_destinations_refuse_existing_flags() {
     ];
     for d in destinations {
         for flag in ["--skip-existing", "--overwrite"] {
+            // Vercel's printed commands take `--force` from `--overwrite`.
+            if d[0] == "vercel" && flag == "--overwrite" {
+                continue;
+            }
             let mut args = vec!["migrate", "--to"];
             args.extend_from_slice(d);
             args.push(flag);

@@ -435,7 +435,7 @@ fn check_without_env(
             )),
         );
         ui::info(format!(
-            "{env_path} not found: checking {} against the spec ([vars] in .evnx.toml)",
+            "{env_path} not found: checking {} against the contract ([vars] in .evnx.toml)",
             paths.example_str()
         ));
         if missing.is_empty() {

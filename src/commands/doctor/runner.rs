@@ -72,7 +72,8 @@ use crate::utils::ui::glyph;
 ///
 /// # Environment Variables
 /// * `EVNX_OUTPUT_JSON=1` - Same as `--format json`, kept because it shipped first
-/// * `EVNX_AUTO_FIX=1` - Same as `--fix`, kept because it shipped first
+///
+/// `EVNX_AUTO_FIX` is no longer read: it warns once and repairs nothing.
 pub fn run(
     path: String,
     verbose: bool,
@@ -80,6 +81,32 @@ pub fn run(
     strict: bool,
     json: Option<bool>,
     skip_without_env: bool,
+) -> Result<Verdict> {
+    run_checks(path, verbose, fix, strict, json, skip_without_env, false)
+}
+
+/// `doctor --all`: the doctor checks, then `validate`, `sync --check` and
+/// `scan`, as one report with one verdict. `--fix` repairs what `doctor --fix`
+/// does and nothing else.
+pub fn run_all(
+    path: String,
+    verbose: bool,
+    fix: bool,
+    strict: bool,
+    json: Option<bool>,
+    skip_without_env: bool,
+) -> Result<Verdict> {
+    run_checks(path, verbose, fix, strict, json, skip_without_env, true)
+}
+
+fn run_checks(
+    path: String,
+    verbose: bool,
+    fix: bool,
+    strict: bool,
+    json: Option<bool>,
+    skip_without_env: bool,
+    all: bool,
 ) -> Result<Verdict> {
     let project_root = PathBuf::from(&path);
 
@@ -106,12 +133,9 @@ pub fn run(
             .unwrap_or(false),
     };
 
-    // Either source saying yes is enough. `EVNX_AUTO_FIX` shipped first and is
-    // documented, so it keeps working; a flag can turn repair on, never off.
-    let from_env = std::env::var("EVNX_AUTO_FIX")
-        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true"))
-        .unwrap_or(false);
-    let auto_fix = fix || from_env;
+    // `EVNX_AUTO_FIX` is gone: said once, and nothing is repaired because of it.
+    auto_fix_variable_warning();
+    let auto_fix = fix;
 
     // `doctor PATH` reads PATH's own `.evnx.toml`, as the other commands read
     // the one governing where they run (I-294). A malformed one is no verdict,
@@ -154,14 +178,22 @@ pub fn run(
         }
     }
 
-    // DEC-D12: a variable in a CI image turning every `doctor` into a repair
-    // run is surprising, so it says so. Not for `--fix`, which was asked for.
-    let notice = from_env && !fix;
+    if all {
+        return super::all::run(
+            &project_root,
+            &config,
+            &template,
+            verbose,
+            auto_fix,
+            strict,
+            json_output,
+        );
+    }
 
     let result = if json_output {
-        run_json(&project_root, &template, verbose, auto_fix, strict, notice)
+        run_json(&project_root, &template, verbose, auto_fix, strict)
     } else {
-        run_text(&project_root, &template, verbose, auto_fix, strict, notice)
+        run_text(&project_root, &template, verbose, auto_fix, strict, false)
     };
 
     // ✅ Always print — eprintln never pollutes stdout. After a clean run only,
@@ -215,7 +247,7 @@ fn is_failure(summary: &Summary, strict: bool) -> bool {
 /// ⚠️ One loop for both renderers (I-169). `run_text` and `run_json` each had
 /// their own copy; every change to how a check runs or is fixed had to be made
 /// twice, and a check that could not run (I-163) would have been a third.
-fn build_report(
+pub(super) fn build_report(
     project_root: &Path,
     template: &Template,
     verbose: bool,
@@ -240,7 +272,7 @@ fn build_report(
 
 /// The report's verdict: an error (2) when a check could not run (DEC-D9),
 /// `Findings` on problems, otherwise `Clean`.
-fn finish(report: &DiagnosticReport, strict: bool) -> Result<Verdict> {
+pub(super) fn finish(report: &DiagnosticReport, strict: bool) -> Result<Verdict> {
     let not_run = report.checks.iter().filter(|c| !c.ran).count();
     if not_run > 0 {
         return Err(verdict::footed(
@@ -258,12 +290,15 @@ fn finish(report: &DiagnosticReport, strict: bool) -> Result<Verdict> {
     })
 }
 
-/// DEC-D12. On stderr, so `--format json` keeps stdout as JSON; hidden by `-q`.
-fn auto_fix_notice() {
-    if !ui::is_quiet() {
+/// `EVNX_AUTO_FIX` was read until 0.15: it made every `doctor` a repair run. It
+/// is no longer read. A CI image that still exports it gets this one line, on
+/// stderr (so `--format json` keeps stdout as JSON), and no repair; hidden by
+/// `-q`. Pass `--fix` to repair.
+pub(super) fn auto_fix_variable_warning() {
+    if std::env::var_os("EVNX_AUTO_FIX").is_some() && !ui::is_quiet() {
         eprintln!(
-            "{} auto-fix enabled by EVNX_AUTO_FIX: repairs are made as with --fix",
-            glyph::INFO.dimmed()
+            "{} EVNX_AUTO_FIX is no longer read; pass --fix",
+            glyph::WARN.yellow()
         );
     }
 }
@@ -272,19 +307,16 @@ fn auto_fix_notice() {
 // Text Output Mode (uses existing ui:: functions)
 // ─────────────────────────────────────────────────────────────
 
-fn run_text(
+pub(super) fn run_text(
     project_root: &Path,
     template: &Template,
     verbose: bool,
     auto_fix: bool,
     strict: bool,
-    notice: bool,
+    all: bool,
 ) -> Result<Verdict> {
     // Use existing UI header function (requires subtitle param)
     ui::print_header("evnx doctor", Some("Diagnosing environment setup"));
-    if notice {
-        auto_fix_notice();
-    }
 
     if verbose {
         ui::info(format!("Project path: {}", project_root.display()));
@@ -323,7 +355,8 @@ fn run_text(
         print_recommendations_text(&report.checks, auto_fix);
     }
 
-    if !quiet {
+    // With `--all` the three commands it names were run.
+    if !quiet && !all {
         print_not_examined_text();
     }
 
@@ -340,11 +373,7 @@ fn run_json(
     verbose: bool,
     auto_fix: bool,
     strict: bool,
-    notice: bool,
 ) -> Result<Verdict> {
-    if notice {
-        auto_fix_notice();
-    }
     let report = build_report(project_root, template, verbose, auto_fix, |_| {});
 
     // Output JSON to stdout (machine-readable for CI/CD)

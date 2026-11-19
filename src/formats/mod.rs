@@ -1,5 +1,6 @@
 pub mod aws;
 pub mod docker;
+pub mod dotenv;
 pub mod github;
 pub mod json;
 pub mod kubernetes;
@@ -21,9 +22,10 @@ pub mod vercel;
 // Re-export converters
 pub use aws::AwsSecretsConverter;
 pub use docker::DockerComposeConverter;
+pub use dotenv::DotenvConverter;
 pub use github::GitHubActionsConverter;
 pub use json::JsonConverter;
-pub use kubernetes::KubernetesSecretConverter;
+pub use kubernetes::{KubeKind, KubernetesSecretConverter};
 pub use shell::ShellExportConverter;
 pub use terraform::TerraformConverter;
 pub use yaml::YamlConverter;
@@ -62,7 +64,7 @@ pub struct Format {
     pub experimental: Option<&'static str>,
 }
 
-/// The 14 formats, in the order every list shows them.
+/// The 15 formats, in the order every list shows them.
 pub const FORMATS: &[Format] = &[
     Format {
         name: "json",
@@ -86,6 +88,14 @@ pub const FORMATS: &[Format] = &[
         group: "Generic",
         label: "Shell export script (bash/zsh)",
         extension: "sh",
+        experimental: None,
+    },
+    Format {
+        name: "dotenv",
+        aliases: &["env"],
+        group: "Generic",
+        label: "Plain .env file (quoted so it reads back exactly)",
+        extension: "env",
         experimental: None,
     },
     Format {
@@ -216,6 +226,7 @@ fn default_converter(name: &str) -> Box<dyn Converter> {
         "json" => Box::new(JsonConverter),
         "yaml" => Box::new(YamlConverter),
         "shell" => Box::new(ShellExportConverter),
+        "dotenv" => Box::new(DotenvConverter),
         "aws-secrets" => Box::new(AwsSecretsConverter),
         "gcp-secrets" => Box::new(GcpSecretConverter::default()),
         "azure-keyvault" => Box::new(AzureKeyVaultConverter::default()),
@@ -276,6 +287,8 @@ pub struct Targets {
     pub namespace: Option<String>,
     /// `--terraform-declarations`: `variable` blocks, not values (terraform).
     pub terraform_declarations: bool,
+    /// `--kind`: Secret, ConfigMap or both (kubernetes).
+    pub kind: Option<KubeKind>,
 }
 
 impl Targets {
@@ -327,6 +340,15 @@ impl Targets {
                 bail!(
                     "--terraform-declarations is for --to terraform; --to {} does not use it. \
                      Nothing was printed.",
+                    f.name
+                );
+            }
+        }
+        if let Some(f) = format {
+            if self.kind.is_some() && f.name != "kubernetes" {
+                bail!(
+                    "--kind is for --to kubernetes; --to {} does not use it. Nothing was \
+                     printed.",
                     f.name
                 );
             }
@@ -406,6 +428,7 @@ pub fn converter_for(
                 "the name of the Secret (--namespace places it, optionally)",
             )?,
             namespace: targets.namespace.clone(),
+            kind: targets.kind.unwrap_or_default(),
         }),
         other => default_converter(other),
     })
@@ -439,7 +462,7 @@ pub fn format_help() {
         eprintln!();
     }
     eprintln!("  {}", "Aliases:".dimmed());
-    eprintln!("    k8s → kubernetes, tf → terraform, yml → yaml");
+    eprintln!("    k8s → kubernetes, tf → terraform, yml → yaml, env → dotenv");
     eprintln!("    compose → docker-compose");
 }
 
@@ -486,6 +509,8 @@ mod registry_tests {
             ("shell", "shell"),
             ("bash", "shell"),
             ("export", "shell"),
+            ("dotenv", "dotenv"),
+            ("env", "dotenv"),
             ("aws", "aws-secrets"),
             ("aws-secrets", "aws-secrets"),
             ("aws-secrets-manager", "aws-secrets"),
@@ -535,6 +560,7 @@ mod registry_tests {
             "json",
             "yaml",
             "shell",
+            "dotenv",
             "aws-secrets",
             "gcp-secrets",
             "azure-keyvault",
@@ -572,7 +598,7 @@ mod registry_tests {
     /// Every row of the table builds the converter it names.
     #[test]
     fn every_format_in_the_table_has_its_converter() {
-        assert_eq!(FORMATS.len(), 14);
+        assert_eq!(FORMATS.len(), 15);
         for f in FORMATS {
             assert_eq!(default_converter(f.name).name(), f.name);
         }

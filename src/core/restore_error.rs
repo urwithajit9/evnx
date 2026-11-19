@@ -132,7 +132,7 @@ impl fmt::Display for RestoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::WrongPassword => {
-                write!(f, "Wrong password or corrupt backup — decryption failed")
+                write!(f, "Wrong passphrase or corrupt backup — decryption failed")
             }
             Self::Unreadable(why) => write!(f, "{why}"),
             Self::FileNotFound(path) => write!(f, "Backup file not found: {path}"),

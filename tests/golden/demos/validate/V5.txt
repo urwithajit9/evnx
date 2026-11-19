@@ -59,13 +59,40 @@ $ evnx validate --format json
       "location": "./.env",
       "suggestion": "Use false or 0 for proper boolean handling",
       "auto_fixable": true
+    },
+    {
+      "severity": "warning",
+      "type": "invalid_url",
+      "variable": "DATABASE_URL",
+      "message": "DATABASE_URL does not appear to be a valid URL",
+      "location": "./.env",
+      "suggestion": "Expected format: https://example.com/path",
+      "auto_fixable": false
+    },
+    {
+      "severity": "warning",
+      "type": "invalid_port",
+      "variable": "API_PORT",
+      "message": "API_PORT is not a valid port number (1-65535)",
+      "location": "./.env",
+      "suggestion": "Expected format: 8080",
+      "auto_fixable": false
+    },
+    {
+      "severity": "warning",
+      "type": "invalid_email",
+      "variable": "ADMIN_EMAIL",
+      "message": "ADMIN_EMAIL does not appear to be a valid email",
+      "location": "./.env",
+      "suggestion": "Expected format: user@example.com",
+      "auto_fixable": false
     }
   ],
   "fixed": [],
   "needs_input": [],
   "summary": {
     "errors": 3,
-    "warnings": 2,
+    "warnings": 5,
     "style": 0,
     "fixed_count": 0,
     "needs_input": 0
@@ -82,6 +109,9 @@ $ evnx validate --format github
 ::warning file=.env,line=7::A is assigned 2 times (lines 7, 8) — only line 8 takes effect%0ASuggestion: Remove the earlier assignments of A, or rename them if they were meant to differ
 ::error file=.env,line=2::SECRET_KEY looks like a placeholder%0ASuggestion: Run: openssl rand -hex 32
 ::warning file=.env,line=5::DEBUG is set to "False" (string, not boolean)%0ASuggestion: Use false or 0 for proper boolean handling
+::warning file=.env,line=1::DATABASE_URL does not appear to be a valid URL%0ASuggestion: Expected format: https://example.com/path
+::warning file=.env,line=3::API_PORT is not a valid port number (1-65535)%0ASuggestion: Expected format: 8080
+::warning file=.env,line=4::ADMIN_EMAIL does not appear to be a valid email%0ASuggestion: Expected format: user@example.com
 Validation failed: 3 errors
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]

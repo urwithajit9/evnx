@@ -82,6 +82,10 @@ pub struct RestoreOptions {
     /// existing live file.
     pub output: Option<PathBuf>,
 
+    /// `--output -`: the text goes to stdout, so every status line goes to
+    /// stderr and no write path is chosen.
+    pub to_stdout: bool,
+
     /// If `true`, decrypt and list variable *names* (never values) without
     /// writing any files. Cheaper than `--dry-run`: no overwrite prompt,
     /// no validation heuristic. Useful for "what keys are in this backup?".
@@ -255,7 +259,9 @@ pub fn prepare_restore(
     // is the correct backup before any file is written.
     // `-q` hides it on a plain restore (DEC-G4); `--inspect` and `--dry-run`
     // print it because it is what they were asked for.
-    if !ui::is_quiet() || options.inspect || options.dry_run {
+    if (!ui::is_quiet() || options.inspect || options.dry_run)
+        && !(options.to_stdout && !options.inspect && !options.dry_run)
+    {
         print_metadata(&metadata, &content);
     }
 
@@ -278,6 +284,21 @@ pub fn prepare_restore(
     }
 
     // ── Success message ───────────────────────────────────────────────────────
+    if options.to_stdout {
+        if !ui::is_quiet() {
+            eprintln!("✓ Decryption successful");
+        }
+        if !crate::utils::looks_like_dotenv(&content) {
+            ui::warning("Decrypted content does not look like a valid .env file.");
+        }
+        return Ok(PrepareResult::Ready(RestoreOutcome {
+            write_path: PathBuf::from("-"),
+            used_fallback: false,
+            content,
+            metadata,
+            output: PathBuf::from("-"),
+        }));
+    }
     ui::success("Decryption successful");
     ui::say(format!("  {} Decryption key cleared from memory", "✓".green()).dimmed());
 
@@ -418,6 +439,17 @@ pub fn commit_restore(outcome: RestoreOutcome, options: &RestoreOptions) -> Resu
             shown(&outcome.write_path),
             shown(&outcome.output),
         ));
+        // RST-3: private, whatever mode an earlier file had, and named in full.
+        if let Err(e) = crate::core::permissions::make_private(&outcome.write_path) {
+            ui::warning(format!(
+                "Could not make {} private: {e:#}",
+                shown(&outcome.write_path)
+            ));
+        }
+        let full =
+            std::path::absolute(&outcome.write_path).unwrap_or_else(|_| outcome.write_path.clone());
+        ui::warning_detail(format!("  Full path: {}", full.display()));
+        ui::warning_detail("  This file holds plaintext secrets. Keep it out of git.");
     } else {
         // `-q`: nothing on success (DEC-G4, I-153).
         ui::say(format!(
@@ -833,6 +865,7 @@ mod tests {
             inspect: true,
             dry_run: false,
             verbose: false,
+            to_stdout: false,
         };
 
         let result = prepare_restore(&encoded_str, pw("inspectpass"), &options);
@@ -868,6 +901,7 @@ mod tests {
             inspect: false,
             dry_run: true,
             verbose: false,
+            to_stdout: false,
         };
 
         let result = prepare_restore(&encoded_str, pw("testpass123"), &options);
@@ -902,6 +936,7 @@ mod tests {
             inspect: false,
             dry_run: false,
             verbose: false,
+            to_stdout: false,
         };
 
         let result = prepare_restore(&encoded_str, pw("wrong_password"), &options);
@@ -937,6 +972,7 @@ mod tests {
             inspect: false,
             dry_run: false,
             verbose: false,
+            to_stdout: false,
         };
 
         let result = prepare_restore(&encoded_str, pw("roundtrippass"), &options)
@@ -975,6 +1011,7 @@ mod tests {
             inspect: false,
             dry_run: false,
             verbose: false,
+            to_stdout: false,
         };
 
         let result = prepare_restore(&encoded_str, pw("pass"), &options)

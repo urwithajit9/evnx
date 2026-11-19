@@ -10,7 +10,7 @@
 //! - I-163, DEC-D9: a check that cannot run is reported by name with its
 //!   cause, the others finish, and the run exits 2: no complete verdict.
 //! - I-166: a skipped check keeps its description; the reason is a detail.
-//! - I-167, DEC-D12: `EVNX_AUTO_FIX` says on stderr that it turned repair on.
+//! - I-167, DEC-D12 (WP-15): `EVNX_AUTO_FIX` is no longer read; it says so once.
 //! - D-118, D-120: `--help` has Exit codes and Environment; the hook's entry
 //!   and description match what fails a commit.
 
@@ -245,18 +245,24 @@ fn t_i166_a_skipped_check_keeps_its_description() {
 // ── I-167, DEC-D12 ───────────────────────────────────────────────────────────
 
 #[test]
-fn t_i167_auto_fix_from_the_environment_says_so() {
+fn t_i167_auto_fix_from_the_environment_says_it_is_not_read() {
     let p = healthy().file(".gitignore", "node_modules/\n");
     let out = run_with(p.path(), &["doctor"], &[("EVNX_AUTO_FIX", "1")], None);
     assert!(
-        out.stderr.contains("auto-fix enabled by EVNX_AUTO_FIX"),
+        out.stderr
+            .contains("EVNX_AUTO_FIX is no longer read; pass --fix"),
         "{}",
         out.stderr
+    );
+    assert_eq!(
+        p.read(".gitignore"),
+        "node_modules/\n",
+        "nothing was repaired"
     );
 
     let p = healthy().file(".gitignore", "node_modules/\n");
     let out = run(p.path(), &["doctor", "--fix"]);
-    out.assert_not_contains("auto-fix enabled");
+    out.assert_not_contains("EVNX_AUTO_FIX");
 }
 
 // ── Help and hook (D-118, D-120) ─────────────────────────────────────────────

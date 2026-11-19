@@ -45,7 +45,7 @@ $ evnx diff --env-name staging --env .env
 [stderr]
 error: the argument '--env-name <NAME>' cannot be used with '--env <FILE>'
 
-Usage: evnx diff --env-name <NAME>
+Usage: evnx diff --env-name <NAME> [A] [B]
 
 For more information, try '--help'.
 [exit 2]
@@ -55,7 +55,7 @@ $ evnx diff --against staging --example .env.production
 [stderr]
 error: the argument '--against <NAME>' cannot be used with '--example <FILE>'
 
-Usage: evnx diff --against <NAME>
+Usage: evnx diff --against <NAME> [A] [B]
 
 For more information, try '--help'.
 [exit 2]

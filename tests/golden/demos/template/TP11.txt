@@ -5,7 +5,10 @@ $ evnx template -i config.tpl.yml -o out.yml
 [stderr]
 error: unexpected argument '-i' found
 
-Usage: evnx template [OPTIONS] --input <INPUT> --output <OUTPUT>
+  tip: to pass '-i' as a value, use '-- -i'
+
+Usage: evnx template [OPTIONS] <INPUT> <OUTPUT>
+       evnx template [OPTIONS] --input <FILE> --output <FILE>
 
 For more information, try '--help'.
 [exit 2]

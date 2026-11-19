@@ -161,6 +161,12 @@ pub enum ParseError {
     #[error("could not be read")]
     FileReadError(#[from] std::io::Error),
 
+    /// The file is UTF-16 (a BOM, or a NUL in every other byte): what
+    /// PowerShell's `>` writes. evnx reads UTF-8 only, and says so rather than
+    /// reporting a syntax error on every line.
+    #[error("{path} is UTF-16. Save it as UTF-8 (in PowerShell: `Set-Content -Encoding utf8`).")]
+    Utf16 { path: String },
+
     /// A line did not contain a `=` separator (and is not a comment or blank).
     #[error("Invalid format at line {line}: {message}")]
     InvalidFormat { line: usize, message: String },
@@ -214,6 +220,49 @@ pub enum ParseError {
 
 /// Convenience alias used throughout the parser internals.
 pub type ParseResult<T> = Result<T, ParseError>;
+
+/// Whether `bytes` start like UTF-16 text: a byte order mark, or ASCII text
+/// with a NUL in every other byte (UTF-16 without a mark).
+pub fn looks_utf16(bytes: &[u8]) -> bool {
+    if bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]) {
+        return true;
+    }
+    let head = &bytes[..bytes.len().min(64)];
+    if head.len() < 8 {
+        return false;
+    }
+    let every_other_nul = |start: usize| {
+        head.iter().skip(start).step_by(2).all(|b| *b == 0)
+            && head.iter().skip(1 - start).step_by(2).any(|b| *b != 0)
+    };
+    every_other_nul(0) || every_other_nul(1)
+}
+
+/// An env file's text. UTF-16 is refused by name ([`ParseError::Utf16`]) before
+/// the UTF-8 error that would otherwise be all there is to say.
+pub fn read_env_text(path: &Path) -> ParseResult<String> {
+    let bytes = fs::read(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ParseError::FileNotFound {
+                path: path.display().to_string(),
+            }
+        } else {
+            ParseError::FileReadError(e)
+        }
+    })?;
+    if looks_utf16(&bytes) {
+        return Err(ParseError::Utf16 {
+            path: crate::utils::path::label(&path.to_string_lossy()),
+        });
+    }
+    // The message `read_to_string` gave, which fixtures and users have seen.
+    String::from_utf8(bytes).map_err(|_| {
+        ParseError::FileReadError(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        ))
+    })
+}
 
 // ── Public data types ─────────────────────────────────────────────────────────
 
@@ -404,15 +453,7 @@ impl Parser {
     /// Read a file into a [`Document`]. Fails only when the file cannot be
     /// read; what is wrong *inside* it is in the document's `problems`.
     pub fn read_document<P: AsRef<Path>>(&self, path: P) -> ParseResult<Document> {
-        let content = fs::read_to_string(path.as_ref()).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                ParseError::FileNotFound {
-                    path: path.as_ref().display().to_string(),
-                }
-            } else {
-                ParseError::FileReadError(e)
-            }
-        })?;
+        let content = read_env_text(path.as_ref())?;
         Ok(self.parse_document(&content))
     }
 
@@ -462,6 +503,8 @@ impl Parser {
             ParseError::FileNotFound { .. } => {
                 crate::core::verdict::missing_file(format!("{e}\n\n{hint}"))
             }
+            // Says what to do by itself; "Failed to parse" would only precede it.
+            e @ ParseError::Utf16 { .. } => crate::core::verdict::usage(e.to_string()),
             other => anyhow::Error::from(other).context(format!("Failed to parse {path}")),
         })
     }

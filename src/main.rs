@@ -421,7 +421,8 @@ fn run() -> Result<Verdict, EvnxError> {
             output,
             exit_zero,
             ignore,
-            validate_formats,
+            validate_formats: _,
+            no_formats,
             fail_on,
         } => {
             let flags = file_args.flags();
@@ -453,10 +454,8 @@ fn run() -> Result<Verdict, EvnxError> {
                 // source (I-038).
                 ignore,
                 ignore_configured: cfg.validate.ignore.clone().unwrap_or_default(),
-                validate_formats: evnx::core::config::any(
-                    validate_formats,
-                    cfg.validate.validate_formats,
-                ),
+                // On unless `--no-formats` or `[validate] validate_formats = false`.
+                validate_formats: !no_formats && cfg.validate.validate_formats.unwrap_or(true),
                 spec: cfg.vars.clone(),
             })
         }
@@ -671,6 +670,8 @@ fn run() -> Result<Verdict, EvnxError> {
         }
 
         Commands::Diff {
+            left,
+            right,
             files: file_args,
             against,
             values,
@@ -686,15 +687,20 @@ fn run() -> Result<Verdict, EvnxError> {
             use commands::diff::{Compare, DiffOptions, FailOn};
             let here = Path::new(".");
             let format = output.resolved().to_string();
-            let flags = file_args.flags();
+            let mut flags = file_args.flags();
+            // `diff A B`: A is the left file, B the right one (positionals
+            // exclude the flags, so these are the only ones set).
+            flags.env = left.as_deref().or(flags.env);
+            flags.example = right.as_deref().or(flags.example);
+            let two_files = right.is_some();
             let files = resolve_files(
                 flags.env,
                 flags.env_name,
                 flags.example,
                 &cfg,
                 evnx::core::resolve::Need::Existing,
-                cli.quiet || against.is_some(),
-                cli.verbose && against.is_none(),
+                cli.quiet || against.is_some() || two_files,
+                cli.verbose && against.is_none() && !two_files,
             )?;
             let env = files.env.clone();
             // The right-hand side, and with it what is compared (I-078):
@@ -705,7 +711,7 @@ fn run() -> Result<Verdict, EvnxError> {
             // consulted here: it names the *left* side.
             let (example, compare) = match against.as_deref() {
                 Some(name) => (resolve_env(here, None, Some(name), None)?, Compare::Values),
-                None if values => (files.template.clone(), Compare::Values),
+                None if values || two_files => (files.template.clone(), Compare::Values),
                 None => (files.template.clone(), Compare::Keys),
             };
             if let Err(e) =
@@ -736,6 +742,7 @@ fn run() -> Result<Verdict, EvnxError> {
 
         Commands::Convert {
             env: env_args,
+            from,
             to,
             output,
             force,
@@ -755,6 +762,7 @@ fn run() -> Result<Verdict, EvnxError> {
             name,
             namespace,
             terraform_declarations,
+            kind,
             confirm,
             dry,
         } => {
@@ -773,13 +781,24 @@ fn run() -> Result<Verdict, EvnxError> {
                 name,
                 namespace,
                 terraform_declarations,
+                kind,
             };
             let early = evnx::core::args::check_opt(
                 "--prefix",
                 prefix.as_deref(),
                 evnx::core::args::Name::VarPrefix,
             )
-            .and_then(|()| targets.check(to.and_then(evnx::formats::find)));
+            .and_then(|()| targets.check(to.and_then(evnx::formats::find)))
+            .and_then(|()| {
+                if kind == Some(evnx::formats::KubeKind::Configmap) && base64 {
+                    anyhow::bail!(
+                        "--base64 is for a Secret's `data:`; a ConfigMap holds plain text. \
+                         Use --kind secret or --kind split, or drop --base64. Nothing was \
+                         printed."
+                    );
+                }
+                Ok(())
+            });
             if let Err(e) = early {
                 return Err(EvnxError::Config(e));
             }
@@ -795,6 +814,7 @@ fn run() -> Result<Verdict, EvnxError> {
             let gitignore = gitignore || (confirm.yes && output.is_some() && !no_gitignore);
             let config = commands::convert::ConvertConfig::builder()
                 .env(env)
+                .from(from)
                 .target_format(to)
                 .output_path(output)
                 .include(include)
@@ -1012,6 +1032,8 @@ fn run() -> Result<Verdict, EvnxError> {
         Commands::Template {
             input,
             output,
+            input_flag,
+            output_flag,
             env: env_args,
             confirm,
             gitignore,
@@ -1024,6 +1046,12 @@ fn run() -> Result<Verdict, EvnxError> {
             force,
             follow_symlinks,
         } => {
+            // Clap guarantees one of each form is present.
+            let (Some(input), Some(output)) = (input.or(input_flag), output.or(output_flag)) else {
+                return Err(EvnxError::Config(anyhow::anyhow!(
+                    "template needs an INPUT and an OUTPUT: evnx template INPUT OUTPUT"
+                )));
+            };
             // RM-14 (DEC-T2): refusing is the default; --strict asked for it.
             if strict {
                 evnx::utils::ui::info(
@@ -1068,6 +1096,8 @@ fn run() -> Result<Verdict, EvnxError> {
             password_file,
             keep,
             verify,
+            gitignore,
+            no_gitignore,
         } => commands::backup::run(
             resolve_env(
                 Path::new("."),
@@ -1080,6 +1110,7 @@ fn run() -> Result<Verdict, EvnxError> {
             password_file,
             evnx::core::config::pick(keep, cfg.backup.keep, 3),
             verify,
+            evnx::utils::protect::GitignoreMode::from_flags(gitignore, no_gitignore),
         )
         .map(clean),
 
@@ -1087,6 +1118,7 @@ fn run() -> Result<Verdict, EvnxError> {
         Commands::Restore {
             backup,
             output,
+            show_values,
             yes,
             gitignore,
             no_gitignore,
@@ -1097,6 +1129,7 @@ fn run() -> Result<Verdict, EvnxError> {
             backup,
             commands::restore::Options {
                 output,
+                show_values,
                 verbose: cli.verbose,
                 dry_run,
                 inspect,
@@ -1137,11 +1170,16 @@ fn run() -> Result<Verdict, EvnxError> {
             path,
             dir,
             fix,
+            all,
             strict,
             skip_without_env,
             output,
             verbose,
-        } => evnx::commands::doctor::run(
+        } => (if all {
+            evnx::commands::doctor::run_all
+        } else {
+            evnx::commands::doctor::run
+        })(
             dir.dir
                 .map(|d| d.to_string_lossy().into_owned())
                 .unwrap_or(path),
@@ -1320,6 +1358,7 @@ fn run() -> Result<Verdict, EvnxError> {
             check,
             list,
             output.resolved() == evnx::cli::args::Format::Json,
+            cli.verbose,
         ),
     };
 

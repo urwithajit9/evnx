@@ -76,12 +76,12 @@ fn t_i082_no_help_carries_developer_notes() {
     }
 }
 
-/// D-47: there are 14 formats, not "14+".
+/// D-47: there are 15 formats, not "15+".
 #[test]
 fn t_i082_help_counts_the_formats() {
     let out = run(Project::new().path(), &["convert", "--help"]);
-    assert!(!out.stdout.contains("14+"), "{}", out.stdout);
-    assert!(out.stdout.contains("14 formats"), "{}", out.stdout);
+    assert!(!out.stdout.contains("15+"), "{}", out.stdout);
+    assert!(out.stdout.contains("15 formats"), "{}", out.stdout);
 }
 
 // ── I-083 ─────────────────────────────────────────────────────────────────────

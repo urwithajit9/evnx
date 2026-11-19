@@ -20,7 +20,7 @@ $ evnx backup .env --env-name production --password-file pw
 [stderr]
 error: the argument '[ENV]' cannot be used with '--env-name <NAME>'
 
-Usage: evnx backup --password-file <PATH> <ENV>
+Usage: evnx backup --key-file <PATH> <ENV>
 
 For more information, try '--help'.
 [exit 2]

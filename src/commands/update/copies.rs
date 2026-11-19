@@ -112,7 +112,30 @@ pub fn find() -> Vec<Copy> {
     let path_dirs: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
         .unwrap_or_default();
-    find_in(&path_dirs, &known_folders())
+    let mut copies = find_in(&path_dirs, &known_folders());
+    add_running(&mut copies, std::env::current_exe().ok());
+    copies
+}
+
+/// The binary running this command, when the search did not find it: one run
+/// from a build folder (`./target/release/evnx`) is on no `PATH` and in no
+/// install folder, and `--list` would otherwise say there is none. It never
+/// "runs" (typing `evnx` does not start it) and is added last.
+fn add_running(copies: &mut Vec<Copy>, exe: Option<PathBuf>) {
+    let Some(path) = exe else { return };
+    let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+    if copies.iter().any(|c| c.resolved == resolved) {
+        return;
+    }
+    copies.push(Copy {
+        channel: Channel::from_install(&resolved),
+        this: true,
+        path,
+        resolved,
+        version: None,
+        version_from: VersionFrom::Unknown,
+        runs: false,
+    });
 }
 
 fn find_in(path_dirs: &[PathBuf], extra: &[PathBuf]) -> Vec<Copy> {
@@ -315,6 +338,40 @@ mod tests {
         assert!(copies.iter().all(|c| c.version_from == VersionFrom::Ran));
         // 0.11.0 is kept, though 0.10.0 runs.
         assert_eq!(newest(&copies), Some(1));
+    }
+
+    /// UPD-3: a binary run from outside every searched folder is still listed,
+    /// as this one and not as the one that runs.
+    #[test]
+    fn wp15_list_includes_running_copy_off_path() {
+        let t = tempfile::TempDir::new().unwrap();
+        let a = t.path().join("a");
+        let build = t.path().join("target/release");
+        stub(&a, "echo 'evnx 0.10.0'");
+        let exe = stub(&build, "echo 'evnx 0.15.0'");
+        let mut copies = find_in(std::slice::from_ref(&a), &[]);
+        add_running(&mut copies, Some(exe.clone()));
+        assert_eq!(copies.len(), 2);
+        assert!(copies[0].runs && !copies[0].this);
+        assert!(!copies[1].runs && copies[1].this);
+        assert_eq!(copies[1].path, exe);
+        read_versions(&mut copies);
+        assert_eq!(
+            copies[1].version.as_deref(),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
+        assert_eq!(copies[1].version_from, VersionFrom::Itself);
+    }
+
+    /// ...and listed once when it is on `PATH` already.
+    #[test]
+    fn wp15_list_no_duplicate_when_on_path() {
+        let t = tempfile::TempDir::new().unwrap();
+        let a = t.path().join("a");
+        let exe = stub(&a, "echo 'evnx 0.10.0'");
+        let mut copies = find_in(std::slice::from_ref(&a), &[]);
+        add_running(&mut copies, Some(exe));
+        assert_eq!(copies.len(), 1, "{copies:?}");
     }
 
     #[test]

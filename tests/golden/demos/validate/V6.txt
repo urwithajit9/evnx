@@ -24,7 +24,19 @@ Needs your input (2):
      ./.env
      →  Remove the earlier assignments of A, or rename them if they were meant to differ
 
-  1 warning  ·  2 fixed  ·  2 need your input
+  !  DATABASE_URL does not appear to be a valid URL
+     ./.env
+     →  Expected format: https://example.com/path
+
+  !  API_PORT is not a valid port number (1-65535)
+     ./.env
+     →  Expected format: 8080
+
+  !  ADMIN_EMAIL does not appear to be a valid email
+     ./.env
+     →  Expected format: user@example.com
+
+  4 warnings  ·  2 fixed  ·  2 need your input
 
 Next steps:
   1. Fill in the values listed under "Needs your input" — evnx cannot invent them
@@ -93,6 +105,18 @@ $ evnx validate --fix --dry-run
      →  Use false or 0 for proper boolean handling
      ·  fixable with --fix
 
+  !  DATABASE_URL does not appear to be a valid URL
+     ./.env
+     →  Expected format: https://example.com/path
+
+  !  API_PORT is not a valid port number (1-65535)
+     ./.env
+     →  Expected format: 8080
+
+  !  ADMIN_EMAIL does not appear to be a valid email
+     ./.env
+     →  Expected format: user@example.com
+
 Would fix (2):
   • SECRET_KEY: would generate (64 chars) (was "changeme")
   • DEBUG: "False" → false
@@ -104,7 +128,7 @@ Would need your input (2):
 
   Dry run — nothing was written: ./.env is unchanged and no backup was made
 
-  3 errors  ·  2 warnings
+  3 errors  ·  5 warnings
 
 Next steps:
   1. Review and fix the errors above

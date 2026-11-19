@@ -27,7 +27,7 @@ fn t_dec_s4_the_template_is_checked_against_the_spec() {
     let out = run(p.path(), &["sync", "--check"]);
     out.assert_code(0);
     assert!(
-        out.all().contains("spec"),
+        out.all().contains("contract"),
         "says what it compared:\n{}",
         out.all()
     );

@@ -124,17 +124,8 @@ pub const REMOVED: &[Removed] = &[
         old: &["-p", "--path"],
         new: "-C/--dir",
     },
-    // backup, restore: the password file is `--password-file` everywhere.
-    Removed::Flag {
-        path: &["backup"],
-        old: &["--key-file"],
-        new: "--password-file",
-    },
-    Removed::Flag {
-        path: &["restore"],
-        old: &["--key-file"],
-        new: "--password-file",
-    },
+    // backup, restore: the file holding the passphrase is `--key-file`
+    // everywhere; `--password-file` stays as a hidden alias, so neither is here.
     // restore: `--yes` is the one spelling of "replace without asking".
     Removed::Flag {
         path: &["restore"],
@@ -184,8 +175,9 @@ pub const REMOVED: &[Removed] = &[
         value: "text",
         new: "--format pretty",
     },
-    // migrate: the env file is `--env`; GitHub is `github`; the other short
-    // destination names and `--from env` went with the enums.
+    // migrate: the env file is `--env`; GitHub is `github`; `--from env` went with
+    // the enum. (`aws`, `gcp` and `azure` came back in 0.15.0: the names
+    // `convert --to` takes work in `migrate --to` too.)
     Removed::Flag {
         path: &["migrate"],
         old: &["--source-file"],
@@ -196,24 +188,6 @@ pub const REMOVED: &[Removed] = &[
         flag: "--to",
         value: "github-actions",
         new: "--to github",
-    },
-    Removed::Value {
-        path: &["migrate"],
-        flag: "--to",
-        value: "aws",
-        new: "--to aws-secrets-manager",
-    },
-    Removed::Value {
-        path: &["migrate"],
-        flag: "--to",
-        value: "gcp",
-        new: "--to gcp-secret-manager",
-    },
-    Removed::Value {
-        path: &["migrate"],
-        flag: "--to",
-        value: "azure",
-        new: "--to azure-keyvault",
     },
     Removed::Value {
         path: &["migrate"],

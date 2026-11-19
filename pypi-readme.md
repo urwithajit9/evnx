@@ -65,7 +65,7 @@ cargo install evnx
 ### Via curl script (Linux / macOS — no runtime required)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
+curl -fsSL https://evnx.dev/install.sh | bash
 ```
 
 ---

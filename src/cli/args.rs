@@ -181,9 +181,20 @@ pub struct DirArgs {
     pub dir: Option<PathBuf>,
 }
 
+/// What `evnx convert --from` can read: the two formats `--to` can write that
+/// have a plain reader. More wait for `evnx add import`.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ConvertFrom {
+    /// A `.env` file.
+    #[default]
+    Dotenv,
+    /// A flat `{"KEY": "value"}` object.
+    Json,
+}
+
 /// What `evnx convert --to` can write (and, from 0.14.2, `cloud export --to`).
 ///
-/// Fourteen formats, spelled as [`crate::formats::FORMATS`] names them, except
+/// Fifteen formats, spelled as [`crate::formats::FORMATS`] names them, except
 /// that GitHub Actions is `github`: the one word every command uses for it.
 /// The other short spellings `convert` has always taken (`yml`, `k8s`, `tf`,
 /// …) stay as hidden aliases; `github-actions` and `gh-actions` do not.
@@ -194,6 +205,8 @@ pub enum ConvertTarget {
     Yaml,
     #[value(aliases = ["bash", "export"])]
     Shell,
+    #[value(alias = "env")]
+    Dotenv,
     #[value(aliases = ["aws", "aws-secrets-manager"])]
     AwsSecrets,
     #[value(aliases = ["gcp", "gcp-secret-manager"])]
@@ -220,6 +233,7 @@ impl ConvertTarget {
             Self::Json => "json",
             Self::Yaml => "yaml",
             Self::Shell => "shell",
+            Self::Dotenv => "dotenv",
             Self::AwsSecrets => "aws-secrets",
             Self::GcpSecrets => "gcp-secrets",
             Self::AzureKeyvault => "azure-keyvault",

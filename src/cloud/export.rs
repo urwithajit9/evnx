@@ -583,7 +583,7 @@ mod tests {
 
     /// ⚠️ **The test that must not be skipped.**
     ///
-    /// Export reaches the 14 formats through the same `get_converter` that
+    /// Export reaches the 15 formats through the same `get_converter` that
     /// `convert` uses, and the whole point of this command is that the file you
     /// get out is the file you would have got any other way. If these two paths
     /// ever drift, an export is quietly wrong and nobody finds out until they

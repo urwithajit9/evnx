@@ -174,6 +174,7 @@ fn reason(e: &ParseError) -> &'static str {
         | ParseError::ExpansionDepthExceeded { .. }
         | ParseError::ForwardReference { .. } => "the value could not be read",
         ParseError::FileNotFound { .. } | ParseError::FileReadError(_) => "could not be read",
+        ParseError::Utf16 { .. } => "the file is UTF-16; save it as UTF-8",
     }
 }
 

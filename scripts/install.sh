@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # evnx (formerly dotenv-space-cli) installer
-# Usage: curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
+# Usage: curl -fsSL https://evnx.dev/install.sh | bash
 #
 # Environment (UP-11f):
 #   EVNX_VERSION=0.10.18        install this release instead of the latest
 #   EVNX_INSTALL_DIR=/opt/bin   install into this folder instead of the default
+#   EVNX_MODIFY_PATH=1          when the install folder is not on PATH, append
+#                               the PATH line to your shell profile. Without
+#                               it the script never edits a profile; at a
+#                               terminal it asks first, with no terminal it
+#                               only prints the lines.
 #
-# ⚠️ This file goes live on merge to `main`: dotenv.space/install.sh proxies it,
-# cached for up to an hour. Review a change to it like a release.
+# ⚠️ This file goes live on merge to `main`: evnx.dev/install.sh serves it
+# (dotenv.space/install.sh redirects there), cached for up to an hour. Review
+# a change to it like a release.
 # Tests: tests/install/run.sh (stubbed curl, uname, ldd; no network).
 
 # ⚠️ `-o pipefail` is not free on this script and two pipelines had to be
@@ -347,6 +353,25 @@ info "Installing to $INSTALL_DIR..."
 $SUDO mv "${BINARY_NAME}-${TARGET}" "$TARGET_FILE"
 $SUDO chmod +x "$TARGET_FILE"
 
+# ── Shell completions (WP-16, CMP-3) ─────────────────────────────────────────
+#
+# Archives from v0.15.0 carry `completions/`. Each file is copied only into a
+# folder that already exists: a shell that has no such folder is not using
+# completions from there, and this script creates no folders and edits no
+# profile for them. An older archive has no folder, which is silently fine.
+# Best effort: a failed copy never fails the install.
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+copy_completion() { # source-file dest-dir dest-name label
+    if [ -f "completions/$1" ] && [ -d "$2" ] \
+        && cp "completions/$1" "$2/$3" 2>/dev/null; then
+        info "Installed $4 completions to $2/$3"
+    fi
+}
+copy_completion evnx.bash "$DATA_HOME/bash-completion/completions" evnx bash
+copy_completion _evnx "$DATA_HOME/zsh/site-functions" _evnx zsh
+copy_completion evnx.fish "$CONFIG_HOME/fish/completions" evnx.fish fish
+
 # ── Report the copy that was installed (UP-11a) ──────────────────────────────
 #
 # ⚠️ Not `evnx --version`: that is whichever copy is first on PATH, and with an
@@ -398,22 +423,91 @@ if [ "$ON_PATH" = false ]; then
     # ⚠️ No removal hint here. The copy on PATH may be the only working one,
     # and `export PATH="<dir>:$PATH"` puts this folder first anyway. Advising
     # `rm` on it left the user with no `evnx` at all.
+    #
+    # ⚠️ The profile is edited only with EVNX_MODIFY_PATH=1 or a "y" typed at
+    # a terminal. Never in a pipe without the variable, never without consent.
+    SHELL_NAME=$(basename "${SHELL:-}")
     if [ "$INSTALL_DIR" = "$LOCAL_DIR" ]; then
-        # shellcheck disable=SC2016  # written for the profile, unexpanded
-        LINE='export PATH="$HOME/.local/bin:$PATH"'
+        DIR_TEXT='$HOME/.local/bin'
     else
-        LINE="export PATH=\"$INSTALL_DIR:\$PATH\""
+        DIR_TEXT="$INSTALL_DIR"
     fi
+    case "$SHELL_NAME" in
+        fish)
+            PROFILE="$CONFIG_HOME/fish/config.fish"
+            LINE="set -gx PATH \"$DIR_TEXT\" \$PATH"
+            ;;
+        zsh)
+            PROFILE="$HOME/.zshrc"
+            LINE="export PATH=\"$DIR_TEXT:\$PATH\""
+            ;;
+        bash)
+            # macOS terminals start login shells, which read .bash_profile.
+            if [ "$(uname -s)" = "Darwin" ]; then
+                PROFILE="$HOME/.bash_profile"
+            else
+                PROFILE="$HOME/.bashrc"
+            fi
+            LINE="export PATH=\"$DIR_TEXT:\$PATH\""
+            ;;
+        *)
+            PROFILE=""
+            LINE="export PATH=\"$DIR_TEXT:\$PATH\""
+            ;;
+    esac
+
     if [ -n "$OTHER" ]; then
-        NOW="so \`evnx\` still runs $OTHER.
-       To use this copy, add"
+        warn "$INSTALL_DIR is not on your PATH, so \`evnx\` still runs $OTHER."
     else
-        NOW="so \`evnx\` is not found yet.
-       Add"
+        warn "$INSTALL_DIR is not on your PATH, so \`evnx\` is not found yet."
     fi
-    warn "$INSTALL_DIR is not on your PATH, $NOW this line to your shell profile
-       (~/.bashrc, ~/.zshrc, …), then open a new terminal:
-         $LINE"
+    echo
+    echo "  Use it now (this terminal only):"
+    echo "    $LINE"
+
+    # Consent. 1/y/yes from EVNX_MODIFY_PATH, else a question when a person
+    # can answer it. `_EVNX_TTY` is the test hook for the answer, like
+    # `_EVNX_GH`; the real source is /dev/tty, because with `curl | bash`
+    # stdin is the script itself.
+    MODIFY=no
+    case "${EVNX_MODIFY_PATH:-}" in
+        1|y|Y|yes|YES) MODIFY=yes ;;
+        "")
+            if [ -n "$PROFILE" ]; then
+                ANSWER=""
+                if [ -n "${_EVNX_TTY:-}" ]; then
+                    read -r ANSWER < "$_EVNX_TTY" || true
+                elif [ -t 1 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+                    printf '\n  Add that line to %s so new terminals find evnx? [y/N] ' "$PROFILE" > /dev/tty
+                    read -r ANSWER < /dev/tty || true
+                fi
+                case "$ANSWER" in y|Y|yes|YES) MODIFY=yes ;; esac
+            fi
+            ;;
+    esac
+
+    if [ -z "$PROFILE" ]; then
+        echo
+        echo "  Keep it (new terminals): add that line to your shell's startup file."
+        echo "  (This shell is not bash, zsh or fish, so nothing was offered.)"
+    elif [ "$MODIFY" = yes ]; then
+        if [ -f "$PROFILE" ] && grep -qxF -- "$LINE" "$PROFILE" 2>/dev/null; then
+            echo
+            echo "  Keep it: $PROFILE already has that line. Open a new terminal."
+        elif mkdir -p "$(dirname "$PROFILE")" 2>/dev/null \
+            && printf '\n# Added by the evnx installer\n%s\n' "$LINE" >> "$PROFILE" 2>/dev/null; then
+            echo
+            echo "  Keep it: added to $PROFILE:"
+            echo "    $LINE"
+            echo "  Open a new terminal, or use the line above in this one."
+        else
+            warn "Could not write $PROFILE. Add the line above to it yourself."
+        fi
+    else
+        echo
+        echo "  Keep it (new terminals): add that line to $PROFILE."
+        echo "  Nothing was changed. To let the installer do it: EVNX_MODIFY_PATH=1"
+    fi
 elif [ -n "$OTHER" ]; then
     # Both on PATH and the other wins: that copy is the one to remove.
     warn "Another evnx comes first on your PATH, so typing \`evnx\` runs it, not this one:

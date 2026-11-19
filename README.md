@@ -14,7 +14,21 @@ migration to cloud secret managers. It also syncs them end-to-end encrypted, so 
 stores only ciphertext it cannot read — with a limit worth knowing before you rely
 on it, in [Cloud sync](#cloud-sync).
 
-[Website](https://www.evnx.dev) | [Getting Started](./docs/GETTING_STARTED.md) | [Changelog](./CHANGELOG.md)
+[Website](https://www.evnx.dev) | [Getting Started](./docs/GETTING_STARTED.md) | [Changelog](./CHANGELOG.md) | [Stability](./docs/STABILITY.md)
+
+---
+
+## One-minute start
+
+```bash
+curl -fsSL https://evnx.dev/install.sh | bash   # other ways: Installation, below
+evnx init        # a .env.example, a .env and the .evnx.toml contract
+evnx validate    # check .env against the template
+evnx scan        # look for secrets in the project
+```
+
+If `evnx: command not found` follows the install, the installer printed a "Use it now"
+line: paste it, and see [Installation](#linux--macos) for keeping it.
 
 ---
 
@@ -35,12 +49,37 @@ try evnx in your browser via GitHub Actions, no installation required.
 ### Linux / macOS
 
 ```bash
-curl -fsSL https://dotenv.space/install.sh | bash
+curl -fsSL https://evnx.dev/install.sh | bash
 ```
 
 It checks the archive's SHA-256 and, from v0.11.0 with a signed-in `gh`, its build
-provenance. Pin a version with `EVNX_VERSION=0.14.1`, choose the folder with
-`EVNX_INSTALL_DIR`.
+provenance. It installs into `/usr/local/bin` when you can write there, else
+`~/.local/bin` (created if missing).
+
+| Variable | Effect |
+|---|---|
+| `EVNX_VERSION=0.15.0` | install this release instead of the latest (CI should pin) |
+| `EVNX_INSTALL_DIR=/opt/bin` | install into this folder |
+| `EVNX_MODIFY_PATH=1` | when the folder is not on `PATH`, append the `PATH` line to your shell's startup file |
+
+When the folder is not on your `PATH`, the installer prints two labelled lines:
+**Use it now**, which makes `evnx` work in the terminal you are in, and **Keep it**,
+the line for your startup file (`~/.zshrc`, `~/.bashrc` or `~/.bash_profile` on
+macOS, `~/.config/fish/config.fish` with fish syntax). It does not edit that file
+on its own. At a terminal it asks first (default no); with no terminal it only
+prints; `EVNX_MODIFY_PATH=1` is the non-interactive yes. It adds the line once
+and says what it wrote.
+
+```bash
+curl -fsSL https://evnx.dev/install.sh | EVNX_MODIFY_PATH=1 bash
+```
+
+**Completions.** From v0.15.0 the Linux and macOS archives carry
+`completions/`, and the installer copies each script into the shell's folder
+**only if that folder already exists** (`~/.local/share/bash-completion/completions`,
+`~/.local/share/zsh/site-functions`, `~/.config/fish/completions`; it creates no
+folder and edits no profile for them). Otherwise `evnx completions <shell>`
+prints the script; see [`evnx completions`](#evnx-completions).
 
 ### Docker
 
@@ -68,8 +107,29 @@ Without a global install:
 
 ```bash
 npx @evnx/cli --version       # or: pnpm dlx @evnx/cli / bunx @evnx/cli
-npm install --save-dev @evnx/cli   # per project (pnpm add -D / bun add -d)
 ```
+
+#### In a JavaScript project (project-local)
+
+Add it as a development dependency so everyone who runs `npm install` gets the
+same version, and nothing is installed system-wide:
+
+```bash
+npm install --save-dev @evnx/cli      # pnpm add -D @evnx/cli / bun add -d @evnx/cli
+npx evnx validate                     # runs the copy in node_modules/.bin
+```
+
+```json
+{
+  "scripts": {
+    "env:check": "evnx validate --strict && evnx scan"
+  }
+}
+```
+
+`npm run env:check` finds the project's `evnx` without `npx`, and CI needs only
+`npm ci && npm run env:check`. The package name is `@evnx/cli`; the command it
+installs is `evnx`. `npm update @evnx/cli` upgrades it.
 
 ### pipx (recommended for Python environments)
 
@@ -177,9 +237,9 @@ says `built with: net, migrate, backup, cloud` for a full build.
 
 Commands exit **0** when they ran and found nothing, **1** when they ran and the
 answer is no (secrets found, drift, a failed upload), and **2** when they could
-not run — "No verdict: evnx did not finish". `backup` and `restore` are the
-exception: they keep the specific codes listed in their section below (`restore`
-exits 3 when the backup file is missing) and never exit 1. `-q` prints nothing on
+not run — "No verdict: evnx did not finish". `backup` and `restore` never
+exit 1: `restore` adds **4** (declined) and **5** (written aside, to
+`<output>.restored`); see their section. `-q` prints nothing on
 success, in every command including the cloud ones (v0.10.18+); findings, warnings,
 errors and data you asked for still print.
 
@@ -343,7 +403,7 @@ cat staged.env | evnx validate --env -    # v0.12.0+: stdin, nothing written to 
 evnx parse --format json --values | evnx validate --env - --input-format json   # v0.12.0+
 ```
 
-Detects: missing required variables, placeholder values (`YOUR_KEY_HERE`, `CHANGE_ME`), the boolean string trap (`DEBUG="False"` is truthy in most runtimes), weak secret keys, duplicate keys, `localhost` in a project with Docker files, an env file `.gitignore` does not cover (a warning) or git already tracks (an error), and, with `--validate-formats`, malformed URLs, ports and emails. Warnings alone exit 0 unless `--fail-on warning`.
+Detects: missing required variables, placeholder values (`YOUR_KEY_HERE`, `CHANGE_ME`), the boolean string trap (`DEBUG="False"` is truthy in most runtimes), weak secret keys, duplicate keys, `localhost` in a project with Docker files, an env file `.gitignore` does not cover (a warning) or git already tracks (an error), and malformed URLs, ports and emails (warnings; `--no-formats` turns them off). Warnings alone exit 0 unless `--fail-on warning`.
 
 A file that does not parse lists every problem in it at once (v0.12.0+). `--fix` is
 refused for stdin and JSON input: there is no file to rewrite.
@@ -353,7 +413,9 @@ refused for stdin and JSON input: there is no file to rewrite.
 ### `evnx parse`
 
 **v0.12.0+.** What evnx reads from a `.env`, line by line: each key, its line, and
-whether the value is empty, a placeholder or a secret. **Names only** — values appear
+whether the value is empty, a placeholder or a secret, exported, multiline, overridden by a
+later line (`duplicate`) or built from a `${NAME}` reference (`expands`); the JSON adds how it
+is quoted and its length (`run.schema_version` 2). **Names only** — values appear
 only with `--values`, which a terminal refuses without `--show-values`. Every problem in the
 file is listed, and the exit code is 1 when there is one.
 
@@ -418,6 +480,7 @@ every filled-in value differs from its placeholder. Between two environments
 evnx diff                     # keys missing from .env, or not in .env.example
 evnx diff --fail-on missing   # exit 1 only when .env lacks a key the template has
 evnx diff --env-name production --against staging   # two environments: keys and values
+evnx diff .env.staging .env.production   # two files by name: keys and values, left file first
 evnx diff --values            # compare values against the template too
 evnx diff --show-values       # print values (secrets stay masked, e.g. postgres://admin:***@db)
 evnx diff --reverse           # swap comparison direction
@@ -454,7 +517,24 @@ evnx convert --to heroku --heroku-app my-app
 evnx convert --to vercel                # JSON body for Vercel's env API
 evnx convert --to railway               # experimental
 evnx convert --to doppler               # flat JSON for doppler secrets upload
+evnx convert --to dotenv                # a .env again, quoted so evnx reads it back exactly
 ```
+
+Reading JSON back in, and one more Kubernetes shape:
+
+```bash
+cat vars.json | evnx convert --from json --to dotenv --env - -o .env   # a flat {"KEY": "value"} object
+evnx parse --format json --values | evnx convert --from json --to dotenv --env -   # a .env round trip
+evnx convert --to kubernetes --name myapp --kind split -o k8s.yaml
+```
+
+`--from` takes `dotenv` (the default) or `json`; other inputs wait for `add import`.
+`--env FILE` names the input file (`--env vars.json`), and `-` reads standard input.
+`--kind` is `secret` (default), `configmap` (every variable as plain text) or `split`
+(a `Secret` for the variables that look secret and a `ConfigMap` named `<name>-config`
+for the rest). `convert --to json` and then `--from json --to dotenv` returns the same
+names, values and order. `--kind` with another `--to` is refused, like the other
+format flags.
 
 The formats that write a place into their output need it named: `--project`,
 `--vault-name`, `--heroku-app`, `--name`. There is no placeholder to edit by
@@ -624,7 +704,7 @@ uploads**, over the GitHub API.
 | `gcp-secret-manager` | a script that creates each secret or adds a version | `--project` |
 | `azure-keyvault` | `az keyvault secret set` per key (`_` becomes `-`) | `--vault-name` |
 | `heroku` | one `heroku config:set` (one restart) | `--heroku-app` |
-| `vercel` | `vercel env add … --force` per key, value on stdin | `--vercel-project` or a linked directory |
+| `vercel` | `vercel env add` per key, value on stdin; `--force` added only with `--overwrite` | `--vercel-project` or a linked directory |
 | `doppler`, `infisical` | `secrets set` per key | `--project`, optional config / env |
 | `railway` | one `railway variable set` | `--railway-project` with `--railway-environment`, or a linked directory |
 | `github` | uploads each secret, encrypted for the repository | `--repo`, `GITHUB_TOKEN` |
@@ -654,9 +734,18 @@ evnx migrate --to github --repo owner/repo --yes --skip-existing
 `--include` / `--exclude` take comma-separated globs; `--strip-prefix` and `--add-prefix`
 rename. Two names that end up as one — by renaming, or because Azure Key Vault and GitHub
 ignore case — are refused (exit 2) unless `--allow-collisions` keeps the last value.
-`--skip-existing` and `--overwrite` only apply to `github`; the destinations evnx
-prints commands for are refused them, since evnx cannot see what is already there.
-Exit codes: 0 done, 1 some GitHub uploads failed, 2 could not run.
+`--skip-existing` and `--overwrite` apply to `github`. For `vercel`, `--overwrite`
+is also accepted: the printed `vercel env add` commands then carry `--force`, so a
+re-run replaces a variable that exists, and without it Vercel stops on one
+(`--skip-existing` is still refused there). The other destinations evnx only prints
+commands for are refused both, since evnx cannot see what is already there. The
+output for `vercel` also points to `evnx platform push`, which talks to Vercel
+itself and keeps the two in step. `convert --to`'s short names (`aws`, `gcp`, `azure`)
+work for `--to` here too.
+
+`--dry-run` needs no target flag: `evnx migrate --to heroku --dry-run` shows
+`<--heroku-app not set>` in its place and says which flag a real run needs. Exit codes:
+0 done, 1 some GitHub uploads failed, 2 could not run.
 
 ---
 
@@ -779,8 +868,10 @@ readable env file to 600 (a symlinked one only when its target is inside the pro
 It checks again afterwards and says "not fixed" when the problem remains. It never runs
 git: a tracked file needs `git rm --cached`, which doctor prints.
 
-`EVNX_AUTO_FIX=1` does what `--fix` does, and says so on stderr; `EVNX_OUTPUT_JSON=1`
-does what `--format json` does. The JSON report has `checks[]` (`name`, `description`,
+`EVNX_OUTPUT_JSON=1` does what `--format json` does. `EVNX_AUTO_FIX` is no longer read:
+it prints one warning and repairs nothing, so pass `--fix`. `doctor --all` also runs
+`validate`, `sync --check` and `scan` and reports them in one document (`sections`,
+`run.schema_version` 2). The JSON report has `checks[]` (`name`, `description`,
 `severity`, `details`, `fixable`, `fixed`, `ran`) and `summary`.
 
 Exit codes: 0 healthy (warnings pass unless `--strict`), 1 problems found, 2 could not
@@ -794,10 +885,7 @@ finish (`ran: false`).
 Renders a config file from a template, filling in values from `.env`.
 
 ```bash
-evnx template \
-  --input config.template.yml \
-  --output config.yml \
-  --env .env
+evnx template config.template.yml config.yml --env .env
 ```
 
 The output usually holds real values, so a new file is created readable by you
@@ -807,7 +895,7 @@ template and the env file are never overwritten.
 
 | Option | What it does |
 |---|---|
-| `--input FILE`, `--output FILE` | the template, and where to write (`-` for stdout) |
+| `INPUT OUTPUT` | the template, and where to write (`-` for stdout); `--input FILE --output FILE` still work, but not mixed with the two arguments |
 | `--env FILE`, `--env-name NAME` | the values: `.env` by default, `.env.NAME` with `--env-name` |
 | `--strict` | refuse to write when a placeholder has no value (the default warns, writes it through and exits 0) |
 | `--dry-run` | render and say what would be written; writes nothing, prints no value, leaves `.gitignore` alone |
@@ -856,9 +944,10 @@ evnx backup --env-name production --verify   # .env.production → .env.producti
 evnx restore .env.backup --inspect           # variable names only, never values
 evnx restore .env.backup --dry-run           # decrypt and check, write nothing
 evnx restore .env.backup --output .env       # asks before replacing an existing .env
+evnx restore .env.backup --output - | diff - .env   # decrypted text to stdout, nothing on disk: is it what .env holds now?
 ```
 
-**The passphrase** comes from `--password-file`, then
+**The passphrase** comes from `--key-file`, then
 `EVNX_PASSWORD`, then a prompt. A new backup needs at least 8 characters from any
 of them; `restore` takes any length, so an older backup made with a shorter one
 still opens. A key file is trimmed of surrounding whitespace, or Base64-encoded
@@ -874,24 +963,28 @@ output may not be the source file, or a directory.
 a terminal it asks; in a script pass `--yes`. Either way the
 replaced file is kept as `<output>.bak`. An output that already holds exactly the
 backup's content is left alone. Content that is not a `.env` evnx can read goes
-to `<output>.restored`, exit 5. In a git repository the restored file gets the
+to `<output>.restored`, exit 5: that file is private (mode 600) and holds plaintext
+secrets, and its full path is printed. `--output -` writes the decrypted text to
+stdout with every status line on stderr; a terminal refuses it unless
+`--show-values`, as `parse --values` does. In a git repository the restored file gets the
 same `.gitignore` check as `template` (`--gitignore`, `--no-gitignore`).
 
 In CI:
 
 ```bash
 EVNX_PASSWORD="$BACKUP_PASSPHRASE" evnx backup --output "backups/env-$(date +%F).backup" --keep 0 --verify
-evnx restore backups/env-2026-10-20.backup --password-file /run/secrets/backup-key --yes
+evnx restore backups/env-2026-10-20.backup --key-file /run/secrets/backup-key --yes
 ```
 
 | Exit | `backup` | `restore` |
 |---|---|---|
 | 0 | written (and verified) | restored, inspected, checked, or already up to date |
-| 2 | could not run: source, key file or passphrase, output path, no terminal | could not run, or could not decrypt (wrong password, truncated, a newer format) |
-| 3 | passphrase confirmation did not match | backup file not found |
-| 4 | encryption failed | cancelled at the overwrite question |
-| 5 | could not write the backup | content written to `<output>.restored` |
-| 6 | `--verify` failed | — |
+| 2 | could not run: source, key file or passphrase (a confirmation that did not match), encryption or write failed, `--verify` failed | could not run, could not decrypt (wrong passphrase, truncated, a newer format), or the backup file is not found |
+| 4 | — | cancelled at the overwrite question, or no terminal and no `--yes` |
+| 5 | — | content written to `<output>.restored` |
+
+The messages still say which of these it was; the code is 2 for all of them
+(`docs/exit-codes.md`).
 
 **A backup is not a vault.** They solve different problems and do not read each
 other's files:
@@ -901,7 +994,7 @@ other's files:
 | Where the ciphertext lives | a file you keep | the evnx server, as versions |
 | Secret | a passphrase or key file you choose | your account's master password |
 | History | `--keep N` numbered files | server versions: `--version N`, `history`, `diff` |
-| Non-interactive | `--password-file`, `EVNX_PASSWORD` | `--password-stdin` |
+| Non-interactive | `--key-file`, `EVNX_PASSWORD` | `--password-stdin` |
 | Replacing a file | `--yes`, keeps `.bak` | `--yes`, keeps `.bak` |
 | Declining the question | exit 4, nothing changed | exit 4, nothing changed (v0.12.0+) |
 | Works with no account or network | yes | no |
@@ -921,11 +1014,35 @@ is not a terminal (a CI log, an AI agent); `--mask` / `--no-mask` decide otherwi
 evnx run -- npm test
 evnx run --env-name staging -- python manage.py migrate
 evnx run --include 'NEXT_PUBLIC_*' -- npm run build
+DB_URL=postgres://localhost evnx run --prefer env -- npm test   # your value wins over the file's
 ```
 
 It exits with the command's own code. Names that make a program load other code
-(`LD_PRELOAD`, `NODE_OPTIONS`, …) are refused unless `--allow-unsafe-names`. Masking
-prevents accidents, not exfiltration.
+(`LD_PRELOAD`, `NODE_OPTIONS`, `EDITOR`, `PAGER`, `npm_config_*`, …) are refused
+unless `--allow-unsafe-names`. The command runs directly, not through a shell:
+for a pipeline use `-- sh -c 'a | b'`.
+
+**Which value wins.** When a name is set both in your environment and in the file,
+the file wins by default (`--prefer vault`). `--prefer env` reverses that: a variable
+your environment already holds, even an empty one, is kept, and the file only fills
+the names you left unset. A line on stderr names what was kept, never a value; a kept
+value is not masked, since evnx did not inject it.
+
+**Signals and exit (Unix).** Without masking the command replaces evnx (`exec`):
+signals, the terminal and the exit status are the command's own. With masking evnx
+stays to filter the output and passes `SIGTERM`, `SIGHUP`, `SIGQUIT` and `SIGINT` on
+to the command (not to what it starts); a terminal Ctrl-C then reaches the command
+twice, so a program that counts interrupts wants `--no-mask`. A command killed by
+signal `n` makes evnx exit `128+n`. On Windows there is no signal forwarding and no
+job object: the command can outlive evnx when the console closes.
+
+**What masking does not cover.** It replaces values the classifier calls secret with
+`***` when the output is not a terminal. It prevents accidents, not exfiltration: it
+misses a value the command transforms (encoded, split, hashed), files it writes, core
+dumps, `/proc/<pid>/environ` (readable by the same user) and programs that log their
+own environment. Masking pipes stdout and stderr, so the command sees no terminal:
+colour and progress output turn off, and Python holds its output in a buffer, so set
+`PYTHONUNBUFFERED=1`. `--no-mask` leaves the streams as they are.
 
 ---
 
@@ -951,6 +1068,12 @@ Prints a completion script for `bash`, `zsh`, `fish`, `powershell` or `elvish`.
 evnx completions bash > ~/.local/share/bash-completion/completions/evnx
 evnx completions fish > ~/.config/fish/completions/evnx.fish
 ```
+
+The install script and the Linux and macOS release archives (v0.15.0+) already
+carry the bash, zsh and fish scripts (`completions/evnx.bash`, `_evnx`,
+`evnx.fish`). The script copies them where that shell's folder exists. Homebrew's
+formula installs them too. npm, pip and Scoop installs do not: run the commands
+above once.
 
 ---
 
@@ -987,6 +1110,36 @@ evnx diff --env-name production --against staging
 
 A name whose file does not exist is an error listing the ones that do — it never quietly
 falls back to `.env`. Set a project default with `[defaults] env_name` in `.evnx.toml`.
+
+`--env-name` takes a name (`staging`; `.env.staging` means the same), not a path; a path is
+`--env`. With `--env-name staging`, a template named for it (`.env.staging.example`) is used
+when it exists, instead of the shared `.env.example`; `--example` always wins.
+
+```bash
+evnx validate --env-name staging              # .env.staging against .env.staging.example
+evnx sync --env-name staging --dry-run        # what would be added to .env.staging.example
+evnx add service redis --env-name staging     # writes .env.staging and its template
+evnx remove OLD_TOKEN --env-name staging --dry-run   # only .env.staging; lists where the name still is
+```
+
+The same with a default, so the flag can be left out. `.evnx.toml`:
+
+```toml
+[defaults]
+env_name = "staging"            # .env.staging for validate, sync, add, remove, diff, convert, run …
+example  = ".env.staging.example"   # optional: the template, if not the environment's own
+```
+
+```bash
+evnx validate                   # operates on .env.staging
+evnx sync --dry-run
+evnx add service redis
+evnx remove OLD_TOKEN --dry-run
+evnx validate --env-name production   # the flag wins over the default for this run
+```
+
+`add` and `remove` change one environment per run (loop over names for several);
+`sync` and `validate` read the same file and template as the example above.
 
 Between two real environments `diff` compares values too; against the template it compares
 key names only, because every filled-in value differs from its placeholder.
@@ -1405,12 +1558,20 @@ because tokens travel in request headers.
 
 ## CI/CD Integration
 
+Pin the version in CI so a run is repeatable: `EVNX_VERSION` installs that release
+(checksum verified; with a signed-in `gh`, provenance too) instead of whatever is latest.
+Use the version you tested, and move it on purpose.
+
 ### GitHub Actions
 
 ```yaml
 name: Validate environment
 
 on: [push, pull_request]
+
+permissions:
+  contents: read
+  security-events: write   # for the SARIF upload
 
 jobs:
   validate:
@@ -1419,8 +1580,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install evnx
+        env:
+          EVNX_VERSION: "0.15.0"
+          EVNX_INSTALL_DIR: ${{ github.workspace }}/.evnx-bin
+          GH_TOKEN: ${{ github.token }}   # lets the installer check build provenance with the runner's gh
         run: |
-          curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
+          curl -fsSL https://evnx.dev/install.sh | bash
+          echo "$EVNX_INSTALL_DIR" >> "$GITHUB_PATH"
 
       - name: Validate configuration
         run: evnx validate --strict --format github
@@ -1440,17 +1606,25 @@ jobs:
 ```yaml
 validate-env:
   stage: validate
-  image: alpine:latest
+  image: alpine:3.21
+  variables:
+    EVNX_VERSION: "0.15.0"
   before_script:
     - apk add --no-cache curl bash
-    - curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
+    - curl -fsSL https://evnx.dev/install.sh | bash
   script:
     - evnx validate --strict --format json
-    - evnx scan --format sarif > scan.sarif
+    - evnx scan --format json > scan.json
   artifacts:
-    reports:
-      sast: scan.sarif
+    when: always          # keep the report when the scan fails the job
+    paths:
+      - scan.json
 ```
+
+The job fails when `scan` finds something (exit 1), which is the gate. The report is
+kept as a plain artifact. GitLab's `reports: sast:` expects GitLab's own SAST JSON
+schema, not SARIF and not evnx's JSON, and evnx does not write that schema; so the
+example does not claim the findings appear in the merge request's security widget.
 
 ## pre-commit / prek Integration
 
@@ -1565,26 +1739,9 @@ Keys named in older copies of this README — `env_file`, `auto_fix`, `exclude_p
 
 ## Known Limitations
 
-⚠️ **Corrected 2026-09-27.** This section said multiline and array values "will not
-parse correctly" and gave three examples. Two of the three parse fine, and
-multiline values have been supported all along — the parser accepts a quoted value
-that spans lines and `convert` round-trips the newlines intact. The wrong claim
-was repeated into several planning documents and nearly produced work to build a
-feature that already existed.
-
-**Multiline values work.** A value whose opening quote is not closed on the same
-line continues onto the next, with either quote style:
-
-```bash
-PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDGxYz1
------END PRIVATE KEY-----"
-NEXT_VAR=parsing continues normally after it
-```
-
-`evnx convert --to json` gives `"-----BEGIN PRIVATE KEY-----\nMIIEvQ…\n-----END PRIVATE KEY-----"`,
-and `evnx scan` reports it as a private key. Single quotes span lines too, without
-unescaping.
+What evnx does not do today. How these behaviours changed over the releases (the
+corrections, the parser changes by version) is in [docs/HISTORY.md](docs/HISTORY.md)
+and the [CHANGELOG](CHANGELOG.md).
 
 **Values stay strings.** evnx follows the strict `.env` spec, so JSON and arrays are
 preserved exactly but never interpreted:
@@ -1594,28 +1751,22 @@ CORS_ALLOWED=["https://example.com", "https://admin.example.com"]   # parses —
 CONFIG={"key": "value"}                                             # parses — as a string
 ```
 
-Both are preserved character-for-character. Parse them in your application code,
-as you would with any other `.env` loader.
+Parse them in your application code, as you would with any other `.env` loader.
 
-**Escape sequences work the same whether or not the value spans lines.** In a
-double-quoted value `\n`, `\t`, `\\`, `\"` and `\'` are interpreted; single-quoted
-and backtick values are literal. So an escaped quote is fine in either shape:
+**Multiline values work**, with either quote style: a value whose opening quote is not
+closed on the same line continues onto the next. In a double-quoted value `\n`, `\t`,
+`\\`, `\"` and `\'` are interpreted, whether or not it spans lines; single-quoted and
+backtick values are literal.
 
 ```bash
+PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDGxYz1
+-----END PRIVATE KEY-----"
 ONE_LINE="he said \"hello\""
-SPANNING="he said \"hello\"
-and left"
 ```
 
-⚠️ **This changed — see the CHANGELOG for the version.** The second form used to be
-a parse error, and a double-quoted value that spanned lines kept its backslashes
-instead of resolving them, so `"x\ty"` gave a tab on one line but a literal
-backslash and `t` across two. If you relied on backslashes surviving verbatim
-inside a multiline double-quoted value, switch it to single quotes, which are
-literal by definition.
-
-**One thing genuinely does not work** — triple-quoted / heredoc style, which is
-not `.env` syntax in any dialect evnx targets:
+**Not supported:** triple-quoted / heredoc style, which is not `.env` syntax in any
+dialect evnx targets:
 
 ```bash
 # not supported
@@ -1624,29 +1775,30 @@ host1.example.com
 """
 ```
 
-A `--lenient` flag for extended syntax is under consideration — see [open issues](https://github.com/urwithajit9/evnx/issues).
+A `--lenient` flag for extended syntax is under consideration — see
+[open issues](https://github.com/urwithajit9/evnx/issues).
 
-**Multiple environments are supported as of v0.5.0.** `evnx scan` reads every `.env`
-variant it walks past, and `--env-name production` resolves to `.env.production` across
-`validate`, `diff`, `sync`, `convert`, `backup` and `template`.
+**Keys may contain `.`, `-`, `[`, `]` or a leading digit**, as Docker Compose reads
+them (`spring.datasource.url`, `my-key`). `validate` warns that a shell cannot
+`export` them, and each `convert` format or `migrate` destination that cannot hold
+one (a shell script, GitHub Actions, Vercel, …) refuses it by name.
 
-⚠️ Before v0.5.0, `evnx scan` silently skipped `.env.production`, `.env.local`,
-`.env.staging` and every other dotted variant, and reported "no secrets detected" without
-opening them. If you relied on `evnx scan` as a gate on an earlier version, it never saw
-the file most likely to hold production credentials.
+**`${VAR}` expands top to bottom**, as Docker Compose and python-dotenv do: with
+`B=1`, `A=${B}`, `B=2`, evnx gives `A=1`, and a reference to a variable assigned only
+below it is an error that names the line to move.
 
-**Keys may contain `.`, `-`, `[`, `]` or a leading digit (v0.13.0).** evnx reads
-the names Docker Compose reads, such as `spring.datasource.url` and `my-key`.
-`validate` warns that a shell cannot `export` them, and each `convert` format or
-`migrate` destination that cannot hold one (a shell script, GitHub Actions,
-Vercel, …) refuses it by name.
+**`convert --from` reads `dotenv` and `json` only.** YAML, Kubernetes Secrets and
+`.properties` input wait for `add import`.
 
-**`${VAR}` expands top to bottom (v0.13.0)**, as Docker Compose and python-dotenv
-do: with `B=1`, `A=${B}`, `B=2`, evnx gives `A=1`, and a reference to a variable
-assigned only below it is an error that names the line to move. Until v0.13.0
-evnx expanded against each key's final value (`A=2`).
+**`run` masking is a guard against accidents**, not a sandbox: it misses values the
+command transforms, files it writes, core dumps and `/proc/<pid>/environ`. See
+[`evnx run`](#evnx-run).
 
-**Windows** — file permissions checking is limited (no Unix permission model). Terminal color support requires PowerShell or Windows Terminal on older systems.
+**Windows.** `.env`, backups and `credentials.json` are made owner-only with
+`icacls` (a failure warns, and `credentials.json` is not written). There is no Unix
+mode check, `run` has no signal forwarding or job object, and terminal colour on older
+systems needs PowerShell or Windows Terminal. The shell install script is Unix-only;
+use Scoop, winget, npm, pip or a release archive.
 
 ---
 

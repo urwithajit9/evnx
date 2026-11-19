@@ -4,7 +4,7 @@
 $ bash -c env -i PATH=/usr/bin:/bin HOME=/x API_TOKEN=tok-demo OTHER=1 "$(command -v "$0")" migrate --from environment --to heroku --heroku-app demo-app --dry-run evnx
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 Error: --from environment needs --include.
 
@@ -36,7 +36,7 @@ Next step:
   Re-run without --dry-run to apply this.
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 ! Sending 1 variable from the environment: OTHER
   Docs: https://docs.evnx.dev/cli/commands/migrate

@@ -19,6 +19,14 @@ pub const CARGO_INSTALL: &str = "cargo install evnx --all-features";
 /// refuses to reinstall a crate it already has.
 pub const CARGO_UPGRADE: &str = "cargo install evnx --all-features --force";
 
+/// The one install URL (WP-16): the install script, served by evnx.dev (the
+/// old dotenv.space address redirects to it). `evnx update`, the scan hook and
+/// every doc say this spelling; `tests/wp16_install_docs.rs` fails on another.
+pub const INSTALL_URL: &str = "https://evnx.dev/install.sh";
+
+/// The command `evnx update` prints for a copy the install script put there.
+pub const INSTALL_COMMAND: &str = "curl -fsSL https://evnx.dev/install.sh | bash";
+
 /// Which optional features this binary was built with.
 ///
 /// ⚠️ Read with `cfg!`, not from a list someone maintains: the point of
@@ -56,6 +64,15 @@ mod tests {
         assert_eq!(f.contains(&"cloud"), cfg!(feature = "cloud"));
         assert_eq!(f.contains(&"backup"), cfg!(feature = "backup"));
         assert_eq!(f.contains(&"migrate"), cfg!(feature = "migrate"));
+    }
+
+    /// WP-16: the printed command and the URL are one spelling.
+    #[test]
+    fn wp16_install_command_is_built_on_the_install_url() {
+        assert_eq!(
+            INSTALL_COMMAND,
+            format!("curl -fsSL {INSTALL_URL} | bash").as_str()
+        );
     }
 
     #[test]

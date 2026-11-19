@@ -1,4 +1,6 @@
-Check .env against .env.example, find issues
+Check .env against .env.example, find issues.
+
+`validate` checks everything; `spec check` and `sync --check` are fast name-only checks for hooks.
 
 Usage: evnx validate [OPTIONS]
 
@@ -52,8 +54,10 @@ Options:
           
           Added to `[validate] ignore` in `.evnx.toml`. An unknown type is an error that lists the valid ones, so a typo cannot silence nothing.
 
-      --validate-formats
-          Validate value formats: url, port, email
+      --no-formats
+          Turn off the URL, port and email checks by variable name.
+          
+          They are on by default and always warnings: a name ending in `_URL`, `_URI` or `_ENDPOINT` should hold a URL, one with `PORT` a port from 1 to 65535, one with `EMAIL` an address. A variable declared in `[vars]` is checked against its declared `format` instead, with or without this flag. `[validate] validate_formats = false` in `.evnx.toml` does the same for the project.
 
       --fail-on <LEVEL>
           The lowest severity that fails the run: `error` or `warning`.

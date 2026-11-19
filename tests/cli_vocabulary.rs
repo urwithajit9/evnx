@@ -11,7 +11,8 @@
 //! * `b`  `--format` and a visible `--json` come together
 //! * `c`  a visible `--force` overwrites, or goes ahead "even though" a check
 //!   failed
-//! * `d1` no visible `--file`, `--path`, `--source-file` or `--key-file`
+//! * `d1` no visible `--file`, `--path` or `--source-file` (`--key-file` is the
+//!   shown name for the passphrase file in `backup` and `restore`, WP-15)
 //! * `d2` `--dry-run` has `-n`
 //! * `d3` `--yes` has `-y`
 //! * `e`  every removed spelling exits 2 with its message (see below)
@@ -81,7 +82,7 @@ fn violations(e: &Entry, rule: &str) -> Vec<String> {
         }
         "d1" => {
             for a in visible(e) {
-                if ["file", "path", "source-file", "key-file"].contains(&s(&a["long"])) {
+                if ["file", "path", "source-file"].contains(&s(&a["long"])) {
                     out.push(format!("visible --{}", s(&a["long"])));
                 }
             }

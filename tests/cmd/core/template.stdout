@@ -1,15 +1,25 @@
 Generate config files from templates
 
-Usage: evnx template [OPTIONS] --input <INPUT> --output <OUTPUT>
+Usage: evnx template [OPTIONS] <INPUT> <OUTPUT>
+       evnx template [OPTIONS] --input <FILE> --output <FILE>
 
-Options:
-      --input <INPUT>
+Arguments:
+  [INPUT]
           The template to render. `{{VAR}}`, `${VAR}` and `$VAR` are substituted; filters are listed below
 
-      --output <OUTPUT>
+  [OUTPUT]
           Where to write the rendered file, or `-` for stdout.
           
           The result usually contains real values — see `--gitignore`. A new file is created readable by you only (0600). An existing file is only replaced with `--force`, and keeps its mode. The template and the env file are never overwritten.
+
+Options:
+      --input <FILE>
+          The template to render: the same as the INPUT argument.
+          
+          Give the two arguments or the two flags, not a mix.
+
+      --output <FILE>
+          Where to write the rendered file, or `-` for stdout: the same as the OUTPUT argument
 
       --force
           Replace an existing output file
@@ -85,6 +95,10 @@ An unknown filter is an error and nothing is written.
 $VAR is replaced only when VAR is defined, and never reported.
 A placeholder with no value is an error too (exit 2); --allow-unresolved
 writes it through as it is.
+
+Examples:
+  evnx template config.tpl config.yml     # INPUT OUTPUT
+  evnx template config.tpl -              # to stdout
 
 Exit codes:
     0  Ran, nothing to report

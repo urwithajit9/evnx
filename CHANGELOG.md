@@ -119,6 +119,47 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   warning; `credentials.json` is not written. Messages say "owner-only (ACL)"
   instead of "inherited from the parent directory". Setups that read these
   files from another account must grant it access again.
+- **`diff A B` compares two files, and the left file is printed first**
+  (WP-14). `evnx diff .env.staging .env.production` compares key names and
+  values, as `--against` does. In the "Different values" section the left
+  file's value is now listed before the right one (it was the other way round),
+  in the order of the `left ↔ right` heading. The positionals cannot be
+  combined with `--env`, `--env-name`, `--example` or `--against`. The JSON
+  keeps `env_value` (the left file) and `example_value` (the right).
+- **`migrate --to vercel` prints `--force` only with `--overwrite`** (WP-14).
+  The printed `vercel env add` commands used to replace an existing variable
+  every time. Now Vercel stops on one that exists, and `--overwrite` (now
+  accepted for vercel; `--skip-existing` still is not) adds `--force`. A script
+  that re-runs the printed commands to change a value passes `--overwrite`.
+  The output also points to `evnx platform push`, which talks to Vercel itself.
+- **`validate` runs the URL, port and email checks by default, as warnings**
+  (WP-15). A name ending in `_URL`, `_URI` or `_ENDPOINT` should hold a URL, one
+  with `PORT` a port from 1 to 65535, one with `EMAIL` an address. These ran only
+  with `--validate-formats`; now every run reports them. They are always warnings
+  (the port finding was an error), so a default `validate` still exits 0 for
+  them; `--fail-on warning` exits 1. A name declared in `[vars]` is checked
+  against its declared `format` instead, with or without these. `--no-formats`
+  (or `[validate] validate_formats = false`) turns them off; `--validate-formats`
+  is still accepted and changes nothing.
+- **`EVNX_AUTO_FIX` is no longer read** (WP-15). `doctor` prints one warning,
+  "EVNX_AUTO_FIX is no longer read; pass --fix", and repairs nothing. A CI image
+  that exported it to repair on every run passes `doctor --fix`.
+- **`parse --format json` is `run.schema_version` 2** (WP-15). Additive: each
+  entry gains `quoted`, `exported`, `multiline`, `duplicate`, `expands` and
+  `length`; no key changed or went. `doctor --all --format json` is
+  `schema_version` 2 as well, and only with the new flag; `doctor` alone is
+  still 1.
+- **`restore --output -` writes the decrypted text to stdout** (WP-15). It was
+  refused. Status lines go to stderr, nothing is written to disk, and a terminal
+  refuses it unless `--show-values`, as `parse --values` does.
+- **The install URL is `https://evnx.dev/install.sh` everywhere** (WP-16).
+  `evnx update` prints `curl -fsSL https://evnx.dev/install.sh | bash` for a copy
+  the script installed, the `scan hook` message names the same address, and the
+  README, the guides and the release notes use it, in place of
+  `dotenv.space/install.sh`, the `raw.githubusercontent.com` link and
+  `evnx.dev/install`. A pinned old address keeps working only while its redirect
+  does. The CI job that compares the served script with `scripts/install.sh`
+  is in `ci.yml` but switched off until the host is confirmed.
 
 ### Breaking: one flag vocabulary (WP-8)
 
@@ -139,8 +180,6 @@ Every command now spells the same idea the same way. The old spellings are remov
 | `evnx add blueprint` | `-p, --path` | `-C/--dir` |
 | `evnx add custom` | `-p, --path` | `-C/--dir` |
 | `evnx remove` | `-p, --path` | `-C/--dir` |
-| `evnx backup` | `--key-file` | `--password-file` |
-| `evnx restore` | `--key-file` | `--password-file` |
 | `evnx restore` | `--force` | `--yes` |
 | `evnx parse` | `--format text` | `--format pretty` |
 | `evnx parse` | `-y, --yes` | `--show-values` |
@@ -151,9 +190,6 @@ Every command now spells the same idea the same way. The old spellings are remov
 | `evnx doctor` | `--format text` | `--format pretty` |
 | `evnx migrate` | `--source-file` | `--env` |
 | `evnx migrate` | `--to github-actions` | `--to github` |
-| `evnx migrate` | `--to aws` | `--to aws-secrets-manager` |
-| `evnx migrate` | `--to gcp` | `--to gcp-secret-manager` |
-| `evnx migrate` | `--to azure` | `--to azure-keyvault` |
 | `evnx migrate` | `--from env` | `--from env-file` |
 | `evnx platform diff` | `--env-name` | `--target` |
 | `evnx platform diff` | `-f, --file` | `--env` |
@@ -186,6 +222,13 @@ New in the same change:
 
 ### Changed
 
+- **`--key-file` is the name `backup` and `restore` show** (WP-15), and
+  `--password-file` is a hidden alias that still works; "passphrase" in every
+  message instead of "password". The earlier removal of `--key-file` (WP-8, in
+  the table below) is undone. `spec`'s help and messages say "contract".
+- **The first lines of `validate`, `spec check` and `sync --check` help say how
+  they differ**: "`validate` checks everything; `spec check` and `sync --check`
+  are fast name-only checks for hooks."
 - **`run` and `cloud run` hand the terminal to the command (Unix).** Without
   masking, the command now replaces evnx (`exec`): signals, the terminal and
   the exit status are the command's own, and evnx's copy of the secrets is
@@ -247,6 +290,9 @@ new `network` field below.
 
 ### Fixed
 
+- **A file saved as UTF-16 no longer reads as "stream did not contain valid
+  UTF-8"** (WP-15), which `parse` and `validate` gave for what PowerShell's `>`
+  writes. The message names the file and the fix.
 - **`SIGTERM`, `SIGHUP` and `SIGQUIT` sent to `evnx run` or `evnx cloud run`
   no longer leave the command running.** evnx died and the command was
   orphaned.
@@ -307,6 +353,91 @@ new `network` field below.
 
 ### Added
 
+- **The install script says how to use `evnx` now and how to keep it** (WP-16).
+  When the install folder is not on `PATH` it prints **Use it now** (a line for
+  this terminal) and **Keep it** (the line for the shell's startup file:
+  `~/.zshrc`, `~/.bashrc`, `~/.bash_profile` on macOS, or fish's `config.fish`
+  with fish syntax). It edits that file only with `EVNX_MODIFY_PATH=1` or a "y"
+  typed at a terminal (default no); with no terminal it only prints. The line is
+  added once, and the script says what it wrote. The checksum and `gh
+  attestation verify` checks are unchanged.
+- **Shell completions ship with the release** (WP-16). The Linux and macOS
+  archives carry `completions/` (`evnx.bash`, `_evnx`, `evnx.fish`) next to the
+  binary, which stays at the top level. The install script copies each file into
+  its shell's folder only if that folder already exists, and creates none. The
+  generated Homebrew formula installs them. Scoop, npm and pip are unchanged.
+- **`docs/STABILITY.md`** (WP-16): what is stable, how a removal is announced,
+  and this release's changed defaults, taken from this Breaking list. `README`
+  has a one-minute start; the correction notes it carried moved to
+  `docs/HISTORY.md`.
+- **Docs** (WP-16): CI examples pin `EVNX_VERSION` and the GitLab example keeps
+  the scan as a plain artifact (GitLab's `sast` report takes its own schema, not
+  SARIF); `--env-name` and `[defaults]` examples for `validate`, `sync`, `add` and
+  `remove`; a project-local install for JavaScript projects (`npm install
+  --save-dev @evnx/cli`, `npx evnx`); `run`'s `--prefer`, signals and the limits
+  of masking; `convert --from`/`--kind`, `diff A B`, `restore --output -` and
+  `migrate --to vercel --overwrite`. The `backup`/`restore` exit-code table
+  matches the single exit table.
+- **`doctor --all`** (WP-15) runs the doctor checks, then `validate`, `sync
+  --check` (both ways) and `scan`, as one report with one verdict: 2 if any part
+  could not run, else 1 if any found something, else 0. A part with nothing to
+  read (no template, no env file) is skipped with a note. `--fix` repairs what
+  `doctor --fix` repairs and nothing more. JSON: one `run` header and a
+  `sections` object (`doctor`, `validate`, `sync`, `scan`), each with `status`
+  and its own `report`.
+- **`template INPUT OUTPUT`** (WP-15), with `-` for stdout. `--input` and
+  `--output` still work; mixing the two forms is a usage error.
+- **`parse` says more without showing a value** (WP-15): `exported`,
+  `multiline`, `duplicate` (a later line sets it again), `expands` (a `${NAME}`
+  or `$NAME` reference, never in single quotes), and in JSON `quoted` and
+  `length`.
+- **A UTF-16 env file is named, not misread** (WP-15): "<file> is UTF-16. Save
+  it as UTF-8 (in PowerShell: `Set-Content -Encoding utf8`).", exit 2, for every
+  command that reads an env file.
+- **`backup` says the file is encrypted and offers `--gitignore` /
+  `--no-gitignore`** (WP-15): "This file is encrypted. Committing it is as safe
+  as its passphrase." `--gitignore` adds the backup to `.gitignore`;
+  `--no-gitignore` leaves it alone and drops the line.
+- **A weak new passphrase gets a hint** (WP-15): under 12 characters, only
+  digits, one repeated character or a common word prints "This passphrase is
+  weak: <reason>. A backup can be attacked offline. 4 random words is
+  stronger." once, on stderr, naming the reason and never the passphrase. It
+  never changes the exit code, and a `--key-file` run prints it only at a
+  terminal.
+- **`restore`'s `<output>.restored` file is private** (WP-15): mode 600 even
+  when an older copy was wider, the same git-ignore check as the main output,
+  and its full path is printed with "This file holds plaintext secrets."
+- **`update --check` uses `GITHUB_TOKEN` (or `GH_TOKEN`)** (WP-15) as a bearer
+  for the GitHub API, and falls back to the `releases/latest` redirect (no
+  quota, no token sent) when the API fails or rate-limits. `-v` says which route
+  answered; the token is never printed.
+- **`update --list` shows the running copy** (WP-15) even when it is on no
+  `PATH` and in no install folder (`./target/release/evnx`), marked "this one".
+- **`convert --from json|dotenv`, `--to dotenv`, and `-` for standard input**
+  (WP-14). `evnx convert --from json --to dotenv --env vars.json` reads a flat
+  `{"KEY": "value"}` object (the shape `validate --input-format json` reads;
+  every value must be a string, and an error names the key, never the value).
+  `--to dotenv` writes a `.env` with the quoting evnx's own parser reads back
+  exactly, so `convert --to json` followed by `convert --from json --to dotenv`
+  returns the same names, values and order, whatever they hold (quotes, `#`,
+  spaces, newlines, `$`, empty values, unicode). `--env -` reads stdin for
+  either `--from`. `cloud export --to dotenv` comes with the shared format list.
+- **`convert --to kubernetes --kind secret|configmap|split`** (WP-14).
+  `configmap` writes a `ConfigMap` (not with `--base64`); `split` writes a
+  `Secret` for the variables that look secret and a `ConfigMap` named
+  `<name>-config` for the rest, as two documents. `--kind` with another
+  `--to` is refused, as the other format flags are.
+- **`migrate --to` takes the names `convert --to` takes** (WP-14): `aws`,
+  `aws-secrets`, `gcp`, `gcp-secrets`, `azure`, `azure-key-vault`. They were
+  removed earlier in this release's WP-8 and are accepted again. `convert --to`
+  keeps its short names (`yml`, `k8s`, `tf`, `compose`).
+- **`migrate --dry-run` works without the provider's target flag** (WP-14).
+  `evnx migrate --to heroku --dry-run` shows `<--heroku-app not set>` where the
+  app goes and says "A real run needs --heroku-app"; a real run still requires
+  it. The dry run of `--to aws-secrets-manager` no longer prints the secret
+  values in its JSON preview (names only).
+- **`convert` and `migrate` say what they are for**: "convert writes a file;
+  migrate talks to a provider" in both helps and in `migrate`'s banner.
 - **`evnx scan --policy FILE` (or `EVNX_POLICY`): a floor the repository cannot
   lower.** A committed `.evnx.toml` can disable a detector or raise the
   severity floor for everyone who scans the repository. A policy file kept

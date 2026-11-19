@@ -233,7 +233,7 @@ fn t_br07_no_terminal_and_no_secret_names_the_ways_in() {
     let p = project();
     run(p.path(), &["backup"])
         .assert_code(2)
-        .assert_contains("--password-file")
+        .assert_contains("--key-file")
         .assert_contains("EVNX_PASSWORD")
         .assert_not_contains("IO error");
     assert!(!p.exists(".env.backup"));

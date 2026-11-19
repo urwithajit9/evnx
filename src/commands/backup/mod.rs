@@ -51,12 +51,12 @@
 //! evnx backup
 //! evnx backup .env.production --output prod.backup
 //! evnx backup --env-name production
-//! evnx backup --password-file /run/secrets/backup-key --keep 5 --verify
+//! evnx backup --key-file /run/secrets/backup-key --keep 5 --verify
 //! ```
 //!
 //! # Passphrase
 //!
-//! `--password-file`, then `EVNX_PASSWORD`, then a prompt
+//! `--key-file`, then `EVNX_PASSWORD`, then a prompt
 //! asked twice — [`crate::utils::secret_source`], the same rule `restore` reads
 //! with. A new backup needs at least 8 characters from any of them (DEC-B2).
 //!
@@ -73,7 +73,7 @@
 //! # Module layout
 //!
 //! - **`mod.rs`** (this file) — CLI adapter: header, password prompts,
-//!   password-file resolution, validation, orchestration. No pure logic lives here.
+//!   key-file resolution, validation, orchestration. No pure logic lives here.
 //! - **`core.rs`** — Pure logic: [`BackupOptions`](core::BackupOptions),
 //!   [`backup_inner`](core::backup_inner), [`check_output`](core::check_output),
 //!   `rotate_backups`, `verify_backup`, `encrypt_content`, [`decrypt_content`],
@@ -127,6 +127,9 @@ pub use self::core::DecryptError;
 /// * `key_file` — Path to a password file to use instead of an interactive password.
 /// * `keep`     — Number of previous backups to retain (default: 3, `0` = overwrite).
 /// * `verify`   — Re-decrypt and integrity-check after writing.
+/// * `gitignore` — `--gitignore` adds the backup to `.gitignore`,
+///   `--no-gitignore` leaves it alone, and neither says only that the file is
+///   encrypted.
 pub fn run(
     env: String,
     output: Option<String>,
@@ -134,11 +137,12 @@ pub fn run(
     key_file: Option<String>,
     keep: u32,
     verify: bool,
+    gitignore: crate::utils::protect::GitignoreMode,
 ) -> anyhow::Result<()> {
     // ── Feature-disabled stub ─────────────────────────────────────────────────
     #[cfg(not(feature = "backup"))]
     {
-        let _ = (&env, &output, verbose, &key_file, keep, verify);
+        let _ = (&env, &output, verbose, &key_file, keep, verify, gitignore);
         use colored::Colorize;
         println!("{} Backup feature not enabled", "✗".red());
         println!("Rebuild with: cargo build --features backup");
@@ -249,6 +253,17 @@ pub fn run(
 
             print_next_steps(&output_path, &env);
         }
+        // BAK-3: the file is encrypted, so committing it is the user's call;
+        // `--gitignore` is for who would rather not.
+        match gitignore {
+            crate::utils::protect::GitignoreMode::Skip => {}
+            mode => {
+                ui::info("This file is encrypted. Committing it is as safe as its passphrase.");
+                if mode == crate::utils::protect::GitignoreMode::Auto {
+                    crate::utils::protect::protect_output(&output_path.to_string_lossy(), &mode)?;
+                }
+            }
+        }
         ui::print_docs_hint(&docs::BACKUP);
 
         Ok(())
@@ -267,7 +282,7 @@ fn print_next_steps(backup_path: &std::path::Path, env_path: &str) {
     use colored::Colorize;
 
     println!("\n{}", "! Important:".yellow().bold());
-    println!("  • Keep your password (or key file) safe — it cannot be recovered");
+    println!("  • Keep your passphrase (or key file) safe — it cannot be recovered");
     println!("  • Store the backup in a secure, separate location");
     println!(
         "  • To restore: evnx restore {} --output {}",

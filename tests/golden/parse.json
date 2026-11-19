@@ -2,11 +2,11 @@
   "run": {
     "tool": "evnx",
     "version": "<version>",
-    "schema_version": 1,
+    "schema_version": 2,
     "ruleset": null,
     "features": "<features>"
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "file": "./.env",
   "entries": [
     {
@@ -14,28 +14,52 @@
       "line": 1,
       "empty": false,
       "placeholder": false,
-      "secret": false
+      "secret": false,
+      "quoted": "none",
+      "exported": false,
+      "multiline": false,
+      "duplicate": false,
+      "expands": false,
+      "length": 9
     },
     {
       "key": "AWS_KEY",
       "line": 2,
       "empty": false,
       "placeholder": false,
-      "secret": true
+      "secret": true,
+      "quoted": "none",
+      "exported": false,
+      "multiline": false,
+      "duplicate": false,
+      "expands": false,
+      "length": 20
     },
     {
       "key": "EXTRA",
       "line": 3,
       "empty": false,
       "placeholder": false,
-      "secret": false
+      "secret": false,
+      "quoted": "none",
+      "exported": false,
+      "multiline": false,
+      "duplicate": false,
+      "expands": false,
+      "length": 1
     },
     {
       "key": "PORT",
       "line": 4,
       "empty": false,
       "placeholder": false,
-      "secret": false
+      "secret": false,
+      "quoted": "none",
+      "exported": false,
+      "multiline": false,
+      "duplicate": false,
+      "expands": false,
+      "length": 4
     }
   ],
   "problems": []

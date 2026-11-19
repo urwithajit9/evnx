@@ -12,10 +12,11 @@ $ evnx backup --password-file bin.key --output b1.bak
   Verified: no
 
 ! Important:
-  • Keep your password (or key file) safe — it cannot be recovered
+  • Keep your passphrase (or key file) safe — it cannot be recovered
   • Store the backup in a secure, separate location
   • To restore: evnx restore b1.bak --output .env
   • Test the restore before deleting the original .env
+· This file is encrypted. Committing it is as safe as its passphrase.
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
@@ -67,15 +68,16 @@ $ env EVNX_PASSWORD=env-passphrase-1 evnx backup --output b2.bak
   Verified: no
 
 ! Important:
-  • Keep your password (or key file) safe — it cannot be recovered
+  • Keep your passphrase (or key file) safe — it cannot be recovered
   • Store the backup in a secure, separate location
   • To restore: evnx restore b2.bak --output .env
   • Test the restore before deleting the original .env
+· This file is encrypted. Committing it is as safe as its passphrase.
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
 
-! Reading password from EVNX_PASSWORD environment variable.
+! Reading passphrase from EVNX_PASSWORD environment variable.
   Less secure than interactive prompt — avoid in shared environments.
   Docs: https://docs.evnx.dev/cli/commands/backup
 [exit 0]
@@ -112,10 +114,11 @@ $ env EVNX_PASSWORD=env-passphrase-1 evnx backup --password-file pw --output b5.
   Verified: no
 
 ! Important:
-  • Keep your password (or key file) safe — it cannot be recovered
+  • Keep your passphrase (or key file) safe — it cannot be recovered
   • Store the backup in a secure, separate location
   • To restore: evnx restore b5.bak --output .env
   • Test the restore before deleting the original .env
+· This file is encrypted. Committing it is as safe as its passphrase.
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
@@ -131,9 +134,9 @@ $ env EVNX_PASSWORD=env-passphrase-1 evnx restore b5.bak --inspect
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from EVNX_PASSWORD environment variable.
+! Reading passphrase from EVNX_PASSWORD environment variable.
   Less secure than interactive prompt — avoid in shared environments.
-Error: Wrong password or corrupt backup — decryption failed
+Error: Wrong passphrase or corrupt backup — decryption failed
 [exit 2]
   ok: the env secret does not open it (the file was used) (exit 2)
 
@@ -154,7 +157,7 @@ $ evnx backup --output b7.bak
 Error: there is no terminal to ask for the passphrase on.
 
   Give it without a prompt, from a file or the environment:
-    evnx backup .env --password-file <path>
+    evnx backup .env --key-file <path>
     EVNX_PASSWORD=… evnx backup .env
 
 No verdict: evnx stopped at the error above. This is not a clean result.

@@ -14,7 +14,12 @@ Options:
           
           Fixes are conservative and local: `.gitignore` gains the `.env*` entries `evnx init` writes, and every env file other users can read is set to 0600 — a symlinked one only when its target is inside the project. Every fix is checked again afterwards; one that did not work says "not fixed". Nothing is deleted, nothing is committed, and no file's contents are edited.
           
-          `EVNX_AUTO_FIX=1` does the same thing. Either saying yes is enough — a flag can turn repair on, never off.
+          With `--all` it repairs the same things and nothing more: it never runs `validate --fix`.
+
+      --all
+          Also run `validate`, `sync --check` and `scan`, in one report.
+          
+          Each part is the command of that name with its defaults, read from this project's `.evnx.toml`. `sync --check` looks both ways and is skipped, with a note, when there is no template. The verdict is the worst of the parts: 1 if any found something, 2 if any could not run. With `--format json`, the document has a `sections` object with `doctor`, `validate`, `sync` and `scan` (`run.schema_version` 2).
 
       --strict
           Count warnings as problems, so they affect the exit code.
@@ -66,11 +71,14 @@ committed: [defaults] example in .evnx.toml, else .env.example, .env.sample
 or .env.template, whichever is there.
 
 Environment:
-  EVNX_AUTO_FIX=1     same as --fix (stderr says so when it turns repair on)
   EVNX_OUTPUT_JSON=1  same as --format json; an explicit --format wins
+
+EVNX_AUTO_FIX is no longer read: it prints one warning and repairs nothing.
+Pass --fix.
 
 Examples:
   evnx doctor --fix                       # repair .gitignore and file modes
+  evnx doctor --all                       # doctor, validate, sync --check and scan in one report
   evnx doctor --strict --format json      # a CI gate: warnings fail too
   evnx doctor --skip-without-env          # a pre-commit hook on a fresh clone
 
