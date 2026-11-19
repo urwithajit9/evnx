@@ -19,6 +19,23 @@ service, or run automated scanning without telling us first.
 
 Good-faith research conducted that way will not result in action against you.
 
+## Verifying a release
+
+Every release archive has a checksum (`.sha256`) and a signed SLSA build-provenance
+attestation, made in GitHub Actions through Sigstore. Each release also carries a signed
+CycloneDX software bill of materials, `evnx-<version>.cdx.json`, listing every crate in the
+build. To check an archive or the SBOM:
+
+```bash
+sha256sum -c <file>.sha256
+gh attestation verify <file> -R urwithajit9/evnx \
+  --signer-workflow urwithajit9/evnx/.github/workflows/release.yml
+```
+
+The SBOM can be scanned with Grype, Trivy or OSV-Scanner. Steps, a login-free check with
+`cosign`, and the results for 0.15.0:
+https://www.evnx.dev/blog/sbom-what-it-is-and-how-evnx-ships-one
+
 ## Supported versions
 
 evnx is pre-1.0, so a "minor" is the second number: `0.15` is a minor, `0.15.1`

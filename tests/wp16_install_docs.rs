@@ -75,8 +75,12 @@ fn wp16_one_install_url_everywhere() {
                 || line.contains("evnx.dev/install)")
                 || line.contains("evnx.dev/install ")
                 || line.ends_with("evnx.dev/install");
-            // The one place that may name the old host is a redirect remark.
-            if other_spelling && !line.to_lowercase().contains("redirect") {
+            // The old host may be named in a redirect remark, and in the release
+            // runbook, which checks that dotenv.space still serves the same file.
+            if other_spelling
+                && !line.to_lowercase().contains("redirect")
+                && rel != "docs/RELEASING.md"
+            {
                 bad.push(format!("{rel}:{}: {}", n + 1, line.trim()));
             }
         }
