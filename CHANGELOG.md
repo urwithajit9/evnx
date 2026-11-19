@@ -543,7 +543,8 @@ new `network` field below.
   `.env.prod` alone.
 - `doctor` checks env files and templates for empty evnx sections, and
   `--fix` clears them.
-- **`evnx align`: one layout for every `.env`.** The file's template decides
+- **`evnx align`: one layout for every `.env`.** Contributed by Henrik Svensson
+  (@henriksvensson) in #302. The file's template decides
   section headings, comments, blank lines and key order. It is chosen as every
   command chooses it (`--example`, the environment's own
   `.env.<name>.example`, `[defaults] example`, `.env.example`), so files named
