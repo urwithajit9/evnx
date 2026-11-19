@@ -80,7 +80,7 @@ impl Target {
 
     /// The env file and template by the one rule (`core::resolve`, WP-5).
     fn resolve(&mut self) -> Result<()> {
-        use crate::core::resolve::{resolve, Flags, Need, TemplateFrom};
+        use crate::core::resolve::{Flags, Need, TemplateFrom, resolve};
         let flags = Flags {
             env: None,
             env_name: self.env_name.as_deref(),
@@ -309,10 +309,18 @@ pub(crate) fn emit(
     root: &Path,
 ) -> Result<()> {
     let Some(p) = planned else { return Ok(()) };
-    if opts.json {
-        super::report::print_json(p, opts.dry_run, root)?;
-    } else if opts.dry_run {
-        super::report::print_dry_run(p, root);
+    // A real run without `--json` says nothing here: its lines came as it worked.
+    if opts.json || opts.dry_run {
+        let mode = if opts.json {
+            crate::core::output::Mode::Json
+        } else {
+            crate::core::output::Mode::Text
+        };
+        crate::core::output::Out::new(mode).emit(&super::report::InitReport::new(
+            p,
+            opts.dry_run,
+            root,
+        ))?;
     }
     Ok(())
 }
@@ -360,7 +368,7 @@ pub(crate) fn keep<'a>(
     target: &'a Target,
     written: &VarCollection,
     whole: &VarCollection,
-) -> impl FnOnce() + 'a {
+) -> impl FnOnce() + 'a + use<'a> {
     let recorded = super::contract::record(target, written, whole);
     move || {
         recorded();
@@ -380,11 +388,11 @@ pub(crate) fn template_vars(target: &Target) -> Result<VarCollection> {
         return Ok(vars);
     };
     for (name, value) in map {
-        let required = crate::commands::spec::infer::required(&name, &value);
+        let required = crate::commands::spec::infer::required(&name, value.expose());
         vars.vars.insert(
             name,
             VarMetadata {
-                example_value: value,
+                example_value: value.expose().to_string(),
                 description: None,
                 category: None,
                 required,
@@ -408,8 +416,8 @@ pub(crate) fn warn_template_secrets(target: &Target) {
         .iter()
         // `user:password@localhost` is evnx's own sample, as `scan` knows (N-20).
         .filter(|(_, v)| {
-            crate::core::classify::is_secret_shaped(v)
-                && !crate::core::placeholder::is_url_placeholder(v)
+            crate::core::classify::is_secret_shaped(v.expose())
+                && !crate::core::placeholder::is_url_placeholder(v.expose())
         })
         .map(|(n, _)| n.as_str())
         .collect();

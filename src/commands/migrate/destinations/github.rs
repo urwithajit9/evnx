@@ -20,14 +20,14 @@
 //! decrypt.
 
 use crate::core::http;
+use crate::core::secret::Vars;
 use crate::utils::prompt;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
-use indexmap::IndexMap;
 
 use indicatif::{ProgressBar, ProgressStyle};
-use reqwest::blocking::{Client, RequestBuilder, Response};
 use reqwest::Method;
+use reqwest::blocking::{Client, RequestBuilder, Response};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Duration;
@@ -90,7 +90,7 @@ fn pause() -> Duration {
 /// every name `migrate` hands over (`mod.rs` checks them for all
 /// destinations). What is left is GitHub's own: the `GITHUB_` prefix is
 /// reserved, in any case, and a value is at most 48 KB.
-pub fn refused_by_github(secrets: &IndexMap<String, String>) -> Vec<String> {
+pub fn refused_by_github(secrets: &Vars) -> Vec<String> {
     let mut refused = Vec::new();
     for (name, value) in secrets {
         if name.to_ascii_uppercase().starts_with("GITHUB_") {
@@ -214,11 +214,7 @@ impl MigrationDestination for GitHubDestination {
         true
     }
 
-    fn migrate(
-        &self,
-        secrets: &IndexMap<String, String>,
-        opts: &MigrationOptions,
-    ) -> Result<MigrationResult> {
+    fn migrate(&self, secrets: &Vars, opts: &MigrationOptions) -> Result<MigrationResult> {
         // ── What GitHub would refuse, before anything else (I-267) ────────────
         let refused = refused_by_github(secrets);
         if !refused.is_empty() {
@@ -271,7 +267,7 @@ impl MigrationDestination for GitHubDestination {
         };
 
         // ── Classify each secret ──────────────────────────────────────────────
-        let mut to_upload: Vec<(String, String)> = Vec::new();
+        let mut to_upload: Vec<(String, crate::core::secret::Secret)> = Vec::new();
         let mut to_skip: Vec<String> = Vec::new();
         let mut conflicts: Vec<String> = Vec::new();
         let mut undecided: Vec<&str> = Vec::new();
@@ -379,7 +375,7 @@ impl MigrationDestination for GitHubDestination {
             // ⚠️ A hidden bar (no terminal, so every CI log) prints nothing
             // through `pb.println`: the log said "1 failed" and named no secret
             // (I-274). The lines go through `Out` then; a failure shows under -q.
-            match upload_secret(&api, &public_key, key, value, opts.verbose) {
+            match upload_secret(&api, &public_key, key, value.expose(), opts.verbose) {
                 Ok(()) => {
                     result.uploaded += 1;
                     let line = format!("  {} {}", "✓".green(), key);
@@ -555,8 +551,8 @@ fn upload_secret(api: &Api, pk: &PublicKey, key: &str, value: &str, verbose: boo
 /// 2. `crypto_box`'s `seal` is behind the crate's `seal` feature, which was not
 ///    enabled, so the suggested code would not have compiled as written.
 fn encrypt_for_github(public_key_b64: &str, value: &str) -> Result<String> {
-    use base64::{engine::general_purpose, Engine as _};
-    use crypto_box::{aead::OsRng, PublicKey};
+    use base64::{Engine as _, engine::general_purpose};
+    use crypto_box::{PublicKey, aead::OsRng};
 
     let pk_bytes = general_purpose::STANDARD
         .decode(public_key_b64)
@@ -581,8 +577,9 @@ fn encrypt_for_github(public_key_b64: &str, value: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose, Engine as _};
-    use crypto_box::{aead::OsRng, SecretKey};
+    use crate::core::secret::Vars;
+    use base64::{Engine as _, engine::general_purpose};
+    use crypto_box::{SecretKey, aead::OsRng};
 
     /// The test that matters: seal with the public key, then **open it with the
     /// private key** and get the original back.
@@ -773,10 +770,10 @@ mod tests {
     /// I-267: GitHub's own rules, checked before any request.
     #[test]
     fn t_i267_reserved_names_and_oversized_values_are_named() {
-        let mut s = IndexMap::new();
-        s.insert("github_token_copy".to_string(), "x".to_string());
-        s.insert("BIG".to_string(), "x".repeat(MAX_VALUE_BYTES + 1));
-        s.insert("OK".to_string(), "x".repeat(MAX_VALUE_BYTES));
+        let mut s = Vars::new();
+        s.insert("github_token_copy".to_string(), "x".into());
+        s.insert("BIG".to_string(), "x".repeat(MAX_VALUE_BYTES + 1).into());
+        s.insert("OK".to_string(), "x".repeat(MAX_VALUE_BYTES).into());
         let refused = refused_by_github(&s);
         assert_eq!(refused.len(), 2, "{refused:?}");
         assert!(refused[0].starts_with("github_token_copy:"), "{refused:?}");

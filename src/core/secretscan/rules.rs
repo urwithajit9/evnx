@@ -257,7 +257,9 @@ pub fn parse_rule_text(text: &str, label: &str) -> anyhow::Result<Vec<PatternRul
         for n in r.names.iter().flatten() {
             if let Err(e) = regex::Regex::new(n) {
                 let id = r.id.as_deref().unwrap_or(&r.name);
-                anyhow::bail!("{label}: rule '{id}' has a `names` expression '{n}' that does not compile\n\n{e}");
+                anyhow::bail!(
+                    "{label}: rule '{id}' has a `names` expression '{n}' that does not compile\n\n{e}"
+                );
             }
         }
     }

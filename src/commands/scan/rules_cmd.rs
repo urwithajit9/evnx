@@ -3,7 +3,7 @@
 //! Rule files share `src/assets/rules.toml`'s schema, plus optional
 //! `positive` and `near_miss` lists that `test` checks and a scan ignores.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::path::{Path, PathBuf};
 
 use crate::core::config::{Category, PatternRule};

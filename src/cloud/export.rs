@@ -31,10 +31,8 @@
 //! fetched. A refusal that arrives after minutes of decryption teaches people to
 //! pass `--force` by reflex.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
-#[cfg(test)]
-use indexmap::IndexMap;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
@@ -54,18 +52,26 @@ pub struct Conversion {
     pub allow_collisions: bool,
 }
 
+/// What `cloud export` was asked for.
+pub struct ExportRequest {
+    pub vault_target: Option<String>,
+    pub output: Option<PathBuf>,
+    pub all_versions: bool,
+    pub conversion: Conversion,
+    pub force: bool,
+    pub password_stdin: bool,
+}
+
 /// Export a vault's versions to a directory.
-#[allow(clippy::too_many_arguments)]
-pub fn export(
-    server_override: Option<&str>,
-    vault_target: Option<String>,
-    output: Option<PathBuf>,
-    all_versions: bool,
-    conversion: Conversion,
-    force: bool,
-    password_stdin: bool,
-    verbose: bool,
-) -> Result<()> {
+pub fn export(server_override: Option<&str>, request: ExportRequest, verbose: bool) -> Result<()> {
+    let ExportRequest {
+        vault_target,
+        output,
+        all_versions,
+        conversion,
+        force,
+        password_stdin,
+    } = request;
     // ⚠️ First, before anything that costs a round trip or a password. A
     // mistyped `--to` is the cheapest possible failure and should stay that way.
     //
@@ -432,7 +438,7 @@ fn manifest(
 /// produce the same bytes without needing a server. The production path calls
 /// the same two functions in the same order.
 #[cfg(test)]
-fn convert_for_test(vars: &IndexMap<String, String>, format: &str) -> Result<String> {
+fn convert_for_test(vars: &crate::core::secret::Vars, format: &str) -> Result<String> {
     let c = crate::formats::get_converter(format).map_err(|e| anyhow!("{e}"))?;
     c.convert(vars, &Default::default())
 }
@@ -440,6 +446,7 @@ fn convert_for_test(vars: &IndexMap<String, String>, format: &str) -> Result<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     fn vault(name: &str, env: &str) -> VaultRef {
         VaultRef {
@@ -453,8 +460,8 @@ mod tests {
     /// are `convert`'s and `migrate`'s (`formats::gcp::secret_id`).
     #[test]
     fn t_i098_gcp_export_names_are_secret_id() {
-        let mut vars = IndexMap::new();
-        vars.insert("DB_URL".to_string(), "x".to_string());
+        let mut vars = Vars::new();
+        vars.insert("DB_URL".to_string(), "x".into());
         let out = convert_for_test(&vars, "gcp-secrets").unwrap();
         assert!(out.contains("| upsert_secret db-url\n"), "{out}");
         assert!(!out.contains("upsert_secret DB_URL"));

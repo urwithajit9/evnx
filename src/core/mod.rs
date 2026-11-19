@@ -23,6 +23,7 @@ pub mod key_rules;
 pub mod layout;
 pub mod lock;
 pub mod mask;
+pub mod output;
 pub mod parser;
 pub mod permissions;
 pub mod placeholder;
@@ -32,6 +33,7 @@ pub mod project;
 pub mod resolve;
 pub mod restore_error;
 pub mod safe_write;
+pub mod secret;
 pub mod secretscan;
 pub mod shell;
 #[cfg(unix)]

@@ -2,7 +2,7 @@
 //! flags (`--yes`, `-n`, `--json`, value enums).
 
 mod support;
-use support::{run, Project};
+use support::{Project, run};
 
 #[test]
 fn validate_fix_yes_applies_the_fixes() {

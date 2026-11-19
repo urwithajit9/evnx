@@ -3,9 +3,9 @@
 // ============================================================================
 
 use crate::core::converter::{ConvertOptions, Converter};
+use crate::core::secret::Vars;
 use anyhow::Result;
 // use std::collections::HashMap;
-use indexmap::IndexMap;
 
 pub struct AzureKeyVaultConverter {
     pub vault_name: String,
@@ -60,7 +60,7 @@ pub fn set_secret_script(vault: &str, name: &str, value: &str) -> String {
 }
 
 impl Converter for AzureKeyVaultConverter {
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         let mut output = String::new();
         output.push_str("#!/bin/bash\n");
         output.push_str("# Upload secrets to Azure Key Vault\n");
@@ -100,11 +100,12 @@ impl Converter for AzureKeyVaultConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     #[test]
     fn test_azure_converter() {
-        let mut vars = IndexMap::new();
-        vars.insert("API_KEY".to_string(), "secret123".to_string());
+        let mut vars = Vars::new();
+        vars.insert("API_KEY".to_string(), "secret123".into());
 
         let converter = AzureKeyVaultConverter::default();
         let result = converter

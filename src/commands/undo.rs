@@ -304,7 +304,7 @@ fn entry_for(root: &Path, file: &Path) -> Option<Entry> {
 /// `+ NAME  back`, `- NAME  goes`, `~ NAME  value changes`: from `current`
 /// to `old`, by name.
 fn name_changes(current: Option<&[u8]>, old: &[u8]) -> Vec<String> {
-    let read = |b: &[u8]| -> indexmap::IndexMap<String, String> {
+    let read = |b: &[u8]| -> indexmap::IndexMap<String, crate::core::secret::Secret> {
         let text = String::from_utf8_lossy(b);
         let doc = crate::commands::remove::edit::document(&text);
         doc.entries.into_iter().map(|e| (e.key, e.value)).collect()

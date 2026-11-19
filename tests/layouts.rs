@@ -21,7 +21,7 @@
 mod support;
 
 use std::path::{Path, PathBuf};
-use support::{run, Output};
+use support::{Output, run};
 
 /// A fixture copied into a temp folder.
 struct Layout {

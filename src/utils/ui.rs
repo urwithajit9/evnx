@@ -642,8 +642,13 @@ fn pad_or_truncate(s: &str, width: usize) -> String {
 /// }
 /// ```
 pub fn should_colorize() -> bool {
+    should_colorize_with(&|name| std::env::var_os(name))
+}
+
+/// [`should_colorize`] reading `NO_COLOR` through `env`.
+fn should_colorize_with(env: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> bool {
     // Check NO_COLOR env var first (https://no-color.org/)
-    if std::env::var_os("NO_COLOR").is_some() {
+    if env("NO_COLOR").is_some() {
         return false;
     }
 
@@ -782,18 +787,8 @@ mod tests {
 
     #[test]
     fn test_should_colorize_respects_no_color() {
-        // Save original
-        let original = std::env::var_os("NO_COLOR");
-
-        // Test with NO_COLOR set
-        std::env::set_var("NO_COLOR", "1");
-        assert!(!should_colorize());
-
-        // Restore
-        match original {
-            Some(v) => std::env::set_var("NO_COLOR", v),
-            None => std::env::remove_var("NO_COLOR"),
-        }
+        let no_color = |name: &str| (name == "NO_COLOR").then(|| std::ffi::OsString::from("1"));
+        assert!(!should_colorize_with(&no_color));
     }
 }
 

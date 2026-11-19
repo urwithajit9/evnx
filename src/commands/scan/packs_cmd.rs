@@ -3,12 +3,12 @@
 //! The only code that fetches a rule file. A scan never does: it reads what
 //! these commands wrote, and checks it against `rules.lock`.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 
+use crate::core::secretscan::PatternSet;
 use crate::core::secretscan::packs::{self, Entry, Index, Lock};
 use crate::core::secretscan::rules::{self, PROJECT_RULES_DIR};
-use crate::core::secretscan::PatternSet;
 use crate::utils::ui;
 
 /// The rule folder `add` writes to: the project's, or the personal one.

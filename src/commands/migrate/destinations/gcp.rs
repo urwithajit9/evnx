@@ -22,12 +22,12 @@
 //!
 //! Install the Google Cloud CLI: <https://cloud.google.com/sdk/docs/install>
 
+use crate::core::secret::Vars;
 use anyhow::Result;
 use colored::Colorize;
-use indexmap::IndexMap;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
-use crate::formats::gcp::{upsert_function, upsert_line, UPSERT_COMMENT};
+use crate::formats::gcp::{UPSERT_COMMENT, upsert_function, upsert_line};
 
 pub struct GcpDestination {
     /// GCP project ID, printed as `--project=` into every command (DEC-MG2).
@@ -51,11 +51,7 @@ impl MigrationDestination for GcpDestination {
         crate::formats::gcp::secret_id(key)
     }
 
-    fn migrate(
-        &self,
-        secrets: &IndexMap<String, String>,
-        opts: &MigrationOptions,
-    ) -> Result<MigrationResult> {
+    fn migrate(&self, secrets: &Vars, opts: &MigrationOptions) -> Result<MigrationResult> {
         let out = opts.out;
         out.status(format!(
             "\n{} GCP Secret Manager migration",
@@ -89,7 +85,7 @@ impl MigrationDestination for GcpDestination {
         out.command(upsert_function(&self.project).trim_end());
         out.command("");
         for (key, value) in secrets {
-            out.command(upsert_line(key, value));
+            out.command(upsert_line(key, value.expose()));
         }
 
         Ok(MigrationResult {
@@ -109,14 +105,15 @@ impl MigrationDestination for GcpDestination {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     /// I-098: `prepare_with` hands `migrate` the names `convert` prints.
     #[test]
     fn t_i098_migrate_names_match_convert() {
         use crate::core::converter::{ConvertOptions, Converter};
-        let mut vars = IndexMap::new();
-        vars.insert("DB_URL".to_string(), "postgres://h/db".to_string());
-        vars.insert("API_KEY".to_string(), "abc".to_string());
+        let mut vars = Vars::new();
+        vars.insert("DB_URL".to_string(), "postgres://h/db".into());
+        vars.insert("API_KEY".to_string(), "abc".into());
         let options = ConvertOptions::default();
 
         let dest = GcpDestination::new("p".into());
@@ -137,10 +134,11 @@ mod tests {
         assert_eq!(migrated, converted);
 
         // The printed script uses those names.
-        let secrets: IndexMap<String, String> = options
+        let secrets: Vars = options
             .prepare_with(&vars, dest, "")
             .unwrap()
             .into_iter()
+            .map(|(k, v)| (k, v.into()))
             .collect();
         let script = crate::formats::gcp::GcpSecretConverter::default()
             .convert(&vars, &options)
@@ -153,7 +151,7 @@ mod tests {
     #[test]
     fn t_i100_dry_run_counts_and_prints_no_value() {
         let dest = GcpDestination::new("my-proj".into());
-        let mut secrets = IndexMap::new();
+        let mut secrets = Vars::new();
         secrets.insert("A".into(), "1".into());
         let opts = MigrationOptions {
             dry_run: true,

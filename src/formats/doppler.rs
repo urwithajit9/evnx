@@ -3,6 +3,7 @@
 // ============================================================================
 
 use crate::core::converter::{ConvertOptions, Converter};
+use crate::core::secret::Vars;
 use anyhow::Result;
 // use std::collections::HashMap;
 use indexmap::IndexMap;
@@ -13,7 +14,7 @@ impl Converter for DopplerConverter {
     /// A flat JSON object of strings: the input `doppler secrets upload`
     /// takes (RM-65, I-097). It was `{"KEY": {"value", "computed"}}`, which is
     /// not an upload shape.
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         let flat: IndexMap<String, String> = options.prepare(vars, self)?.into_iter().collect();
         Ok(serde_json::to_string_pretty(&flat)?)
     }

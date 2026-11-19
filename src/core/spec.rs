@@ -554,7 +554,7 @@ mod tests {
         #[derive(Debug, Deserialize)]
         struct W {
             #[serde(default)]
-            #[allow(dead_code)]
+            #[expect(dead_code, reason = "only deserialized, to reach the regex error")]
             vars: Spec,
         }
         let e = toml::from_str::<W>("[vars.A]\nformat = \"regex:([unclosed\"\n").unwrap_err();

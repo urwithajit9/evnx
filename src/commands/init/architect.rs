@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use colored::*;
 use dialoguer::{MultiSelect, Select};
 
-use super::shared::{aborted, write, Outcome, Target, WriteOptions};
+use super::shared::{Outcome, Target, WriteOptions, aborted, write};
 use crate::schema::{formatter, loader, resolver};
 use crate::utils::ui::{info, print_header, print_preview_header, success};
 

@@ -9,10 +9,10 @@
 //! evnx migrate --to heroku --heroku-app my-heroku-app
 //! ```
 
+use crate::core::secret::Vars;
 use crate::core::shell;
 use anyhow::Result;
 use colored::Colorize;
-use indexmap::IndexMap;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
 
@@ -32,11 +32,7 @@ impl MigrationDestination for HerokuDestination {
         "Heroku"
     }
 
-    fn migrate(
-        &self,
-        secrets: &IndexMap<String, String>,
-        opts: &MigrationOptions,
-    ) -> Result<MigrationResult> {
+    fn migrate(&self, secrets: &Vars, opts: &MigrationOptions) -> Result<MigrationResult> {
         let out = opts.out;
         out.status(format!(
             "\n{} Heroku Config Vars migration",
@@ -67,7 +63,10 @@ impl MigrationDestination for HerokuDestination {
         out.status("");
         let mut command = format!("heroku config:set --app {}", shell::word(&self.app));
         for (key, value) in secrets {
-            command.push_str(&format!(" \\\n  {}", shell::assignment(key, value)));
+            command.push_str(&format!(
+                " \\\n  {}",
+                shell::assignment(key, value.expose())
+            ));
         }
         out.command(command);
         out.warn_values_in_argv();
@@ -92,12 +91,13 @@ impl MigrationDestination for HerokuDestination {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     #[test]
     fn test_dry_run() {
         // new() — no dialoguer, safe in non-TTY
         let dest = HerokuDestination::new("my-test-app".into());
-        let mut secrets = IndexMap::new();
+        let mut secrets = Vars::new();
         secrets.insert("SECRET".into(), "value".into());
         let opts = MigrationOptions {
             dry_run: true,

@@ -25,7 +25,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn project() -> Project {
     Project::new().env("APP_NAME=demo app\nAPI_SECRET=abc123\nPORT=8080\n")

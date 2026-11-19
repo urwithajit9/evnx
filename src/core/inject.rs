@@ -11,8 +11,8 @@
 //! config), not exfiltration: a child that transforms a value (base64, split
 //! it) gets past it.
 
-use anyhow::{anyhow, Result};
-use indexmap::IndexMap;
+use crate::core::secret::Vars;
+use anyhow::{Result, anyhow};
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 
@@ -44,11 +44,11 @@ impl Masker {
     /// multi-line value on its own; short values (under 6 bytes) are left
     /// alone, or every `1` and `true` would become `***`. `None` when there
     /// is nothing to mask.
-    pub fn new(vars: &IndexMap<String, String>) -> Option<Self> {
+    pub fn new(vars: &Vars) -> Option<Self> {
         let mut secrets: Vec<Vec<u8>> = vars
             .iter()
-            .filter(|(k, v)| crate::core::classify::holds_secret(k, v))
-            .flat_map(|(_, v)| v.lines().map(|l| l.trim().as_bytes().to_vec()))
+            .filter(|(k, v)| crate::core::classify::holds_secret(k, v.expose()))
+            .flat_map(|(_, v)| v.expose().lines().map(|l| l.trim().as_bytes().to_vec()))
             .filter(|s| s.len() >= 6)
             .collect();
         secrets.sort_by_key(|s| std::cmp::Reverse(s.len()));
@@ -176,12 +176,7 @@ pub fn exit_as(status: std::process::ExitStatus) -> Result<()> {
 ///
 /// `source` names where the variables came from, and `who` who can change
 /// it: `("the vault", "push to this vault")` or `(".env", "edit .env")`.
-pub fn check_names(
-    env_vars: &IndexMap<String, String>,
-    allow: bool,
-    source: &str,
-    who: &str,
-) -> Result<()> {
+pub fn check_names(env_vars: &Vars, allow: bool, source: &str, who: &str) -> Result<()> {
     if allow {
         return Ok(());
     }
@@ -214,7 +209,7 @@ pub fn check_names(
 /// network traffic or change which certificate authorities are trusted
 /// (`HTTPS_PROXY`, `SSL_CERT_FILE`, ...). The command still runs. Hidden by
 /// `-q` like the other notices; never prints a value (WP-11c).
-pub fn warn_sensitive_names(env_vars: &IndexMap<String, String>) {
+pub fn warn_sensitive_names(env_vars: &Vars) {
     if crate::utils::ui::is_quiet() {
         return;
     }
@@ -264,7 +259,7 @@ impl Prefer {
     /// values. `current` reads a name from the environment.
     pub fn resolve_with(
         self,
-        vars: &mut IndexMap<String, String>,
+        vars: &mut Vars,
         current: impl Fn(&str) -> Option<std::ffi::OsString>,
     ) -> Shadowed {
         let mut shadowed = Shadowed::default();
@@ -273,7 +268,7 @@ impl Prefer {
             let Some(existing) = current(name) else {
                 continue;
             };
-            let differs = existing.to_str() != Some(value.as_str());
+            let differs = existing.to_str() != Some(value.expose());
             match self {
                 Prefer::Env => {
                     if differs {
@@ -297,7 +292,7 @@ impl Prefer {
     }
 
     /// [`Self::resolve_with`] against the process environment.
-    pub fn resolve(self, vars: &mut IndexMap<String, String>) -> Shadowed {
+    pub fn resolve(self, vars: &mut Vars) -> Shadowed {
         self.resolve_with(vars, |n| std::env::var_os(n))
     }
 }
@@ -355,10 +350,24 @@ enum Launch {
 pub fn spawn_with_env(
     program: &str,
     args: &[String],
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     mask: Option<&Masker>,
 ) -> std::io::Result<std::process::ExitStatus> {
-    launch(Launch::Wait, program, args, env_vars, mask)
+    launch(Launch::Wait, program, args, env_vars, mask, None)
+}
+
+/// [`spawn_with_env`] with the "parent" environment given instead of read from
+/// the process: the child gets exactly `base` (minus evnx's own settings), then
+/// `env_vars`. Lets tests state their environment without mutating this one.
+#[cfg(test)]
+fn spawn_with_env_from(
+    program: &str,
+    args: &[String],
+    env_vars: &Vars,
+    mask: Option<&Masker>,
+    base: &[(std::ffi::OsString, std::ffi::OsString)],
+) -> std::io::Result<std::process::ExitStatus> {
+    launch(Launch::Wait, program, args, env_vars, mask, Some(base))
 }
 
 /// What `run` and `cloud run` call. On Unix with nothing to mask the child
@@ -367,7 +376,7 @@ pub fn spawn_with_env(
 pub fn run_with_env(
     program: &str,
     args: &[String],
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     mask: Option<&Masker>,
 ) -> std::io::Result<std::process::ExitStatus> {
     let how = if cfg!(unix) && mask.is_none() {
@@ -375,22 +384,35 @@ pub fn run_with_env(
     } else {
         Launch::Wait
     };
-    launch(how, program, args, env_vars, mask)
+    launch(how, program, args, env_vars, mask, None)
 }
 
 fn launch(
     how: Launch,
     program: &str,
     args: &[String],
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     mask: Option<&Masker>,
+    base: Option<&[(std::ffi::OsString, std::ffi::OsString)]>,
 ) -> std::io::Result<std::process::ExitStatus> {
     let mut cmd = Command::new(program);
     cmd.args(args);
+    if base.is_some() {
+        cmd.env_clear();
+    }
     // ⚠️ evnx's own settings stay with evnx (I-227, DEC-CL1). `EVNX_TOKEN`,
     // `EVNX_PASSWORD` and `EVNX_SERVER` were inherited, so every child of a CI
     // step held the pipeline's API token.
-    for (key, _) in std::env::vars_os() {
+    let inherited: Vec<std::ffi::OsString> = match base {
+        Some(base) => base.iter().map(|(k, _)| k.clone()).collect(),
+        None => std::env::vars_os().map(|(k, _)| k).collect(),
+    };
+    if let Some(base) = base {
+        for (key, value) in base {
+            cmd.env(key, value);
+        }
+    }
+    for key in inherited {
         if key
             .to_str()
             .is_some_and(crate::core::envsource::is_evnx_own)
@@ -401,7 +423,8 @@ fn launch(
     for (key, value) in env_vars {
         // `env`, never an argument. This one line is the whole reason to prefer
         // this command over `export $(cat .env | xargs)`.
-        cmd.env(key, value);
+        // EXPOSE: the child process receives the values.
+        cmd.env(key, value.expose());
     }
     #[cfg(unix)]
     if how == Launch::Replace {
@@ -441,14 +464,25 @@ fn launch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     // ─── spawn_with_env ─────────────────────────────────────────────────────
 
-    fn vars(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+    fn vars(pairs: &[(&str, &str)]) -> Vars {
         pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), (*v).into()))
             .collect()
+    }
+
+    /// A stand-in for the parent environment: `PATH` (so `sh` resolves) plus `extra`.
+    fn base_with(extra: &[(&str, &str)]) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+        let mut base = Vec::new();
+        if let Some(path) = std::env::var_os("PATH") {
+            base.push(("PATH".into(), path));
+        }
+        base.extend(extra.iter().map(|(k, v)| ((*k).into(), (*v).into())));
+        base
     }
 
     fn sh(script: &str) -> Vec<String> {
@@ -500,7 +534,7 @@ mod tests {
     fn the_childs_exit_code_comes_back_unchanged() {
         for code in [0, 1, 7, 42] {
             let status =
-                spawn_with_env("sh", &sh(&format!("exit {code}")), &IndexMap::new(), None).unwrap();
+                spawn_with_env("sh", &sh(&format!("exit {code}")), &Vars::new(), None).unwrap();
             assert_eq!(status.code(), Some(code), "exit {code} was not preserved");
         }
     }
@@ -508,30 +542,28 @@ mod tests {
     /// Inherited, not cleared — otherwise PATH is gone and nothing runs.
     #[test]
     fn the_parent_environment_is_inherited() {
-        std::env::set_var("RUN_INHERIT_PROBE", "from-parent");
-        let status = spawn_with_env(
+        let status = spawn_with_env_from(
             "sh",
             &sh(r#"[ "$RUN_INHERIT_PROBE" = "from-parent" ]"#),
-            &IndexMap::new(),
+            &Vars::new(),
             None,
+            &base_with(&[("RUN_INHERIT_PROBE", "from-parent")]),
         )
         .unwrap();
-        std::env::remove_var("RUN_INHERIT_PROBE");
         assert!(status.success(), "the parent environment was not inherited");
     }
 
     /// And the vault wins where both define a name — that is what injection means.
     #[test]
     fn a_vault_variable_overrides_the_inherited_one() {
-        std::env::set_var("RUN_OVERRIDE_PROBE", "from-parent");
-        let status = spawn_with_env(
+        let status = spawn_with_env_from(
             "sh",
             &sh(r#"[ "$RUN_OVERRIDE_PROBE" = "from-vault" ]"#),
             &vars(&[("RUN_OVERRIDE_PROBE", "from-vault")]),
             None,
+            &base_with(&[("RUN_OVERRIDE_PROBE", "from-parent")]),
         )
         .unwrap();
-        std::env::remove_var("RUN_OVERRIDE_PROBE");
         assert!(status.success(), "the inherited value won");
     }
 
@@ -539,15 +571,14 @@ mod tests {
     /// reach the child. A test used to lock in that they did.
     #[test]
     fn t_i227_evnx_settings_are_not_inherited() {
-        std::env::set_var("EVNX_TOKEN_PROBE_I227", "evnx_tok_secret");
-        let status = spawn_with_env(
+        let status = spawn_with_env_from(
             "sh",
             &sh(r#"[ -z "${EVNX_TOKEN_PROBE_I227+set}" ]"#),
-            &IndexMap::new(),
+            &Vars::new(),
             None,
+            &base_with(&[("EVNX_TOKEN_PROBE_I227", "evnx_tok_secret")]),
         )
         .unwrap();
-        std::env::remove_var("EVNX_TOKEN_PROBE_I227");
         assert!(status.success(), "an EVNX_ variable reached the child");
     }
 
@@ -570,21 +601,22 @@ mod tests {
         assert!(err.contains("--allow-unsafe-names"), "{err}");
         assert!(!err.contains("API_KEY"), "{err}");
         assert!(check_names(&v, true, "the vault", "push to this vault").is_ok());
-        assert!(check_names(
-            &vars(&[("API_KEY", "k")]),
-            false,
-            "the vault",
-            "push to this vault"
-        )
-        .is_ok());
+        assert!(
+            check_names(
+                &vars(&[("API_KEY", "k")]),
+                false,
+                "the vault",
+                "push to this vault"
+            )
+            .is_ok()
+        );
     }
 
     /// A missing command is an io::ErrorKind::NotFound, which `run` turns into
     /// the "use sh -c" hint rather than a bare OS error.
     #[test]
     fn a_missing_command_is_reported_as_not_found() {
-        let err =
-            spawn_with_env("evnx-no-such-binary-xyz", &[], &IndexMap::new(), None).unwrap_err();
+        let err = spawn_with_env("evnx-no-such-binary-xyz", &[], &Vars::new(), None).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
     }
 
@@ -592,7 +624,7 @@ mod tests {
 
     fn env_of(
         pairs: &[(&'static str, &'static str)],
-    ) -> impl Fn(&str) -> Option<std::ffi::OsString> {
+    ) -> impl Fn(&str) -> Option<std::ffi::OsString> + use<> {
         let m: Vec<(&'static str, &'static str)> = pairs.to_vec();
         move |n| m.iter().find(|(k, _)| *k == n).map(|(_, v)| (*v).into())
     }

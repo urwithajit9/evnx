@@ -8,7 +8,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const ENV: &str = "BASE=http://localhost\n\
                    URL=$BASE/api\n\

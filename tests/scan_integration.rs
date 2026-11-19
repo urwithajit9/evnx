@@ -664,10 +664,12 @@ fn a_real_aws_secret_keeps_its_label_and_its_remediation_url() {
     assert_eq!(f.len(), 1);
 
     assert_eq!(f[0]["pattern"], "AWS Secret Access Key");
-    assert!(f[0]["action_url"]
-        .as_str()
-        .unwrap()
-        .contains("aws.amazon.com"));
+    assert!(
+        f[0]["action_url"]
+            .as_str()
+            .unwrap()
+            .contains("aws.amazon.com")
+    );
 }
 
 /// ⚠️ And deduplication must not narrow `--severity high`. The AWS pattern is

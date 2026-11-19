@@ -249,9 +249,10 @@ fn rm90_list_json_carries_provider_and_category_for_every_rule() {
     .unwrap();
     let (code, rows, _) = list_json(p.path(), h.path(), &[]);
     assert_eq!(code, 0);
-    assert!(rows
-        .iter()
-        .all(|r| r.get("provider").is_some() && r.get("category").is_some()));
+    assert!(
+        rows.iter()
+            .all(|r| r.get("provider").is_some() && r.get("category").is_some())
+    );
     let bare = rows.iter().find(|r| r["id"] == "bare-tok").unwrap();
     assert!(bare["provider"].is_null() && bare["category"].is_null());
     let aws = rows.iter().find(|r| r["id"] == "aws-access-key").unwrap();

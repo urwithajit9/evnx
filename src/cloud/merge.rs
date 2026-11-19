@@ -13,7 +13,8 @@
 //!
 //! Single-vault runs never come through here.
 
-use anyhow::{anyhow, Result};
+use crate::core::secret::Vars;
+use anyhow::{Result, anyhow};
 use colored::Colorize;
 use indexmap::IndexMap;
 use zeroize::Zeroize;
@@ -53,10 +54,10 @@ impl Overlap {
 /// later value replaces the earlier one (keeping the key's first position).
 /// The error carries key and vault names only.
 pub(crate) fn merge_vaults(
-    vaults: Vec<(String, IndexMap<String, String>)>,
+    vaults: Vec<(String, Vars)>,
     allow_override: bool,
-) -> Result<(IndexMap<String, String>, Vec<Overlap>)> {
-    let mut merged: IndexMap<String, String> = IndexMap::new();
+) -> Result<(Vars, Vec<Overlap>)> {
+    let mut merged: Vars = IndexMap::new();
     let mut holders: IndexMap<String, Vec<String>> = IndexMap::new();
     for (label, vars) in vaults {
         for (key, value) in vars {
@@ -93,7 +94,7 @@ pub(crate) struct Source {
 }
 
 pub(crate) struct Merged {
-    pub vars: IndexMap<String, String>,
+    pub vars: Vars,
     pub sources: Vec<Source>,
 }
 
@@ -117,7 +118,7 @@ impl Merged {
     pub fn to_env_text(&self) -> zeroize::Zeroizing<Vec<u8>> {
         let mut text = String::new();
         for (k, v) in &self.vars {
-            text.push_str(&crate::core::envfile::line(k, v));
+            text.push_str(&crate::core::envfile::line(k, v.expose()));
             text.push('\n');
         }
         let bytes = text.as_bytes().to_vec();
@@ -222,15 +223,16 @@ pub(crate) fn check_usage(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
-    fn vars(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+    fn vars(pairs: &[(&str, &str)]) -> Vars {
         pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), (*v).into()))
             .collect()
     }
 
-    fn two() -> Vec<(String, IndexMap<String, String>)> {
+    fn two() -> Vec<(String, Vars)> {
         vec![
             ("acme/shared".into(), vars(&[("A", "1"), ("B", "2")])),
             ("acme/prod".into(), vars(&[("C", "3"), ("D", "4")])),

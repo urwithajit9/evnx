@@ -6,11 +6,11 @@
 mod support;
 
 use evnx_crypto::{
-    b64_encode, derive_master_key, encrypt_private_key, encrypt_vault, generate_keypair,
-    generate_salt, salt_to_base64, vault_aad, wrap_vault_key_with_master_key, VaultKey,
+    VaultKey, b64_encode, derive_master_key, encrypt_private_key, encrypt_vault, generate_keypair,
+    generate_salt, salt_to_base64, vault_aad, wrap_vault_key_with_master_key,
 };
-use support::cloud::signed_in;
 use support::Project;
+use support::cloud::signed_in;
 
 const PW: &str = "correct horse battery staple";
 const SHARED_ID: &str = "0b8a1f8e-3c2d-4e5f-8a9b-1c2d3e4f5a6b";

@@ -35,7 +35,7 @@
 
 mod support;
 
-use support::{run_with, Project};
+use support::{Project, run_with};
 
 const TOKEN: &str = "evnx_tok_00000000000000000000000000000000";
 
@@ -770,12 +770,14 @@ fn resend_with(
     if signed_in {
         support::cloud::login(&p.path().join("cfg"), &url);
     }
-    let mut mocks = vec![server
-        .mock("GET", "/api/v1/auth/me")
-        .with_status(200)
-        .with_body(me)
-        .expect(usize::from(signed_in))
-        .create()];
+    let mut mocks = vec![
+        server
+            .mock("GET", "/api/v1/auth/me")
+            .with_status(200)
+            .with_body(me)
+            .expect(usize::from(signed_in))
+            .create(),
+    ];
     let mut m = server
         .mock("POST", "/api/v1/auth/resend-verification")
         .match_body(mockito::Matcher::JsonString(
@@ -883,7 +885,9 @@ fn n14_5_help_and_the_unverified_hint_name_the_command() {
     );
     out.assert_code(0);
     assert!(out.stdout.contains("verification"), "{}", out.stdout);
-    assert!(evnx::cloud::client::ApiError::EmailNotVerified
-        .to_string()
-        .contains("evnx auth resend-verification"));
+    assert!(
+        evnx::cloud::client::ApiError::EmailNotVerified
+            .to_string()
+            .contains("evnx auth resend-verification")
+    );
 }

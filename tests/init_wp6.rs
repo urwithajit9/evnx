@@ -7,7 +7,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 #[test]
 fn init1_a_real_looking_key_in_the_template_is_named_never_shown() {

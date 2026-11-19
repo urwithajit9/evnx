@@ -1,5 +1,6 @@
 //! Execution logic for sync operations: forward, reverse, previews, and file writes.
 
+use crate::core::secret::{Secret, Vars};
 use anyhow::{Context, Result};
 use colored::*;
 use dialoguer::{Input, MultiSelect, Select};
@@ -8,15 +9,42 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::cli::{NamingPolicy, SyncDirection};
-use crate::core::envfile::{self, only_in};
-use crate::core::placeholder::{generate_placeholder, is_generated_value, PlaceholderConfig};
 use crate::core::Parser;
+use crate::core::envfile::{self, only_in};
+use crate::core::output::{Mode, Out, Report};
+use crate::core::placeholder::{PlaceholderConfig, generate_placeholder, is_generated_value};
 use crate::docs;
 use crate::utils::string::{count, pluralize};
 use crate::utils::ui;
 
-use super::models::{SyncAction, SyncPreview, VarChange};
+use super::models::{PreviewRow, SyncAction, SyncPreview};
 use super::security::{log_security_event, validate_var_name};
+
+/// A planned change to one variable, with its values.
+///
+/// ⛔ Internal to sync, and deliberately not in `models.rs`: this type holds
+/// [`Secret`]s, and a report type must not (WP-17, `tests/architecture.rs`).
+/// [`VarChange::row`] is the one way out: the line the preview prints.
+#[derive(Debug, Clone)]
+pub struct VarChange {
+    pub key: String,
+    pub old_value: Option<Secret>,
+    pub new_value: Secret,
+    pub is_placeholder: bool,
+}
+
+impl VarChange {
+    /// The row a [`SyncPreview`] holds.
+    pub fn row(&self) -> PreviewRow {
+        PreviewRow {
+            key: self.key.clone(),
+            // The dry-run preview shows the value sync would write: a
+            // placeholder, or a non-credential's value (I-113).
+            shown: self.new_value.expose().to_string(),
+            is_placeholder: self.is_placeholder,
+        }
+    }
+}
 
 /// Write the env file sync manages: atomic, new files 0600, an existing file
 /// keeps its mode, a symlink is written through (DEC-S6, DEC-S7, core::safe_write).
@@ -54,7 +82,7 @@ fn write_template(path: &Path, content: &str) -> Result<()> {
 /// at all — `.env.production` was simply unreachable, and there was nowhere to
 /// put a path even if you wanted one. Messages named the literals for longer
 /// still: `--env nope.env` reported "File not found: .env" (I-125).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct SyncPaths {
     pub env: PathBuf,
     pub example: PathBuf,
@@ -140,9 +168,9 @@ impl Drift {
 /// The two files as read, and the drift between them.
 pub(super) struct Loaded {
     /// `None` when the file does not exist (reverse may create it).
-    pub env: Option<IndexMap<String, String>>,
+    pub env: Option<Vars>,
     /// `None` when the file does not exist (forward may create it).
-    pub example: Option<IndexMap<String, String>>,
+    pub example: Option<Vars>,
     pub drift: Drift,
 }
 
@@ -174,7 +202,7 @@ pub(super) fn load_config(path: Option<&PathBuf>) -> Result<PlaceholderConfig> {
 /// `pretty` prints the getting-started box before a missing-source error.
 pub(super) fn load(ctx: &SyncCtx, config: &PlaceholderConfig, pretty: bool) -> Result<Loaded> {
     let p = &ctx.paths;
-    let parse = |path: &Path| -> Result<IndexMap<String, String>> {
+    let parse = |path: &Path| -> Result<Vars> {
         Ok(Parser::default()
             .parse_file(path)
             .with_context(|| format!("Failed to parse {}", path.display()))?
@@ -293,11 +321,7 @@ pub(super) fn load(ctx: &SyncCtx, config: &PlaceholderConfig, pretty: bool) -> R
 }
 
 impl Drift {
-    fn into_loaded(
-        self,
-        env: Option<IndexMap<String, String>>,
-        example: Option<IndexMap<String, String>>,
-    ) -> Loaded {
+    fn into_loaded(self, env: Option<Vars>, example: Option<Vars>) -> Loaded {
         Loaded {
             env,
             example,
@@ -370,9 +394,65 @@ pub fn execute(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<bool> {
     ui::print_docs_hint(&docs::SYNC);
 
     if ctx.check && drift.out_of_step() {
-        print_verdict(ctx, &drift);
+        Out::new(Mode::Text).emit(&super::report_of(ctx, &drift))?;
     }
     Ok(drift.out_of_step())
+}
+
+/// What the text of a [`SyncReport`](super::SyncReport) needs and its JSON
+/// does not carry (names, counts and paths: no value).
+#[derive(Debug, Default)]
+pub(super) struct SyncText {
+    pub paths: SyncPaths,
+    pub direction: SyncDirection,
+    /// Names the target lacks.
+    pub missing: usize,
+    /// Two-way: names only the template has.
+    pub template_only: usize,
+    /// `--check` with no `.env`: required `[vars]` that apply.
+    pub required: usize,
+    /// ... and the ones the template lacks, in contract order.
+    pub names: Vec<String>,
+}
+
+impl Report for super::SyncReport {
+    fn text(&self, _out: &Out) -> Result<()> {
+        let t = &self.text;
+        if self.compared_with == Some("spec") {
+            let example = t.paths.example_str();
+            if self.in_sync {
+                ui::success(format!(
+                    "{example} declares every required variable ({})",
+                    t.required
+                ));
+                ui::print_docs_hint(&docs::SYNC);
+            } else {
+                ui::error(format!(
+                    "{example} is missing {} required variable(s):",
+                    t.missing
+                ));
+                for name in &t.names {
+                    println!("  • {name}");
+                }
+                eprintln!();
+                eprintln!("✗ Out of sync. Add them to {example} and commit the result.");
+            }
+        } else if !self.in_sync {
+            print_verdict(t);
+        }
+        Ok(())
+    }
+}
+
+impl Report for SyncPreview {
+    fn text(&self, _out: &Out) -> Result<()> {
+        print_preview(self);
+        Ok(())
+    }
+}
+
+fn emit_preview(preview: &SyncPreview) -> Result<()> {
+    Out::new(Mode::Text).emit(preview)
 }
 
 /// The `--check` verdict: one line per side that drifted, each naming the
@@ -380,38 +460,38 @@ pub fn execute(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<bool> {
 ///
 /// ⚠️ It said "Run `evnx sync --direction X` and commit the result" whatever
 /// the direction — but reverse writes `.env`, which is never committed.
-fn print_verdict(ctx: &SyncCtx, drift: &Drift) {
-    let (env, example) = (ctx.paths.env_str(), ctx.paths.example_str());
+fn print_verdict(t: &SyncText) {
+    let (env, example) = (t.paths.env_str(), t.paths.example_str());
     eprintln!();
     eprintln!("✗ Out of sync.");
-    let n = drift.missing.len();
+    let n = t.missing;
     if n > 0 {
-        match ctx.direction {
+        match t.direction {
             SyncDirection::Forward => eprintln!(
                 "  · {} in {env} {} missing from {example}: run `{}` and commit {example}.",
                 count(n, "variable"),
                 is_are(n),
-                fix_command(&ctx.paths, SyncDirection::Forward)
+                fix_command(&t.paths, SyncDirection::Forward)
             ),
             SyncDirection::Reverse => eprintln!(
                 "  · {} {} missing from {env}: run `{}` to add {} to {env}.",
                 count(n, "variable"),
                 is_are(n),
-                fix_command(&ctx.paths, SyncDirection::Reverse),
+                fix_command(&t.paths, SyncDirection::Reverse),
                 it_them(n)
             ),
         }
     }
-    let t = drift.template_only.len();
-    if t > 0 {
+    let n = t.template_only;
+    if n > 0 {
         eprintln!(
             "  · {} in {example} {} not in {env}: remove {} from {example}, or add {} to {env} \
              with `{}`.",
-            count(t, "variable"),
-            is_are(t),
-            it_them(t),
-            it_them(t),
-            fix_command(&ctx.paths, SyncDirection::Reverse)
+            count(n, "variable"),
+            is_are(n),
+            it_them(n),
+            it_them(n),
+            fix_command(&t.paths, SyncDirection::Reverse)
         );
     }
 }
@@ -432,19 +512,11 @@ pub(super) fn fix_command(paths: &SyncPaths, direction: SyncDirection) -> String
 }
 
 fn is_are(n: usize) -> &'static str {
-    if n == 1 {
-        "is"
-    } else {
-        "are"
-    }
+    if n == 1 { "is" } else { "are" }
 }
 
 fn it_them(n: usize) -> &'static str {
-    if n == 1 {
-        "it"
-    } else {
-        "them"
-    }
+    if n == 1 { "it" } else { "them" }
 }
 
 /// The names only the template has (two-way, DEC-S17). `sync` only adds, so
@@ -550,7 +622,7 @@ fn env_not_found(p: &SyncPaths) {
 /// drifting apart is the shape of half the defects in this codebase.
 pub(super) fn check_allow_actual(
     config: &PlaceholderConfig,
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     paths: &SyncPaths,
 ) -> Result<()> {
     if config.allow_actual.is_empty() {
@@ -598,7 +670,7 @@ pub(super) fn check_allow_actual(
 /// `env_vars` is skipped.
 pub(crate) fn credential_keys<'a>(
     keys: impl IntoIterator<Item = &'a String>,
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     source: &str,
 ) -> Result<Vec<(String, String)>> {
     // ⚠️ `DetectorRegistry::new()` alone is NOT the set `evnx scan` uses; see
@@ -616,7 +688,7 @@ pub(crate) fn credential_keys<'a>(
         // The strongest verdict, not the first: `scan_kv` runs every detector
         // and more than one can answer for a single value.
         if let Some(detection) = registry
-            .scan_kv(key, value, source)
+            .scan_kv(key, value.expose(), source)
             .into_iter()
             .max_by_key(|d| d.confidence)
         {
@@ -771,12 +843,12 @@ To fill {} from the template instead, run `{}`.",
         }
         let preview = add_with_placeholders_preview(&missing, &env_vars, config)?;
         if ctx.dry_run {
-            print_preview(&SyncPreview {
-                target_file: target_label(&paths.example),
-                action: SyncAction::Add,
-                variables: preview,
-                warnings: vec![],
-            });
+            emit_preview(&SyncPreview::new(
+                target_label(&paths.example),
+                SyncAction::Add,
+                &preview,
+                vec![],
+            ))?;
             return Ok(drift);
         }
         add_with_placeholders(paths, &missing, &env_vars, config, None)?;
@@ -907,11 +979,7 @@ To fill {} from the template instead, run `{}`.",
 /// The choice is still offered when someone is at a terminal to make it. Without
 /// one, or with CI set, it resolves to placeholders and says so, rather than
 /// silently picking the unsafe branch.
-fn handle_new_example_file(
-    ctx: &SyncCtx,
-    vars: &IndexMap<String, String>,
-    config: &PlaceholderConfig,
-) -> Result<()> {
+fn handle_new_example_file(ctx: &SyncCtx, vars: &Vars, config: &PlaceholderConfig) -> Result<()> {
     let paths = &ctx.paths;
     // A preview never asks and never says it is creating anything (I-281).
     let use_placeholders = if ctx.force || ctx.dry_run {
@@ -955,7 +1023,7 @@ fn handle_new_example_file(
                 key: k.clone(),
                 old_value: None,
                 new_value: if is_refused(k) {
-                    generate_placeholder(k, Some(v), config)
+                    generate_placeholder(k, Some(v.expose()), config).into()
                 } else {
                     v.clone()
                 },
@@ -965,12 +1033,12 @@ fn handle_new_example_file(
     };
 
     if ctx.dry_run {
-        print_preview(&SyncPreview {
-            target_file: target_label(&paths.example),
-            action: SyncAction::Add,
-            variables: preview,
-            warnings: vec!["New file would be created".into()],
-        });
+        emit_preview(&SyncPreview::new(
+            target_label(&paths.example),
+            SyncAction::Add,
+            &preview,
+            vec!["New file would be created".into()],
+        ))?;
         return Ok(());
     }
 
@@ -991,12 +1059,14 @@ fn handle_new_example_file(
             ACTUAL_VALUES_NOTE
         );
         for (key, value) in vars {
+            let placeholder;
             let value = if is_refused(key) {
-                generate_placeholder(key, Some(value), config)
+                placeholder = generate_placeholder(key, Some(value.expose()), config);
+                placeholder.as_str()
             } else {
-                value.clone()
+                value.expose()
             };
-            out.push_str(&envfile::line(key, &value));
+            out.push_str(&envfile::line(key, value));
             out.push('\n');
         }
         write_template(&paths.example, &out)?;
@@ -1147,12 +1217,12 @@ fn sync_reverse(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<Drift> {
         }
         let preview = add_from_example_preview(&missing, &example_vars, true, config)?;
         if ctx.dry_run {
-            print_preview(&SyncPreview {
-                target_file: target_label(&paths.env),
-                action: SyncAction::Add,
-                variables: preview,
-                warnings: placeholder_reminder(&missing, &example_vars, config),
-            });
+            emit_preview(&SyncPreview::new(
+                target_label(&paths.env),
+                SyncAction::Add,
+                &preview,
+                placeholder_reminder(&missing, &example_vars, config),
+            ))?;
             return Ok(drift);
         }
         add_from_example(paths, &missing, &example_vars, true, config)?;
@@ -1211,12 +1281,12 @@ fn sync_reverse(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<Drift> {
 /// (I-126: it was printed for a preview of real template values too).
 fn placeholder_reminder(
     keys: &[&String],
-    example_vars: &IndexMap<String, String>,
+    example_vars: &Vars,
     config: &PlaceholderConfig,
 ) -> Vec<String> {
     if keys
         .iter()
-        .any(|k| reverse_value(k, example_vars.get(*k), config).1)
+        .any(|k| reverse_value(k, example_vars.get(*k).map(Secret::expose), config).1)
     {
         vec!["Remember to replace placeholders with real values".into()]
     } else {
@@ -1273,7 +1343,7 @@ fn env_text_from_template(template: &str, example_label: &str, env_label: &str) 
 /// one `--check` said it would be.
 fn handle_new_env_file(
     ctx: &SyncCtx,
-    example_vars: &IndexMap<String, String>,
+    example_vars: &Vars,
     spec_names: &[String],
     config: &PlaceholderConfig,
 ) -> Result<()> {
@@ -1285,7 +1355,7 @@ fn handle_new_env_file(
                 key: k.clone(),
                 old_value: None,
                 new_value: v.clone(),
-                is_placeholder: is_generated_value(v, config),
+                is_placeholder: is_generated_value(v.expose(), config),
             })
             .collect();
         preview.extend(spec_names.iter().map(|k| {
@@ -1293,16 +1363,16 @@ fn handle_new_env_file(
             VarChange {
                 key: k.clone(),
                 old_value: None,
-                new_value: value,
+                new_value: value.into(),
                 is_placeholder: generated,
             }
         }));
-        print_preview(&SyncPreview {
-            target_file: target_label(&paths.env),
-            action: SyncAction::Add,
-            variables: preview,
-            warnings: vec!["Replace placeholder values with real credentials!".into()],
-        });
+        emit_preview(&SyncPreview::new(
+            target_label(&paths.env),
+            SyncAction::Add,
+            &preview,
+            vec!["Replace placeholder values with real credentials!".into()],
+        ))?;
         return Ok(());
     }
 
@@ -1352,7 +1422,7 @@ fn block_heading(source: &str, marker: &str, comment: Option<&str>) -> String {
 /// with no `[AUDIT]` line, and the run said "placeholder values" (RM-05, I-284).
 fn actual_keys<'a>(
     keys: impl IntoIterator<Item = &'a String>,
-    values: &IndexMap<String, String>,
+    values: &Vars,
     config: &PlaceholderConfig,
 ) -> Vec<String> {
     keys.into_iter()
@@ -1376,7 +1446,7 @@ fn and_actual(n: usize) -> String {
 fn add_with_placeholders(
     paths: &SyncPaths,
     keys: &[&String],
-    values: &IndexMap<String, String>,
+    values: &Vars,
     config: &PlaceholderConfig,
     comment: Option<&str>,
 ) -> Result<()> {
@@ -1385,7 +1455,7 @@ fn add_with_placeholders(
     content.push_str(&block_heading(&paths.env_str(), "", comment));
 
     for key in keys {
-        let placeholder = generate_placeholder(key, values.get(*key), config);
+        let placeholder = generate_placeholder(key, values.get(*key).map(Secret::expose), config);
         content.push_str(&envfile::line(key, &placeholder));
         content.push('\n');
     }
@@ -1400,17 +1470,18 @@ fn add_with_placeholders(
 
 fn add_with_placeholders_preview(
     keys: &[&String],
-    values: &IndexMap<String, String>,
+    values: &Vars,
     config: &PlaceholderConfig,
 ) -> Result<Vec<VarChange>> {
     Ok(keys
         .iter()
         .map(|key| {
-            let placeholder = generate_placeholder(key, values.get(*key), config);
+            let placeholder =
+                generate_placeholder(key, values.get(*key).map(Secret::expose), config);
             VarChange {
                 key: (*key).clone(),
                 old_value: None,
-                new_value: placeholder,
+                new_value: placeholder.into(),
                 is_placeholder: actual_keys([*key], values, config).is_empty(),
             }
         })
@@ -1422,7 +1493,7 @@ fn add_with_placeholders_preview(
 fn add_with_actual_values(
     paths: &SyncPaths,
     keys: &[&String],
-    values: &IndexMap<String, String>,
+    values: &Vars,
     config: &PlaceholderConfig,
     comment: Option<&str>,
 ) -> Result<()> {
@@ -1436,11 +1507,12 @@ fn add_with_actual_values(
 
     for key in keys {
         if refused.iter().any(|(r, _)| r == *key) {
-            let placeholder = generate_placeholder(key, values.get(*key), config);
+            let placeholder =
+                generate_placeholder(key, values.get(*key).map(Secret::expose), config);
             content.push_str(&envfile::line(key, &placeholder));
             content.push('\n');
         } else if let Some(value) = values.get(*key) {
-            content.push_str(&envfile::line(key, value));
+            content.push_str(&envfile::line(key, value.expose()));
             content.push('\n');
         }
     }
@@ -1449,17 +1521,13 @@ fn add_with_actual_values(
     Ok(())
 }
 
-fn convert_to_example(
-    paths: &SyncPaths,
-    vars: &IndexMap<String, String>,
-    config: &PlaceholderConfig,
-) -> Result<()> {
+fn convert_to_example(paths: &SyncPaths, vars: &Vars, config: &PlaceholderConfig) -> Result<()> {
     let mut content = String::new();
     content.push_str(&format!("{}{}\n", GENERATED_HEADER[0], paths.env_str()));
     content.push_str(&format!("{}\n\n", GENERATED_HEADER[1]));
 
     for (key, value) in vars {
-        let placeholder = generate_placeholder(key, Some(value), config);
+        let placeholder = generate_placeholder(key, Some(value.expose()), config);
         content.push_str(&envfile::line(key, &placeholder));
         content.push('\n');
     }
@@ -1472,18 +1540,15 @@ fn convert_to_example(
     Ok(())
 }
 
-fn convert_to_example_preview(
-    vars: &IndexMap<String, String>,
-    config: &PlaceholderConfig,
-) -> Result<Vec<VarChange>> {
+fn convert_to_example_preview(vars: &Vars, config: &PlaceholderConfig) -> Result<Vec<VarChange>> {
     Ok(vars
         .iter()
         .map(|(k, v)| {
-            let placeholder = generate_placeholder(k, Some(v), config);
+            let placeholder = generate_placeholder(k, Some(v.expose()), config);
             VarChange {
                 key: k.clone(),
                 old_value: None,
-                new_value: placeholder,
+                new_value: placeholder.into(),
                 is_placeholder: actual_keys([k], vars, config).is_empty(),
             }
         })
@@ -1503,15 +1568,11 @@ fn convert_to_example_preview(
 /// came back as `…/0`, `API_PORT=8080` as `8000`. Only an empty or
 /// placeholder-looking value is generated, through the project's
 /// `--template-config` (which reverse used to ignore for a built-in default).
-fn reverse_value(
-    key: &str,
-    template: Option<&String>,
-    config: &PlaceholderConfig,
-) -> (String, bool) {
-    use crate::core::classify::{is_placeholder, Strictness};
+fn reverse_value(key: &str, template: Option<&str>, config: &PlaceholderConfig) -> (String, bool) {
+    use crate::core::classify::{Strictness, is_placeholder};
     match template {
         Some(v) if !v.trim().is_empty() && !is_placeholder(key, v, Strictness::Lenient) => {
-            (v.clone(), false)
+            (v.to_string(), false)
         }
         _ => (generate_placeholder(key, template, config), true),
     }
@@ -1520,7 +1581,7 @@ fn reverse_value(
 fn add_from_example(
     paths: &SyncPaths,
     keys: &[&String],
-    example_vars: &IndexMap<String, String>,
+    example_vars: &Vars,
     use_placeholders: bool,
     config: &PlaceholderConfig,
 ) -> Result<()> {
@@ -1533,9 +1594,9 @@ fn add_from_example(
 
     for key in keys {
         let value = if use_placeholders {
-            reverse_value(key, example_vars.get(*key), config).0
+            reverse_value(key, example_vars.get(*key).map(Secret::expose), config).0
         } else {
-            let default = example_vars.get(*key).map(|s| s.as_str()).unwrap_or("");
+            let default = example_vars.get(*key).map(Secret::expose).unwrap_or("");
             Input::new()
                 .with_prompt(format!("Value for {}", key))
                 .default(default.to_string())
@@ -1551,7 +1612,7 @@ fn add_from_example(
 
 fn add_from_example_preview(
     keys: &[&String],
-    example_vars: &IndexMap<String, String>,
+    example_vars: &Vars,
     use_placeholders: bool,
     config: &PlaceholderConfig,
 ) -> Result<Vec<VarChange>> {
@@ -1559,14 +1620,20 @@ fn add_from_example_preview(
         .iter()
         .map(|key| {
             let (new_val, generated) = if use_placeholders {
-                reverse_value(key, example_vars.get(*key), config)
+                reverse_value(key, example_vars.get(*key).map(Secret::expose), config)
             } else {
-                (example_vars.get(*key).cloned().unwrap_or_default(), false)
+                (
+                    example_vars
+                        .get(*key)
+                        .map(|v| v.expose().to_string())
+                        .unwrap_or_default(),
+                    false,
+                )
             };
             VarChange {
                 key: (*key).clone(),
                 old_value: None,
-                new_value: new_val,
+                new_value: new_val.into(),
                 is_placeholder: generated,
             }
         })
@@ -1577,7 +1644,7 @@ fn add_from_example_preview(
 fn add_from_example_interactive(
     paths: &SyncPaths,
     keys: &[&String],
-    example_vars: &IndexMap<String, String>,
+    example_vars: &Vars,
     config: &PlaceholderConfig,
 ) -> Result<bool> {
     let selected = MultiSelect::new()
@@ -1597,7 +1664,7 @@ fn add_from_example_interactive(
 
     for &idx in &selected {
         let key = keys[idx];
-        let (value, _) = reverse_value(key, example_vars.get(key), config);
+        let (value, _) = reverse_value(key, example_vars.get(key).map(Secret::expose), config);
         content.push_str(&envfile::line(key, &value));
         content.push('\n');
     }
@@ -1644,12 +1711,8 @@ fn print_preview(preview: &SyncPreview) {
             } else {
                 ui::glyph::WARN
             };
-            println!(
-                "  {} {} = {}",
-                marker,
-                key_highlight(&var.key),
-                value_preview(&var.new_value, var.is_placeholder)
-            );
+            let shown = value_preview(&var.shown, var.is_placeholder);
+            println!("  {} {} = {}", marker, key_highlight(&var.key), shown);
         }
     }
 
@@ -1691,6 +1754,7 @@ fn scan_step(paths: &SyncPaths) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
     use std::fs;
     use tempfile::TempDir;
 
@@ -1784,9 +1848,9 @@ mod tests {
 
     #[test]
     fn test_add_with_placeholders_preview() {
-        let mut values = IndexMap::new();
-        values.insert("API_KEY".to_string(), "sk_live_123".to_string());
-        values.insert("PORT".to_string(), "3000".to_string());
+        let mut values = Vars::new();
+        values.insert("API_KEY".to_string(), "sk_live_123".into());
+        values.insert("PORT".to_string(), "3000".into());
 
         // ✅ FIXED: Create Vec<&String> properly
         let keys_vec: Vec<String> = vec!["API_KEY".to_string(), "PORT".to_string()];
@@ -1797,24 +1861,28 @@ mod tests {
 
         assert_eq!(preview.len(), 2);
         assert!(preview.iter().all(|v| v.is_placeholder));
-        assert!(preview
-            .iter()
-            .any(|v| v.key == "API_KEY" && v.new_value == "YOUR_KEY_HERE"));
-        assert!(preview
-            .iter()
-            .any(|v| v.key == "PORT" && v.new_value == "8000"));
+        assert!(
+            preview
+                .iter()
+                .any(|v| v.key == "API_KEY" && v.new_value == "YOUR_KEY_HERE")
+        );
+        assert!(
+            preview
+                .iter()
+                .any(|v| v.key == "PORT" && v.new_value == "8000")
+        );
     }
 
     // NEW: Integration-style tests with temp files
     #[test]
     fn test_convert_to_example_preview() {
-        let mut vars = IndexMap::new();
+        let mut vars = Vars::new();
         // ✅ FIXED: Use "postgresql://" to match the built-in rule
         vars.insert(
             "DB_URL".to_string(),
-            "postgresql://user:pass@localhost/db".to_string(),
+            "postgresql://user:pass@localhost/db".into(),
         );
-        vars.insert("API_KEY".to_string(), "secret".to_string());
+        vars.insert("API_KEY".to_string(), "secret".into());
 
         let config = PlaceholderConfig::default();
         let preview = convert_to_example_preview(&vars, &config).unwrap();
@@ -1829,8 +1897,8 @@ mod tests {
 
     #[test]
     fn test_add_from_example_preview_with_placeholders() {
-        let mut example_vars = IndexMap::new();
-        example_vars.insert("NEW_VAR".to_string(), "placeholder_value".to_string());
+        let mut example_vars = Vars::new();
+        example_vars.insert("NEW_VAR".to_string(), "placeholder_value".into());
 
         // ✅ FIXED: Create Vec<&String> properly
         let keys_vec: Vec<String> = vec!["NEW_VAR".to_string()];
@@ -1847,8 +1915,8 @@ mod tests {
 
     #[test]
     fn test_add_from_example_preview_without_placeholders() {
-        let mut example_vars = IndexMap::new();
-        example_vars.insert("NEW_VAR".to_string(), "example_default".to_string());
+        let mut example_vars = Vars::new();
+        example_vars.insert("NEW_VAR".to_string(), "example_default".into());
 
         // ✅ FIXED: Create Vec<&String> properly
         let keys_vec: Vec<String> = vec!["NEW_VAR".to_string()];
@@ -1861,5 +1929,28 @@ mod tests {
         assert_eq!(preview.len(), 1);
         assert!(!preview[0].is_placeholder);
         assert_eq!(preview[0].new_value, "example_default");
+    }
+
+    /// The preview report holds the line as it prints and nothing else: a
+    /// credential's value never reaches it, so `Debug` and JSON are clean
+    /// (WP-17).
+    #[test]
+    fn the_preview_report_holds_no_credential_value() {
+        let canary = crate::core::output::canary::value();
+        let config = PlaceholderConfig::default();
+        let mut vars = Vars::new();
+        vars.insert("API_SECRET".to_string(), Secret::new(canary.clone()));
+        vars.insert("PORT".to_string(), Secret::new("8000"));
+        let keys: Vec<&String> = vars.keys().collect();
+        let changes = add_with_placeholders_preview(&keys, &vars, &config).unwrap();
+        let preview = SyncPreview::new(
+            ".env.example".to_string(),
+            SyncAction::Add,
+            &changes,
+            vec![],
+        );
+        assert_eq!(preview.variables.len(), 2);
+        crate::core::output::canary::assert_report_clean(&canary, &preview);
+        assert_eq!(changes[1].row().shown, changes[1].new_value.expose());
     }
 }

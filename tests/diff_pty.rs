@@ -8,8 +8,8 @@
 
 mod support;
 
-use support::pty::{Pty, ENTER};
-use support::{run, Project};
+use support::pty::{ENTER, Pty};
+use support::{Project, run};
 
 fn project() -> Project {
     Project::new().example("A=\nB=\n").env("A=1\n")

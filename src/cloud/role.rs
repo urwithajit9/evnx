@@ -4,7 +4,7 @@
 //! three rules: `org` did not trim, `vault share` refused `owner` without saying
 //! why, and each worded the refusal its own way.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 /// What `vault share` and `vault role` can grant.
 pub(crate) const VAULT_ROLES: &[&str] = &["viewer", "developer", "admin"];

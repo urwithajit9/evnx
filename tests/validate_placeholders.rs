@@ -7,7 +7,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn placeholder_vars(stdout: &str) -> Vec<String> {
     let json: serde_json::Value = serde_json::from_str(stdout).unwrap();

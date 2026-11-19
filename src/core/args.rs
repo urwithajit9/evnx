@@ -275,7 +275,9 @@ pub fn parse_days(raw: &str) -> Result<i64, String> {
 /// the config give the same one message.
 pub fn parse_size(raw: &str) -> Result<u64, String> {
     let bad = || {
-        format!("{raw:?} is not a size: use a whole number of bytes, or one with K, M or G (512K, 5MB, 1MiB)")
+        format!(
+            "{raw:?} is not a size: use a whole number of bytes, or one with K, M or G (512K, 5MB, 1MiB)"
+        )
     };
     let t = raw.trim();
     let split = t.find(|c: char| !c.is_ascii_digit()).unwrap_or(t.len());

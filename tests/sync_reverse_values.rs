@@ -9,7 +9,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn env_of(p: &Project) -> String {
     std::fs::read_to_string(p.path().join(".env")).unwrap()

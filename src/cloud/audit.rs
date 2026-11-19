@@ -28,7 +28,7 @@
 //! Read-only: one request, no blob, no key, no password.
 
 use crate::cloud::client::api_path;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
@@ -40,9 +40,6 @@ use super::vault;
 #[derive(Deserialize)]
 struct AuditResponse {
     events: Vec<AuditEvent>,
-    /// How many the server would return at most, before retention.
-    #[allow(dead_code)]
-    limit: i64,
     /// `None` means unlimited visibility on this plan.
     retention_days: Option<i32>,
     /// Events the plan's window withheld. ⚠️ Printed, never swallowed.

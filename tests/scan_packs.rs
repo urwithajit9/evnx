@@ -105,9 +105,11 @@ fn a_pack_from_a_path_is_locked_and_a_changed_one_is_refused() {
     );
     assert!(out.status.success(), "{}", text(&out));
     assert!(!f.exists());
-    assert!(!fs::read_to_string(p.path().join(".evnx/rules.lock"))
-        .unwrap()
-        .contains("acme"));
+    assert!(
+        !fs::read_to_string(p.path().join(".evnx/rules.lock"))
+            .unwrap()
+            .contains("acme")
+    );
 }
 
 #[test]

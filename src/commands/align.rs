@@ -31,11 +31,11 @@
 //! ⚠️ Each replacement is atomic; the set is not one transaction. Another
 //! process can see the first file aligned before the last one is.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::Serialize;
 use std::path::Path;
 
-use crate::core::layout::{LayoutError, Plan, Reference, EXTRAS_HEADING};
+use crate::core::layout::{EXTRAS_HEADING, LayoutError, Plan, Reference};
 use crate::core::verdict::Verdict;
 use crate::core::{resolve, safe_write};
 use crate::utils::path::label;
@@ -172,7 +172,7 @@ fn read_text(path: &str) -> std::result::Result<String, String> {
     let meta = match std::fs::metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(format!("{shown} does not exist"))
+            return Err(format!("{shown} does not exist"));
         }
         Err(e) => return Err(format!("{shown}: could not be read ({e})")),
     };
@@ -487,11 +487,7 @@ fn report(opts: &Options, prepared: &[Prepared], written: &Written) -> Result<()
 }
 
 fn plural(n: usize) -> &'static str {
-    if n == 1 {
-        ""
-    } else {
-        "s"
-    }
+    if n == 1 { "" } else { "s" }
 }
 
 fn moves(m: &[crate::core::layout::Moved]) -> Vec<JsonMove<'_>> {

@@ -65,11 +65,11 @@ impl Parser {
                 // ⚠️ Still stripped. A single-quoted value never goes through
                 // `unescape_double`, so it holds no marker, but stripping
                 // unconditionally means no path can leak one to a caller.
-                strip_markers(&e.value)
+                strip_markers(e.value.expose())
             } else {
                 // A failed entry read here, before it is assigned again, is a
                 // problem after all: its value is used.
-                for name in references(&e.value) {
+                for name in references(e.value.expose()) {
                     if let Some(&k) = current.get(&name) {
                         if let Some(error) = pending[k].take() {
                             let src = &doc.entries[k];
@@ -83,11 +83,11 @@ impl Parser {
                 }
                 // ⚠️ The line of the key being expanded, not of the key that
                 // defines the missing variable, which may not exist anywhere.
-                match self.expand_value(&e.value, &above, &mut Vec::new(), 0, e.span.line) {
+                match self.expand_value(e.value.expose(), &above, &mut Vec::new(), 0, e.span.line) {
                     Ok(v) => strip_markers(&v),
                     Err(error) => {
                         pending[i] = Some(forward(error, &doc.entries[i + 1..]));
-                        strip_markers(&e.value)
+                        strip_markers(e.value.expose())
                     }
                 }
             };
@@ -97,7 +97,7 @@ impl Parser {
                 value.replace('$', &format!("{LITERAL_DOLLAR}$")),
             );
             current.insert(key, i);
-            doc.entries[i].value = value;
+            doc.entries[i].value = value.into();
         }
 
         // The entries that count: a failure there is always a problem.

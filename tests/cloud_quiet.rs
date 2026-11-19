@@ -9,8 +9,8 @@
 
 mod support;
 
-use support::cloud::signed_in;
 use support::Project;
+use support::cloud::signed_in;
 
 const VAULT_ID: &str = "0b8a1f8e-3c2d-4e5f-8a9b-1c2d3e4f5a6b";
 

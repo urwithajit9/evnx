@@ -13,7 +13,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn project() -> Project {
     Project::new().env("DATABASE_URL=postgres://u:pw@db/app\nPORT=8080\n")
@@ -124,10 +124,12 @@ fn t_i081_a_symlinked_output_is_written_through() {
     )
     .assert_code(0)
     .assert_contains("wrote through out.json -> shared/real.json");
-    assert!(std::fs::symlink_metadata(p.join("out.json"))
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    assert!(
+        std::fs::symlink_metadata(p.join("out.json"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
     assert!(p.read("shared/real.json").contains("DATABASE_URL"));
 }
 

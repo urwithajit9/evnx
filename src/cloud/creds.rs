@@ -28,12 +28,11 @@
 //! anything the allocator has already handed back. Treated as defence in depth,
 //! not as a guarantee — the file permissions are the real control.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
-use zeroize::Zeroize;
 
 use super::config;
 
@@ -44,50 +43,7 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// die in flight between the check and the server receiving it.
 pub const EXPIRY_SKEW_SECS: i64 = 30;
 
-/// A string that wipes itself on drop and never appears in `Debug` output.
-///
-/// Accidentally logging a struct containing a token is the failure this exists to
-/// prevent: `{:?}` on a [`Session`] prints redaction markers, not bearer tokens.
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct SecretString(String);
-
-impl SecretString {
-    /// Wrap a secret value.
-    pub fn new(s: impl Into<String>) -> Self {
-        SecretString(s.into())
-    }
-
-    /// Borrow the secret. Named `expose` so call sites read as a deliberate act,
-    /// matching `evnx-crypto`'s convention for key material.
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-
-    /// True when the value is empty — a token that would fail anyway.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl Drop for SecretString {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
-
-impl std::fmt::Debug for SecretString {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("SecretString(<redacted>)")
-    }
-}
-
-impl PartialEq for SecretString {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-impl Eq for SecretString {}
+pub use crate::core::secret::SecretString;
 
 /// One authenticated session against one server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +51,7 @@ pub struct Session {
     /// Account email, shown by `evnx cloud status`. Not a credential.
     pub email: String,
     /// Short-lived bearer token, 15 minutes.
+    #[serde(serialize_with = "crate::core::secret::serialize_exposed")]
     pub access_token: SecretString,
     /// Access-token expiry as a Unix timestamp.
     ///
@@ -103,6 +60,7 @@ pub struct Session {
     /// it without a date parser.
     pub access_expires_at: i64,
     /// Long-lived token, 30 days, rotated on every use by the server.
+    #[serde(serialize_with = "crate::core::secret::serialize_exposed")]
     pub refresh_token: SecretString,
 }
 

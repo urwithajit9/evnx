@@ -7,7 +7,7 @@
 
 mod support;
 
-use support::{run, run_with, Project};
+use support::{Project, run, run_with};
 
 /// The framework ids `init --list-components` prints, in its order.
 fn frameworks() -> Vec<String> {
@@ -458,9 +458,10 @@ fn t_dq26_a_package_below_the_root_gets_its_own_contract() {
         &["init", "--with", "nextjs", "--yes", "--dir", "apps/web"],
     )
     .assert_code(0);
-    assert!(p
-        .read("apps/web/.evnx.toml")
-        .contains("[vars.NEXTAUTH_SECRET]"));
+    assert!(
+        p.read("apps/web/.evnx.toml")
+            .contains("[vars.NEXTAUTH_SECRET]")
+    );
     assert!(!p.exists(".evnx.toml"));
 }
 

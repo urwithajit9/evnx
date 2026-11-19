@@ -12,7 +12,7 @@
 
 mod support;
 
-use support::{run, run_with, Project};
+use support::{Project, run, run_with};
 
 const PEM: &str = "-----BEGIN RSA PRIVATE KEY-----\n\
 MIIEowIBAAKCAQEA0Z3VS5JJcds3xfn/ygWyF0qZ3xOEqQ7dZmvCe0pPjyC2Kr8E\n\

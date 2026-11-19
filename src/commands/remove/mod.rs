@@ -29,7 +29,7 @@ pub mod prune;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use colored::*;
 
 use crate::core::config::Template;
@@ -163,7 +163,7 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
     // `remove X --env-name prod` previews `.env.prod.example`, not the shared
     // `.env.example`.
     let template = {
-        use crate::core::resolve::{resolve, Flags, Need, TemplateFrom};
+        use crate::core::resolve::{Flags, Need, TemplateFrom, resolve};
         let flags = Flags {
             env: None,
             env_name: opts.env_name.as_deref(),

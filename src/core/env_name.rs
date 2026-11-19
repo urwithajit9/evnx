@@ -24,7 +24,7 @@
 //! absent is an error, not a quiet retreat to `.env`. Operating on the wrong file
 //! while reporting success is the failure mode this crate keeps having to fix.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::path::{Path, PathBuf};
 
 /// Environment names evnx suggests, matching the closed set the server accepts

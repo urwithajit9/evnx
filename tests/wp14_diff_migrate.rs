@@ -3,7 +3,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 // ── diff A B ───────────────────────────────────────────────────────────────────
 

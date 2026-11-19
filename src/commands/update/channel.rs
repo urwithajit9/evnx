@@ -497,10 +497,12 @@ mod tests {
         let channel = Channel::from_install_in(&user.join("bin/evnx"), Some(&sys));
         assert_eq!(channel, Channel::PipSystem);
         assert_eq!(channel.upgrade_command(), Some("pipx install evnx"));
-        assert!(channel
-            .candidates()
-            .iter()
-            .all(|(_, c)| !c.starts_with("pip ")));
+        assert!(
+            channel
+                .candidates()
+                .iter()
+                .all(|(_, c)| !c.starts_with("pip "))
+        );
 
         // Without the marker, or outside the system's prefixes: plain pip.
         let other = root.path().join("no-marker");

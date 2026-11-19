@@ -638,7 +638,7 @@ impl Reference {
         let original: HashMap<&str, &str> = before
             .entries
             .iter()
-            .map(|e| (e.key.as_str(), e.raw.as_str()))
+            .map(|e| (e.key.as_str(), e.raw.expose()))
             .collect();
         let mut seen = HashSet::new();
         for e in &after.entries {
@@ -646,7 +646,7 @@ impl Reference {
                 return fail("a key is written twice");
             }
             match original.get(e.key.as_str()) {
-                Some(raw) if *raw == e.raw => {}
+                Some(raw) if *raw == e.raw.expose() => {}
                 Some(_) => return fail("an assignment changed"),
                 None => return fail("an assignment appeared"),
             }
@@ -868,12 +868,14 @@ REDIS_URL=redis://dev
     fn a_multiline_value_moves_whole() {
         let target = "DB_PORT=1\nREDIS_URL=\"line1\n# not a comment\n\nline4\"\nDB_HOST='-----BEGIN\nKEY\n-----END'\n";
         let p = align(REF, target);
-        assert!(p
-            .output
-            .contains("DB_HOST='-----BEGIN\nKEY\n-----END'\nDB_PORT=1\n"));
-        assert!(p
-            .output
-            .ends_with("REDIS_URL=\"line1\n# not a comment\n\nline4\"\n"));
+        assert!(
+            p.output
+                .contains("DB_HOST='-----BEGIN\nKEY\n-----END'\nDB_PORT=1\n")
+        );
+        assert!(
+            p.output
+                .ends_with("REDIS_URL=\"line1\n# not a comment\n\nline4\"\n")
+        );
         assert_eq!(p.target_comments, 0, "inside a value is not a comment");
     }
 

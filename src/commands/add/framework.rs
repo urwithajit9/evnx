@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::path::Path;
 
-use super::shared::{confirm_and_apply, kind_hint, Flow, Mode, Outcome};
+use super::shared::{Flow, Mode, Outcome, confirm_and_apply, kind_hint};
 use crate::schema::{component, formatter, loader};
 use crate::utils::string::count;
 use crate::utils::ui::info;

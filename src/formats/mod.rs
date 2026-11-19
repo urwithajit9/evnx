@@ -38,7 +38,7 @@ pub use railway::RailwayConverter;
 pub use vercel::VercelEnvConverter;
 
 use crate::core::converter::Converter;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
 /// One output format: every list of formats evnx shows is built from these.
 ///

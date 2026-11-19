@@ -5,7 +5,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const ENV: &str = "PORT=8080\nDB_PASSWORD=hunter22hunter\n";
 

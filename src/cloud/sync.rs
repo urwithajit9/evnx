@@ -32,7 +32,7 @@
 //! [`vault_aad`]: evnx_crypto::vault_aad
 
 use crate::cloud::client::api_path;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -40,7 +40,7 @@ use std::path::{Path, PathBuf};
 
 use super::auth;
 use super::binding;
-use super::client::{reword, ApiError, Client};
+use super::client::{ApiError, Client, reword};
 use super::config::CloudConfig;
 use super::vault::{self, VaultRef};
 
@@ -251,8 +251,6 @@ struct PushVersionRequest {
 #[derive(Deserialize)]
 struct PushVersionResponse {
     version_num: i32,
-    #[allow(dead_code)]
-    pushed_at: String,
 }
 
 /// Only the version number is needed; the rest of `/latest` is metadata for
@@ -329,7 +327,6 @@ struct MyKey {
 }
 
 /// Encrypt a `.env` and upload it as a new version.
-#[allow(clippy::too_many_arguments)]
 pub fn push(
     server_override: Option<&str>,
     vault_target: Option<String>,
@@ -555,20 +552,30 @@ fn confirm_shrink(
     })
 }
 
+/// What `cloud pull` was asked for.
+pub struct PullRequest {
+    pub vault_targets: Vec<String>,
+    pub file: Option<PathBuf>,
+    pub env_name: Option<String>,
+    pub version: Option<i32>,
+    pub force: bool,
+    pub password_stdin: bool,
+    pub gitignore: crate::utils::protect::GitignoreMode,
+    pub allow_override: bool,
+}
+
 /// Download a version and decrypt it to a file.
-#[allow(clippy::too_many_arguments)]
-pub fn pull(
-    server_override: Option<&str>,
-    vault_targets: Vec<String>,
-    file: Option<PathBuf>,
-    env_name: Option<String>,
-    version: Option<i32>,
-    force: bool,
-    password_stdin: bool,
-    gitignore: crate::utils::protect::GitignoreMode,
-    allow_override: bool,
-    verbose: bool,
-) -> Result<()> {
+pub fn pull(server_override: Option<&str>, request: PullRequest, verbose: bool) -> Result<()> {
+    let PullRequest {
+        vault_targets,
+        file,
+        env_name,
+        version,
+        force,
+        password_stdin,
+        gitignore,
+        allow_override,
+    } = request;
     // RM-59 (X4): before any request. A version number belongs to one vault.
     super::merge::check_usage(vault_targets.len(), version, allow_override)?;
     let multi = vault_targets.len() > 1;
@@ -1153,7 +1160,7 @@ fn unwrap_shared_vault_key(
     eph_pub_key_b64: &str,
     mlkem_ciphertext_b64: &str,
 ) -> Result<evnx_crypto::VaultKey> {
-    use evnx_crypto::{unwrap_vault_key, WrappedVaultKey};
+    use evnx_crypto::{WrappedVaultKey, unwrap_vault_key};
 
     let wrapped = WrappedVaultKey::from_base64(
         encrypted_vault_key_b64,
@@ -1341,7 +1348,7 @@ mod tests {
 
     #[test]
     fn a_round_trip_reproduces_the_file_byte_for_byte() {
-        use evnx_crypto::{decrypt_vault, encrypt_vault, vault_aad, VaultKey};
+        use evnx_crypto::{VaultKey, decrypt_vault, encrypt_vault, vault_aad};
 
         // Comments, blank lines, ordering, quoting and trailing whitespace all
         // have to survive — which is why push encrypts raw bytes rather than a
@@ -1358,7 +1365,7 @@ mod tests {
 
     #[test]
     fn a_blob_sealed_for_one_version_will_not_open_as_another() {
-        use evnx_crypto::{decrypt_vault, encrypt_vault, vault_aad, VaultKey};
+        use evnx_crypto::{VaultKey, decrypt_vault, encrypt_vault, vault_aad};
         let key = VaultKey::generate();
         let blob = encrypt_vault(b"SECRET=1", &key, &vault_aad("v", 3)).unwrap();
         // A malicious server replaying version 3 as the current version 4 is
@@ -1749,7 +1756,7 @@ pub fn diff_local(
                 return Err(anyhow!(
                     "{} has no versions yet, so there is nothing to compare with.",
                     vault_ref.label()
-                ))
+                ));
             }
             latest => latest,
         },

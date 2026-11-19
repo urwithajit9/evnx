@@ -13,8 +13,8 @@ mod support;
 
 // The PTY tests are Unix-only, as `support::pty` is; the rest runs everywhere.
 #[cfg(unix)]
-use support::pty::{Pty, ENTER};
-use support::{run, run_with, Project};
+use support::pty::{ENTER, Pty};
+use support::{Project, run, run_with};
 
 /// The value every leak test looks for. Built, not written out.
 fn sentinel() -> String {
@@ -105,10 +105,12 @@ fn a19_a_symlink_is_written_through() {
         .file("real.env", "X=1\nY=2\n")
         .symlink("real.env", ".env");
     evnx(&p, &["remove", "X", "--yes"]).assert_code(0);
-    assert!(std::fs::symlink_metadata(p.join(".env"))
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    assert!(
+        std::fs::symlink_metadata(p.join(".env"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
     assert_eq!(p.read("real.env"), "Y=2\n");
 }
 
@@ -677,11 +679,13 @@ fn i1_commands_json_lists_remove_and_rm() {
         .iter()
         .find(|c| c["name"] == "remove")
         .expect("remove listed");
-    assert!(remove["visible_aliases"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|a| a == "rm"));
+    assert!(
+        remove["visible_aliases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a == "rm")
+    );
     assert_eq!(
         remove["docs_url"],
         "https://docs.evnx.dev/cli/commands/remove"

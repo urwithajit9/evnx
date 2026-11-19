@@ -103,10 +103,12 @@ fn a_secret_split_by_json_escaping_is_found_once() {
         "{locs:?}"
     );
     // The shown value is not polluted by the escape.
-    assert!(!doc["findings"][0]["preview"]
-        .as_str()
-        .unwrap_or("")
-        .contains('\\'));
+    assert!(
+        !doc["findings"][0]["preview"]
+            .as_str()
+            .unwrap_or("")
+            .contains('\\')
+    );
 }
 
 #[test]

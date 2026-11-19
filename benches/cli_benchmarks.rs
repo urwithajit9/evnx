@@ -12,7 +12,7 @@
 //! So every number these would have produced is hypothetical: there is no
 //! historical baseline to compare against, and the first run establishes one.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use evnx::core::{Parser, ParserConfig};
 // ⚠️ `IndexMap`, not `HashMap`. The converter moved to `IndexMap` when `init`'s
 // non-determinism was fixed — a `HashMap`'s iteration order is randomised per
@@ -190,7 +190,7 @@ fn bench_convert_to_json(c: &mut Criterion) {
 
     let mut vars = IndexMap::new();
     for i in 0..50 {
-        vars.insert(format!("KEY_{}", i), format!("value_{}", i));
+        vars.insert(format!("KEY_{}", i), format!("value_{}", i).into());
     }
 
     c.bench_function("convert_to_json", |b| {
@@ -210,8 +210,8 @@ fn bench_convert_with_filtering(c: &mut Criterion) {
 
     let mut vars = IndexMap::new();
     for i in 0..50 {
-        vars.insert(format!("AWS_{}", i), format!("value_{}", i));
-        vars.insert(format!("DB_{}", i), format!("value_{}", i));
+        vars.insert(format!("AWS_{}", i), format!("value_{}", i).into());
+        vars.insert(format!("DB_{}", i), format!("value_{}", i).into());
     }
 
     c.bench_function("convert_with_filtering", |b| {

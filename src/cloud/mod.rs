@@ -144,14 +144,19 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
             no_gitignore,
         } => sync::pull(
             server_override,
-            vault,
-            file,
-            env_name,
-            version,
-            force,
-            password_stdin,
-            crate::utils::protect::GitignoreMode::from_flags(gitignore, no_gitignore),
-            allow_override,
+            sync::PullRequest {
+                vault_targets: vault,
+                file,
+                env_name,
+                version,
+                force,
+                password_stdin,
+                gitignore: crate::utils::protect::GitignoreMode::from_flags(
+                    gitignore,
+                    no_gitignore,
+                ),
+                allow_override,
+            },
             verbose,
         ),
         CloudCommands::Run {
@@ -169,18 +174,20 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
             command,
         } => run::run(
             server_override,
-            vault,
-            version,
-            min_version,
-            include,
-            exclude,
-            password_stdin,
-            allow_unsafe_names,
-            crate::core::inject::masking(mask, no_mask),
-            allow_override,
+            run::CloudRunRequest {
+                vault_targets: vault,
+                version,
+                min_version,
+                include,
+                exclude,
+                password_stdin,
+                allow_unsafe_names,
+                mask: crate::core::inject::masking(mask, no_mask),
+                allow_override,
+                prefer,
+                command,
+            },
             verbose,
-            prefer,
-            command,
         ),
         CloudCommands::Watch {
             vault,
@@ -252,23 +259,25 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
             password_stdin,
         } => export::export(
             server_override,
-            vault,
-            output,
-            all_versions,
-            export::Conversion {
-                to: to.map(|t| t.format_name().to_string()),
-                targets: crate::formats::Targets {
-                    project,
-                    vault_name,
-                    heroku_app,
-                    name,
-                    namespace,
-                    ..Default::default()
+            export::ExportRequest {
+                vault_target: vault,
+                output,
+                all_versions,
+                conversion: export::Conversion {
+                    to: to.map(|t| t.format_name().to_string()),
+                    targets: crate::formats::Targets {
+                        project,
+                        vault_name,
+                        heroku_app,
+                        name,
+                        namespace,
+                        ..Default::default()
+                    },
+                    allow_collisions,
                 },
-                allow_collisions,
+                force,
+                password_stdin,
             },
-            force,
-            password_stdin,
             verbose,
         ),
         CloudCommands::Status {
@@ -523,9 +532,9 @@ pub(crate) mod testutil {
     /// the cloud environment variables when it drops — including on a panic, so
     /// a failing assertion cannot leak state into the next test.
     ///
-    /// Every test using this must be `#[serial]`. Environment variables are
-    /// process-global, so two of these running at once would each see the
-    /// other's directory.
+    /// The directory is held per thread (`config::test_config_dir`), not in the
+    /// process environment, so tests using it can run in parallel. It applies
+    /// to code run on the test's own thread only.
     pub(crate) struct ConfigDirGuard {
         dir: PathBuf,
         // Held only so the directory survives until drop; `None` when the caller
@@ -538,7 +547,7 @@ pub(crate) mod testutil {
         pub(crate) fn new() -> Self {
             let tmp = tempfile::tempdir().expect("tempdir");
             let dir = tmp.path().to_path_buf();
-            std::env::set_var(super::config::ENV_CONFIG_DIR, &dir);
+            super::config::test_config_dir::set(Some(dir.clone()));
             ConfigDirGuard {
                 dir,
                 _tmp: Some(tmp),
@@ -549,7 +558,7 @@ pub(crate) mod testutil {
         /// missing, or to already exist with awkward permissions.
         pub(crate) fn at(dir: impl Into<PathBuf>) -> Self {
             let dir = dir.into();
-            std::env::set_var(super::config::ENV_CONFIG_DIR, &dir);
+            super::config::test_config_dir::set(Some(dir.clone()));
             ConfigDirGuard { dir, _tmp: None }
         }
 
@@ -560,8 +569,7 @@ pub(crate) mod testutil {
 
     impl Drop for ConfigDirGuard {
         fn drop(&mut self) {
-            std::env::remove_var(super::config::ENV_CONFIG_DIR);
-            std::env::remove_var(super::config::ENV_SERVER);
+            super::config::test_config_dir::set(None);
         }
     }
 }

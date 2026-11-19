@@ -4,10 +4,15 @@ use anyhow::Context;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use evnx::cli::{Cli, Commands, SpecAction};
+#[cfg(feature = "backup")]
+use evnx::cli::RestoreArgs;
+use evnx::cli::{
+    AddArgs, Cli, Commands, ConvertArgs, DiffArgs, InitArgs, RemoveArgs, RunArgs, ScanArgs,
+    SpecAction, TemplateArgs, ValidateArgs,
+};
 use evnx::commands;
 use evnx::core::converter::KeyTransform;
-use evnx::core::error::{report, EvnxError};
+use evnx::core::error::{EvnxError, report};
 use evnx::core::verdict::Verdict;
 
 /// Resolve which `.env.<name>` a command operates on, or fail with
@@ -54,7 +59,7 @@ fn resolve_files(
     quiet: bool,
     verbose: bool,
 ) -> Result<evnx::core::resolve::Resolved, EvnxError> {
-    use evnx::core::resolve::{resolve, Flags};
+    use evnx::core::resolve::{Flags, resolve};
     let flags = Flags {
         env,
         env_name,
@@ -91,7 +96,40 @@ fn main() -> ExitCode {
     evnx::utils::term::exit_quietly_on_broken_pipe();
     evnx::utils::term::restore_cursor_on_interrupt();
 
-    report(run())
+    run_on_big_stack()
+}
+
+/// The stack the CLI runs on: 8 MB, what Linux and macOS give the main thread.
+///
+/// Windows gives the main thread 1 MB, and a debug build's clap command tree
+/// (`--version` builds all of it) overflowed that with no flag set (RUST-16).
+/// Running on a thread we size ourselves makes the limit the same everywhere,
+/// with nothing for a contributor to configure.
+const STACK_BYTES: usize = 8 * 1024 * 1024;
+
+/// [`run`] and [`report`] on a [`STACK_BYTES`] thread named `main`, so a panic
+/// message reads as it always did.
+///
+/// * The exit code is the thread's return value.
+/// * A panic is re-raised here with `resume_unwind`, so the process ends the way
+///   a panic in `main` does (101, one message, the hook not run twice).
+/// * Everything process-wide set up above (the broken-pipe hook, the Ctrl-C
+///   handler, the signal forwarder in `core::signals`) does not belong to a
+///   thread. `exec` from this thread replaces the whole process, as from the
+///   main one.
+/// * If the thread cannot be created, run on the main thread: a slower start on
+///   a small stack beats not starting.
+fn run_on_big_stack() -> ExitCode {
+    let worker = std::thread::Builder::new()
+        .name("main".into())
+        .stack_size(STACK_BYTES)
+        .spawn(|| report(run()));
+    match worker {
+        Ok(handle) => handle
+            .join()
+            .unwrap_or_else(|payload| std::panic::resume_unwind(payload)),
+        Err(_) => report(run()),
+    }
 }
 
 fn run() -> Result<Verdict, EvnxError> {
@@ -123,18 +161,11 @@ fn run() -> Result<Verdict, EvnxError> {
     // nothing printed from here on, a config warning or an error included, may
     // reach either stream. A usage error was already printed by clap above.
     let scan_flags = match &cli.command {
-        Commands::Scan {
-            action: None,
-            strict,
-            exit_only,
-            policy,
-            severity,
-            ..
-        } => Some((
-            *strict,
-            *exit_only,
-            policy.clone(),
-            severity.map(|s| s.as_str().to_string()),
+        Commands::Scan(args) if args.action.is_none() => Some((
+            args.strict,
+            args.exit_only,
+            args.policy.clone(),
+            args.severity.map(|s| s.as_str().to_string()),
         )),
         _ => None,
     };
@@ -183,12 +214,8 @@ fn run() -> Result<Verdict, EvnxError> {
     );
     // `scan --no-config`: nothing from the repository's `.evnx.toml` applies.
     let no_config = matches!(
-        cli.command,
-        Commands::Scan {
-            no_config: true,
-            action: None,
-            ..
-        }
+        &cli.command,
+        Commands::Scan(args) if args.no_config && args.action.is_none()
     );
     let loaded = if describes_the_binary || no_config {
         evnx::core::config::Loaded::default()
@@ -256,21 +283,23 @@ fn run() -> Result<Verdict, EvnxError> {
     // Route to command handler
     // ⚠️ Bound, not returned. See the exit-code handling at the end of `run`.
     let outcome: anyhow::Result<Verdict> = match cli.command {
-        Commands::Init {
-            dir,
-            confirm,
-            blueprint,
-            with,
-            list_components,
-            detect,
-            from_source,
-            force,
-            env_name,
-            dry,
-            output,
-            here,
-            no_contract,
-        } => {
+        Commands::Init(args) => {
+            let InitArgs {
+                dir,
+                confirm,
+                blueprint,
+                with,
+                list_components,
+                detect,
+                from_source,
+                force,
+                env_name,
+                dry,
+                output,
+                here,
+                no_contract,
+            } = *args;
+
             let path = project_dir(dir);
             let yes = confirm.yes;
             let dry_run = dry.dry_run;
@@ -287,68 +316,73 @@ fn run() -> Result<Verdict, EvnxError> {
                     Err(e) => return Err(EvnxError::Config(e)),
                 }
             };
-            commands::init::run(
+            commands::init::run(commands::init::InitOptions {
                 path,
                 yes,
                 force,
                 blueprint,
                 with,
                 list_components,
-                detect,
+                detect_flag: detect,
                 from_source,
-                cli.verbose,
-                target_config,
+                verbose: cli.verbose,
+                config: target_config,
                 dry_run,
                 json,
                 env_name,
                 here,
                 no_contract,
+            })
+            .map(clean)
+        }
+
+        Commands::Add(args) => {
+            let AddArgs {
+                target,
+                list,
+                dry,
+                output,
+                dir,
+                confirm,
+                env_name,
+                example,
+                no_template,
+            } = *args;
+            commands::add::run(
+                target,
+                commands::add::Options {
+                    path: project_dir(dir),
+                    yes: confirm.yes,
+                    list,
+                    dry_run: dry.dry_run,
+                    json: output.resolved() == evnx::cli::args::Format::Json,
+                    verbose: cli.verbose,
+                    env_name,
+                    example,
+                    no_template,
+                },
             )
             .map(clean)
         }
 
-        Commands::Add {
-            target,
-            list,
-            dry,
-            output,
-            dir,
-            confirm,
-            env_name,
-            example,
-            no_template,
-        } => commands::add::run(
-            target,
-            commands::add::Options {
-                path: project_dir(dir),
-                yes: confirm.yes,
-                list,
-                dry_run: dry.dry_run,
-                json: output.resolved() == evnx::cli::args::Format::Json,
-                verbose: cli.verbose,
+        Commands::Remove(args) => {
+            let RemoveArgs {
+                names,
+                dir,
+                dry,
+                confirm,
+                output,
                 env_name,
-                example,
-                no_template,
-            },
-        )
-        .map(clean),
+                template,
+                contract,
+                all,
+                ignore_missing,
+                no_backup,
+                allow_dangling,
+                all_names,
+                check,
+            } = *args;
 
-        Commands::Remove {
-            names,
-            dir,
-            dry,
-            confirm,
-            output,
-            env_name,
-            template,
-            contract,
-            all,
-            ignore_missing,
-            no_backup,
-            allow_dangling,
-            all_names,
-            check,
-        } => {
             let opts = commands::remove::Options {
                 names,
                 path: project_dir(dir),
@@ -410,21 +444,23 @@ fn run() -> Result<Verdict, EvnxError> {
             json: output.resolved() == evnx::cli::args::Format::Json,
         }),
 
-        Commands::Validate {
-            files: file_args,
-            input_format,
-            strict,
-            fix,
-            dry,
-            confirm: _,
-            rotate_weak_secrets,
-            output,
-            exit_zero,
-            ignore,
-            validate_formats: _,
-            no_formats,
-            fail_on,
-        } => {
+        Commands::Validate(args) => {
+            let ValidateArgs {
+                files: file_args,
+                input_format,
+                strict,
+                fix,
+                dry,
+                confirm: _,
+                rotate_weak_secrets,
+                output,
+                exit_zero,
+                ignore,
+                validate_formats: _,
+                no_formats,
+                fail_on,
+            } = *args;
+
             let flags = file_args.flags();
             let files = resolve_files(
                 flags.env,
@@ -461,229 +497,242 @@ fn run() -> Result<Verdict, EvnxError> {
         }
 
         // C6: `evnx scan rules …`.
-        Commands::Scan {
-            action: Some(evnx::cli::ScanAction::Rules { command }),
-            ..
-        } => {
-            use evnx::cli::RulesCommand;
-            let project_root = config_source
-                .as_deref()
-                .and_then(|p| p.parent())
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| here.clone());
-            let configured = cfg.scan.patterns.clone().unwrap_or_default();
-            match command {
-                RulesCommand::List { category, output } => commands::scan::rules_cmd::list(
-                    &project_root,
-                    &configured,
-                    category.as_deref(),
-                    output.resolved() == evnx::cli::args::Format::Json,
-                )
-                .map(clean),
-                RulesCommand::New { id, personal } => {
-                    commands::scan::rules_cmd::new(&project_root, &id, personal)
-                        .map(|_| Verdict::Clean)
-                }
-                RulesCommand::Add {
-                    source,
-                    from,
-                    personal,
-                } => {
-                    commands::scan::packs_cmd::add(&project_root, &source, from.as_str(), personal)
-                        .map(clean)
-                }
-                RulesCommand::Update {
-                    name,
-                    personal,
-                    confirm,
-                } => commands::scan::packs_cmd::update(
-                    &project_root,
-                    name.as_deref(),
-                    personal,
-                    confirm.yes,
-                )
-                .map(clean),
-                RulesCommand::Remove { name, personal } => {
-                    commands::scan::packs_cmd::remove(&project_root, &name, personal).map(clean)
-                }
-                RulesCommand::Test { file } => {
-                    commands::scan::rules_cmd::test(&project_root, file.as_deref())
-                }
-            }
-        }
-
-        Commands::Scan {
-            action: Some(evnx::cli::ScanAction::Hook { command }),
-            ..
-        } => {
-            use evnx::cli::HookCommand;
-            match command {
-                HookCommand::Install => {
-                    commands::scan::hook::install(&here).map(|_| Verdict::Clean)
-                }
-                HookCommand::Uninstall => commands::scan::hook::uninstall(&here).map(clean),
-                HookCommand::Status => commands::scan::hook::status(&here).map(clean),
-            }
-        }
-
-        Commands::Scan {
-            action: None,
-            path,
-            exclude,
-            max_file_size,
-            extensions,
-            pattern,
-            ignore_placeholders,
-            no_ignore_placeholders,
-            severity,
-            confidence,
-            baseline,
-            update_baseline,
-            rule_files,
-            output,
-            exit_zero,
-            include_ignored,
-            staged,
-            no_config,
-            follow_symlinks,
-            include_dir,
-            policy: _,
-            strict: _,
-            exit_only: _,
-        } => {
-            let builtins = cfg.scan.builtins;
-            let repo_settings = commands::scan::models::RepoSettings {
-                exclude: cfg.scan.exclude.clone().unwrap_or_default(),
-                ignore_placeholders: cfg.scan.ignore_placeholders == Some(true),
-                extensions: cfg.scan.extensions.clone(),
-                max_file_size: match cfg.scan.max_file_size.as_ref().map(|s| s.bytes()) {
-                    Some(Ok(b)) if b < evnx::commands::scan::filters::MAX_WALK_BYTES => Some(b),
-                    _ => None,
-                },
-                secret_false: cfg
-                    .vars
-                    .iter()
-                    .filter(|(_, v)| v.secret == Some(false))
-                    .map(|(k, _)| k.clone())
-                    .collect(),
-            };
-            commands::scan::run(commands::scan::ScanOptions {
-                paths: path,
-                exclude: evnx::core::config::extend(
-                    exclude,
-                    // Read from the folder holding `.evnx.toml` (I-333).
-                    match (
-                        cfg.scan.exclude,
-                        config_source.as_deref().and_then(Path::parent),
-                    ) {
-                        (Some(patterns), Some(dir)) => {
-                            Some(evnx::core::config::rebase_exclude(patterns, dir, &here))
-                        }
-                        (patterns, _) => patterns,
-                    },
-                ),
-                // Additive, like `exclude` above: `--pattern` is this run's rule and
-                // `[[scan.patterns]]` is the project's standing set.
-                disable: cfg.scan.disable.clone().unwrap_or_default(),
-                patterns: commands::scan::patternset::merge(
-                    pattern,
-                    cfg.scan.patterns,
-                    builtins.unwrap_or(true),
-                    cfg.scan.disable,
-                ),
-                // `--no-ignore-placeholders` can undo a project's `true` (I-057).
-                ignore_placeholders: evnx::core::config::pick(
-                    evnx::core::config::either(ignore_placeholders, no_ignore_placeholders),
-                    cfg.scan.ignore_placeholders,
-                    false,
-                ),
-                // The flag beats `[scan] max_file_size`; a bad config value is
-                // "could not run", like a bad `--max-file-size` (I-061).
-                max_file_size: match max_file_size {
-                    Some(bytes) => Some(bytes),
-                    None => match cfg.scan.max_file_size.as_ref().map(|s| s.bytes()) {
-                        Some(Ok(bytes)) => Some(bytes),
-                        Some(Err(e)) => {
-                            return Err(EvnxError::Config(anyhow::anyhow!(
-                                ".evnx.toml [scan] max_file_size: {e}"
-                            )))
-                        }
-                        None => None,
-                    },
-                },
-                severity: evnx::core::config::pick(
-                    severity.map(|s| s.as_str().to_string()),
-                    cfg.scan.severity,
-                    "low".to_string(),
-                ),
-                // D5: short values under secret names need the floor named,
-                // not merely defaulted to `low`.
-                short_values: (confidence.is_some() || cfg.scan.confidence.is_some())
-                    && evnx::core::config::pick(
-                        confidence.map(|c| c.as_str().to_string()),
-                        cfg.scan.confidence.clone(),
-                        "low".to_string(),
-                    )
-                    .parse::<evnx::core::secretscan::Confidence>()
-                    .is_ok_and(|c| c == evnx::core::secretscan::Confidence::Low),
-                confidence: evnx::core::config::pick(
-                    confidence.map(|c| c.as_str().to_string()),
-                    cfg.scan.confidence,
-                    "low".to_string(),
-                ),
+        Commands::Scan(args) => {
+            let ScanArgs {
+                action,
+                path,
+                exclude,
+                max_file_size,
+                extensions,
+                pattern,
+                ignore_placeholders,
+                no_ignore_placeholders,
+                severity,
+                confidence,
                 baseline,
                 update_baseline,
                 rule_files,
-                project_root: config_source
-                    .as_deref()
-                    .and_then(|p| p.parent())
-                    .map(Path::to_path_buf)
-                    .unwrap_or_else(|| here.clone()),
-                format: match output.resolved() {
-                    evnx::cli::args::ScanFormat::Pretty => commands::scan::OutputFormat::Pretty,
-                    evnx::cli::args::ScanFormat::Json => commands::scan::OutputFormat::Json,
-                    evnx::cli::args::ScanFormat::Sarif => commands::scan::OutputFormat::Sarif,
-                    evnx::cli::args::ScanFormat::Github => commands::scan::OutputFormat::Github,
-                },
+                output,
                 exit_zero,
-                verbose: cli.verbose,
-                spec: cfg.vars.clone(),
-                // The flag wins; either way the run announces the limit (DEC-U8-2).
-                extensions: extensions.map(|e| (e, "--extensions")).or_else(|| {
-                    cfg.scan
-                        .extensions
-                        .clone()
-                        .map(|e| (e, ".evnx.toml [scan] extensions"))
-                }),
                 include_ignored,
                 staged,
-                follow_symlinks,
-                include_dirs: include_dir,
                 no_config,
-                config_files: config_source
-                    .as_deref()
-                    .map(|p| vec![evnx::utils::ui::short_path(p)])
-                    .unwrap_or_default(),
-                builtins_disabled: builtins == Some(false),
-                repo_settings,
-            })
+                follow_symlinks,
+                include_dir,
+                policy: _,
+                strict: _,
+                exit_only: _,
+            } = *args;
+            match action {
+                Some(evnx::cli::ScanAction::Rules { command }) => {
+                    use evnx::cli::RulesCommand;
+                    let project_root = config_source
+                        .as_deref()
+                        .and_then(|p| p.parent())
+                        .map(Path::to_path_buf)
+                        .unwrap_or_else(|| here.clone());
+                    let configured = cfg.scan.patterns.clone().unwrap_or_default();
+                    match command {
+                        RulesCommand::List { category, output } => commands::scan::rules_cmd::list(
+                            &project_root,
+                            &configured,
+                            category.as_deref(),
+                            output.resolved() == evnx::cli::args::Format::Json,
+                        )
+                        .map(clean),
+                        RulesCommand::New { id, personal } => {
+                            commands::scan::rules_cmd::new(&project_root, &id, personal)
+                                .map(|_| Verdict::Clean)
+                        }
+                        RulesCommand::Add {
+                            source,
+                            from,
+                            personal,
+                        } => commands::scan::packs_cmd::add(
+                            &project_root,
+                            &source,
+                            from.as_str(),
+                            personal,
+                        )
+                        .map(clean),
+                        RulesCommand::Update {
+                            name,
+                            personal,
+                            confirm,
+                        } => commands::scan::packs_cmd::update(
+                            &project_root,
+                            name.as_deref(),
+                            personal,
+                            confirm.yes,
+                        )
+                        .map(clean),
+                        RulesCommand::Remove { name, personal } => {
+                            commands::scan::packs_cmd::remove(&project_root, &name, personal)
+                                .map(clean)
+                        }
+                        RulesCommand::Test { file } => {
+                            commands::scan::rules_cmd::test(&project_root, file.as_deref())
+                        }
+                    }
+                }
+
+                Some(evnx::cli::ScanAction::Hook { command }) => {
+                    use evnx::cli::HookCommand;
+                    match command {
+                        HookCommand::Install => {
+                            commands::scan::hook::install(&here).map(|_| Verdict::Clean)
+                        }
+                        HookCommand::Uninstall => commands::scan::hook::uninstall(&here).map(clean),
+                        HookCommand::Status => commands::scan::hook::status(&here).map(clean),
+                    }
+                }
+
+                None => {
+                    let builtins = cfg.scan.builtins;
+                    let repo_settings = commands::scan::models::RepoSettings {
+                        exclude: cfg.scan.exclude.clone().unwrap_or_default(),
+                        ignore_placeholders: cfg.scan.ignore_placeholders == Some(true),
+                        extensions: cfg.scan.extensions.clone(),
+                        max_file_size: match cfg.scan.max_file_size.as_ref().map(|s| s.bytes()) {
+                            Some(Ok(b)) if b < evnx::commands::scan::filters::MAX_WALK_BYTES => {
+                                Some(b)
+                            }
+                            _ => None,
+                        },
+                        secret_false: cfg
+                            .vars
+                            .iter()
+                            .filter(|(_, v)| v.secret == Some(false))
+                            .map(|(k, _)| k.clone())
+                            .collect(),
+                    };
+                    commands::scan::run(commands::scan::ScanOptions {
+                        paths: path,
+                        exclude: evnx::core::config::extend(
+                            exclude,
+                            // Read from the folder holding `.evnx.toml` (I-333).
+                            match (
+                                cfg.scan.exclude,
+                                config_source.as_deref().and_then(Path::parent),
+                            ) {
+                                (Some(patterns), Some(dir)) => {
+                                    Some(evnx::core::config::rebase_exclude(patterns, dir, &here))
+                                }
+                                (patterns, _) => patterns,
+                            },
+                        ),
+                        // Additive, like `exclude` above: `--pattern` is this run's rule and
+                        // `[[scan.patterns]]` is the project's standing set.
+                        disable: cfg.scan.disable.clone().unwrap_or_default(),
+                        patterns: commands::scan::patternset::merge(
+                            pattern,
+                            cfg.scan.patterns,
+                            builtins.unwrap_or(true),
+                            cfg.scan.disable,
+                        ),
+                        // `--no-ignore-placeholders` can undo a project's `true` (I-057).
+                        ignore_placeholders: evnx::core::config::pick(
+                            evnx::core::config::either(ignore_placeholders, no_ignore_placeholders),
+                            cfg.scan.ignore_placeholders,
+                            false,
+                        ),
+                        // The flag beats `[scan] max_file_size`; a bad config value is
+                        // "could not run", like a bad `--max-file-size` (I-061).
+                        max_file_size: match max_file_size {
+                            Some(bytes) => Some(bytes),
+                            None => match cfg.scan.max_file_size.as_ref().map(|s| s.bytes()) {
+                                Some(Ok(bytes)) => Some(bytes),
+                                Some(Err(e)) => {
+                                    return Err(EvnxError::Config(anyhow::anyhow!(
+                                        ".evnx.toml [scan] max_file_size: {e}"
+                                    )));
+                                }
+                                None => None,
+                            },
+                        },
+                        severity: evnx::core::config::pick(
+                            severity.map(|s| s.as_str().to_string()),
+                            cfg.scan.severity,
+                            "low".to_string(),
+                        ),
+                        // D5: short values under secret names need the floor named,
+                        // not merely defaulted to `low`.
+                        short_values: (confidence.is_some() || cfg.scan.confidence.is_some())
+                            && evnx::core::config::pick(
+                                confidence.map(|c| c.as_str().to_string()),
+                                cfg.scan.confidence.clone(),
+                                "low".to_string(),
+                            )
+                            .parse::<evnx::core::secretscan::Confidence>()
+                            .is_ok_and(|c| c == evnx::core::secretscan::Confidence::Low),
+                        confidence: evnx::core::config::pick(
+                            confidence.map(|c| c.as_str().to_string()),
+                            cfg.scan.confidence,
+                            "low".to_string(),
+                        ),
+                        baseline,
+                        update_baseline,
+                        rule_files,
+                        project_root: config_source
+                            .as_deref()
+                            .and_then(|p| p.parent())
+                            .map(Path::to_path_buf)
+                            .unwrap_or_else(|| here.clone()),
+                        format: match output.resolved() {
+                            evnx::cli::args::ScanFormat::Pretty => {
+                                commands::scan::OutputFormat::Pretty
+                            }
+                            evnx::cli::args::ScanFormat::Json => commands::scan::OutputFormat::Json,
+                            evnx::cli::args::ScanFormat::Sarif => {
+                                commands::scan::OutputFormat::Sarif
+                            }
+                            evnx::cli::args::ScanFormat::Github => {
+                                commands::scan::OutputFormat::Github
+                            }
+                        },
+                        exit_zero,
+                        verbose: cli.verbose,
+                        spec: cfg.vars.clone(),
+                        // The flag wins; either way the run announces the limit (DEC-U8-2).
+                        extensions: extensions.map(|e| (e, "--extensions")).or_else(|| {
+                            cfg.scan
+                                .extensions
+                                .clone()
+                                .map(|e| (e, ".evnx.toml [scan] extensions"))
+                        }),
+                        include_ignored,
+                        staged,
+                        follow_symlinks,
+                        include_dirs: include_dir,
+                        no_config,
+                        config_files: config_source
+                            .as_deref()
+                            .map(|p| vec![evnx::utils::ui::short_path(p)])
+                            .unwrap_or_default(),
+                        builtins_disabled: builtins == Some(false),
+                        repo_settings,
+                    })
+                }
+            }
         }
 
-        Commands::Diff {
-            left,
-            right,
-            files: file_args,
-            against,
-            values,
-            show_values,
-            output,
-            reverse,
-            ignore_keys,
-            fail_on,
-            skip_without_env,
-            with_stats,
-            interactive,
-        } => {
+        Commands::Diff(args) => {
+            let DiffArgs {
+                left,
+                right,
+                files: file_args,
+                against,
+                values,
+                show_values,
+                output,
+                reverse,
+                ignore_keys,
+                fail_on,
+                skip_without_env,
+                with_stats,
+                interactive,
+            } = *args;
+
             use commands::diff::{Compare, DiffOptions, FailOn};
             let here = Path::new(".");
             let format = output.resolved().to_string();
@@ -740,32 +789,34 @@ fn run() -> Result<Verdict, EvnxError> {
             })
         }
 
-        Commands::Convert {
-            env: env_args,
-            from,
-            to,
-            output,
-            force,
-            gitignore,
-            no_gitignore,
-            include,
-            exclude,
-            only,
-            allow_empty,
-            allow_collisions,
-            base64,
-            prefix,
-            transform,
-            project,
-            vault_name,
-            heroku_app,
-            name,
-            namespace,
-            terraform_declarations,
-            kind,
-            confirm,
-            dry,
-        } => {
+        Commands::Convert(args) => {
+            let ConvertArgs {
+                env: env_args,
+                from,
+                to,
+                output,
+                force,
+                gitignore,
+                no_gitignore,
+                include,
+                exclude,
+                only,
+                allow_empty,
+                allow_collisions,
+                base64,
+                prefix,
+                transform,
+                project,
+                vault_name,
+                heroku_app,
+                name,
+                namespace,
+                terraform_declarations,
+                kind,
+                confirm,
+                dry,
+            } = *args;
+
             let to = to.map(|t| t.format_name());
             // ⚠️ Checked before anything is read: an unknown --transform was
             // dropped in silence (I-090), and a --prefix with shell syntax
@@ -953,25 +1004,25 @@ fn run() -> Result<Verdict, EvnxError> {
                 cli.quiet,
                 cli.verbose,
             )?;
-            commands::sync::run(
-                files.env,
-                files.template,
-                args.direction.or(args.to.map(Into::into)),
-                false,
-                cli.verbose,
-                args.dry.dry_run,
-                args.confirm.yes,
-                args.check,
-                args.output.resolved().to_string(),
-                args.template_config.clone(),
-                evnx::core::config::pick(
+            commands::sync::run(commands::sync::SyncOptions {
+                env: files.env,
+                example: files.template,
+                direction: args.direction.or(args.to.map(Into::into)),
+                placeholder: false,
+                verbose: cli.verbose,
+                dry_run: args.dry.dry_run,
+                force: args.confirm.yes,
+                check: args.check,
+                format: args.output.resolved().to_string(),
+                template_config: args.template_config.clone(),
+                naming_policy: evnx::core::config::pick(
                     args.naming_policy,
                     configured,
                     evnx::cli::NamingPolicy::Warn,
                 ),
-                cfg.vars.clone(),
-                args.skip_without_env,
-            )
+                spec: cfg.vars.clone(),
+                skip_without_env: args.skip_without_env,
+            })
         }
 
         Commands::Align { args } => {
@@ -1029,23 +1080,25 @@ fn run() -> Result<Verdict, EvnxError> {
         // Commands::Template { input, output, env } => {
         //     commands::template::run(input, output, env, cli.verbose)
         // }
-        Commands::Template {
-            input,
-            output,
-            input_flag,
-            output_flag,
-            env: env_args,
-            confirm,
-            gitignore,
-            no_gitignore,
-            allow_unresolved,
-            strict,
-            mode: file_mode,
-            mkdir,
-            dry: dry_args,
-            force,
-            follow_symlinks,
-        } => {
+        Commands::Template(args) => {
+            let TemplateArgs {
+                input,
+                output,
+                input_flag,
+                output_flag,
+                env: env_args,
+                confirm,
+                gitignore,
+                no_gitignore,
+                allow_unresolved,
+                strict,
+                mode: file_mode,
+                mkdir,
+                dry: dry_args,
+                force,
+                follow_symlinks,
+            } = *args;
+
             // Clap guarantees one of each form is present.
             let (Some(input), Some(output)) = (input.or(input_flag), output.or(output_flag)) else {
                 return Err(EvnxError::Config(anyhow::anyhow!(
@@ -1115,34 +1168,40 @@ fn run() -> Result<Verdict, EvnxError> {
         .map(clean),
 
         #[cfg(feature = "backup")]
-        Commands::Restore {
-            backup,
-            output,
-            show_values,
-            yes,
-            gitignore,
-            no_gitignore,
-            dry_run,
-            inspect,
-            password_file,
-        } => commands::restore::run(
-            backup,
-            commands::restore::Options {
+        Commands::Restore(args) => {
+            let RestoreArgs {
+                backup,
                 output,
                 show_values,
-                verbose: cli.verbose,
+                yes,
+                gitignore,
+                no_gitignore,
                 dry_run,
                 inspect,
                 password_file,
-                yes,
-                gitignore: evnx::utils::protect::GitignoreMode::from_flags(gitignore, no_gitignore),
-            },
-        )
-        .map(clean),
+            } = *args;
+            commands::restore::run(
+                backup,
+                commands::restore::Options {
+                    output,
+                    show_values,
+                    verbose: cli.verbose,
+                    dry_run,
+                    inspect,
+                    password_file,
+                    yes,
+                    gitignore: evnx::utils::protect::GitignoreMode::from_flags(
+                        gitignore,
+                        no_gitignore,
+                    ),
+                },
+            )
+            .map(clean)
+        }
 
         #[cfg(feature = "cloud")]
         Commands::Auth { command, server } => {
-            evnx::cloud::run_auth(command, server.as_deref(), cli.verbose).map(clean)
+            evnx::cloud::run_auth(*command, server.as_deref(), cli.verbose).map(clean)
         }
 
         #[cfg(feature = "cloud")]
@@ -1158,13 +1217,13 @@ fn run() -> Result<Verdict, EvnxError> {
         #[cfg(feature = "cloud")]
         // `pull` declined: already said, and 4 as in `restore` (D6): `classify`.
         Commands::Cloud { command, server } => {
-            evnx::cloud::run(command, server.as_deref(), cli.verbose)
+            evnx::cloud::run(*command, server.as_deref(), cli.verbose)
         }
 
         // `diff` found differences: 1, as `cloud diff --local` and `diff`.
         // `pull` and `push` declined: 4, as in `cloud pull` (D6).
         #[cfg(feature = "net")]
-        Commands::Platform { command } => evnx::platform::run(command),
+        Commands::Platform { command } => evnx::platform::run(*command),
 
         Commands::Doctor {
             path,
@@ -1277,33 +1336,35 @@ fn run() -> Result<Verdict, EvnxError> {
             }
         },
 
-        Commands::Run {
-            env,
-            env_name,
-            include,
-            exclude,
-            allow_unsafe_names,
-            mask,
-            no_mask,
-            prefer,
-            command,
-        } => {
+        Commands::Run(args) => {
+            let RunArgs {
+                env,
+                env_name,
+                include,
+                exclude,
+                allow_unsafe_names,
+                mask,
+                no_mask,
+                prefer,
+                command,
+            } = *args;
+
             let env = resolve_env(
                 Path::new("."),
                 env.as_deref(),
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             )?;
-            commands::run::run(
-                &env,
-                include.as_deref(),
-                exclude.as_deref(),
+            commands::run::run(commands::run::RunOptions {
+                env: &env,
+                include: include.as_deref(),
+                exclude: exclude.as_deref(),
                 allow_unsafe_names,
-                evnx::core::inject::masking(mask, no_mask),
-                cli.verbose,
+                mask: evnx::core::inject::masking(mask, no_mask),
+                verbose: cli.verbose,
                 prefer,
-                &command,
-            )
+                command: &command,
+            })
             .map(clean)
         }
 

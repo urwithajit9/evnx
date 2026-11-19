@@ -27,7 +27,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
-use super::client::{reword, Client};
+use super::client::{Client, reword};
 use super::config::CloudConfig;
 
 #[derive(Deserialize)]
@@ -164,8 +164,8 @@ fn print_codes(codes: &[String], replaced: bool) {
 /// of terminals. The hand-typed key is always printed too, because terminal
 /// rendering depends on the font having half-block glyphs.
 fn render_qr(uri: &str) -> Result<String> {
-    use qrcode::render::unicode;
     use qrcode::QrCode;
+    use qrcode::render::unicode;
 
     let code = QrCode::new(uri.as_bytes()).context("building the enrolment QR code")?;
     let rendered = code

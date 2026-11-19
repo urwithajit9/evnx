@@ -11,7 +11,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 /// Every key of `file` as `convert --to json` reads it back.
 fn read_back(p: &Project, file: &str) -> serde_json::Value {

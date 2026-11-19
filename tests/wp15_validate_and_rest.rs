@@ -9,7 +9,7 @@
 mod support;
 
 use serde_json::Value;
-use support::{run, run_with, Project};
+use support::{Project, run, run_with};
 
 fn json(out: &support::Output) -> Value {
     serde_json::from_str(&out.stdout)
@@ -44,11 +44,13 @@ fn wp15_default_run_warns_on_bad_url_port_email() {
     for want in ["invalid_url", "invalid_port", "invalid_email"] {
         assert!(t.iter().any(|x| x == want), "{want} missing: {t:?}");
     }
-    assert!(v["issues"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|i| i["severity"] == "warning"));
+    assert!(
+        v["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["severity"] == "warning")
+    );
 }
 
 #[test]
@@ -382,10 +384,12 @@ fn wp15_doctor_all_no_template_skips_sync_with_note() {
     let out = doctor_all(&p, &["--json"]);
     let v = json(&out);
     assert_eq!(v["sections"]["sync"]["status"], "skipped", "{v}");
-    assert!(v["sections"]["sync"]["note"]
-        .as_str()
-        .unwrap()
-        .contains("no template"));
+    assert!(
+        v["sections"]["sync"]["note"]
+            .as_str()
+            .unwrap()
+            .contains("no template")
+    );
     assert_eq!(v["sections"]["validate"]["status"], "skipped");
     // Skipped is not a failure.
     assert!(out.code != Some(2), "{}", out.stderr);

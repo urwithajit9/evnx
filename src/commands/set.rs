@@ -22,7 +22,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use crate::core::{classify, config, env_name, env_set, resolve, safe_write};
@@ -271,8 +271,7 @@ pub fn run(opts: Options) -> Result<()> {
     if edit.assignments > 1 {
         ui::warning(format!(
             "{name} is assigned {} times in {file}; the last one (line {}) is the one that counts, and the one changed.",
-            edit.assignments,
-            edit.line
+            edit.assignments, edit.line
         ));
     }
     let line = match (&edit.old, secret) {

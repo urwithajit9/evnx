@@ -1,7 +1,7 @@
 [package]
 name        = "evnx"
 version     = "0.14.1"
-edition     = "2021"
+edition     = "2024"
 # Verified by building on it, not assumed: cargo +1.87.0 check passes for the
 # default feature set, --features cloud and --all-features. The floor comes from
 # ctutils 0.4.4+ (under evnx-crypto's ml-kem), the first release fixing
@@ -66,7 +66,7 @@ path = "src/lib.rs"
 [lints.rust]
 # An unsafe fn's body is not an implicit unsafe block: each unsafe operation in it
 # needs its own `unsafe {}` and its own safety comment.
-# (Warn-by-default only from edition 2024.)
+# (Warn-by-default from edition 2024; kept as `deny` so it is a rule, not a default.)
 unsafe_op_in_unsafe_fn = "deny"
 
 [lints.clippy]

@@ -9,7 +9,7 @@
 //! ⛔ **The baseline never holds a value or a value preview** (S9): only a
 //! rule id, a file and a fingerprint. Committing it publishes nothing.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -99,10 +99,10 @@ impl Baseline {
         let text = match std::fs::read_to_string(path) {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound && !named => {
-                return Ok(Baseline::default())
+                return Ok(Baseline::default());
             }
             Err(e) => {
-                return Err(e).with_context(|| format!("reading the baseline {}", path.display()))
+                return Err(e).with_context(|| format!("reading the baseline {}", path.display()));
             }
         };
         let b: Baseline = serde_json::from_str(&text)

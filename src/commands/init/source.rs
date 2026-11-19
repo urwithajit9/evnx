@@ -651,7 +651,10 @@ mod tests {
             ("a.py", "import os\nv = os.getenv(\"PY_GETENV\", \"x\")\n"),
             ("b.rb", "k = ENV.fetch(\"RUBY_FETCH\") { 'x' }\n"),
             ("c.php", "<?php $k = getenv('PHP_GETENV');\n"),
-            ("d.rs", "const K: &str = env!(\"RUST_ENV\");\nconst O: Option<&str> = option_env!(\"RUST_OPTION_ENV\");\nlet v = std::env::var_os(\"RUST_VAR_OS\");\n"),
+            (
+                "d.rs",
+                "const K: &str = env!(\"RUST_ENV\");\nconst O: Option<&str> = option_env!(\"RUST_OPTION_ENV\");\nlet v = std::env::var_os(\"RUST_VAR_OS\");\n",
+            ),
         ]);
         let s = scan(d.path()).unwrap();
         for name in [
@@ -948,8 +951,14 @@ mod tests {
                 "src/config.vue",
                 "<script>const x = import.meta.env.VITE_IN_VUE</script>\n<b title=\"SUBMIT_FORM\"/>",
             ),
-            ("src/App.svelte", "<script>const y = import.meta.env.PUBLIC_IN_SVELTE</script>"),
-            ("src/Page.astro", "---\nconst z = import.meta.env.PUBLIC_IN_ASTRO\n---"),
+            (
+                "src/App.svelte",
+                "<script>const y = import.meta.env.PUBLIC_IN_SVELTE</script>",
+            ),
+            (
+                "src/Page.astro",
+                "---\nconst z = import.meta.env.PUBLIC_IN_ASTRO\n---",
+            ),
             ("src/x.mts", "export const m = process.env.IN_MTS;"),
         ]);
         let s = scan(d.path()).unwrap();

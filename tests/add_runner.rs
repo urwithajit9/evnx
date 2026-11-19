@@ -15,7 +15,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 /// A0: four subcommands; bare `evnx add` prints help and exits 2 (DA-10).
 #[test]
@@ -105,9 +105,10 @@ fn a4_blueprints() {
         .assert_code(0)
         .assert_contains("DATABASE_URL (existing: \"postgres://real@host/db\"");
     assert_eq!(q.count_lines(".env.example", "DATABASE_URL="), 1);
-    assert!(q
-        .read(".env.example")
-        .starts_with("DATABASE_URL=postgres://real@host/db\n"));
+    assert!(
+        q.read(".env.example")
+            .starts_with("DATABASE_URL=postgres://real@host/db\n")
+    );
 }
 
 /// A5: adding again skips what is there, for services and blueprints (I-016).
@@ -236,7 +237,7 @@ fn a10_agent_style() {
 #[cfg(unix)]
 #[test]
 fn a11_custom_interactive() {
-    use support::pty::{Pty, ENTER};
+    use support::pty::{ENTER, Pty};
     let p = Project::new().example("APP=1\n").env("APP=1\n");
     let mut s = Pty::spawn(p.path(), &["add", "custom"]);
     s.wait_for("Variable name");
@@ -265,8 +266,9 @@ fn a11_custom_interactive() {
         "{}",
         p.read(".env")
     );
-    assert!(p
-        .read(".env.example")
-        .contains("# Payment key (required)\nMY_API_KEY="));
+    assert!(
+        p.read(".env.example")
+            .contains("# Payment key (required)\nMY_API_KEY=")
+    );
     assert!(!p.read(".env.example").contains("sk_test_xxx"));
 }

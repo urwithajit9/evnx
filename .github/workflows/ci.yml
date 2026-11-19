@@ -60,46 +60,23 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       
-      # ⛔ **The debug binary does not fit Windows' default main-thread stack.**
-      #
-      # Windows reserves **1 MB** for the main thread; Linux gives 8 MB. A debug
-      # build of this CLI needs somewhere between 1 MB and 1.5 MB just to start
-      # — measured by bisecting `ulimit -s` on Linux, where 1024 KB aborts and
-      # 1536 KB succeeds. So on Windows `evnx.exe --version` overflows before
-      # any command runs, and every integration test that spawns the binary
-      # fails with STATUS_STACK_OVERFLOW (0xC00000FD).
-      #
-      # ⓘ **Users are not affected and this is not a product bug.** The release
-      # build runs fine in **256 KB** — a twentieth of what Windows gives it —
-      # and `release.yml` ships `--release`. What costs the stack is debug-mode
-      # frame bloat in clap's command tree, not anything the program does: the
-      # overflow happens during argument parsing, which is why even `--version`
-      # dies.
-      #
-      # ⚠️ Set here rather than in `.cargo/config.toml`, which is **gitignored**
-      # on purpose so contributors can keep local overrides. A Windows
-      # contributor hitting this locally wants the same flag in that file; see
-      # CONTRIBUTING.
-      #
-      # ⚠️ `/STACK` sizes only the **main** thread. libtest runs each unit test
-      # on its own thread, sized by `RUST_MIN_STACK` (default 2 MB), and the
-      # `cli::tests` that build the whole command tree (`Cli::command()`,
-      # `debug_assert`) outgrew 2 MB on Windows in v0.14.2 as the CLI gained
-      # flags: the `--lib` run aborted with STATUS_STACK_OVERFLOW and no test
-      # name. Both get 8 MB.
-      - name: Give Windows a Linux-sized main stack
+      # ⓘ Windows' 1 MB main-thread stack used to need `/STACK:8388608` here.
+      # `main` now runs the CLI on an 8 MB thread of its own (RUST-16), and the
+      # `windows-debug-start` job below builds with no linker flag to prove it.
+      # Only the C runtime is matched to the release build.
+      - name: Match the release C runtime on Windows
         if: runner.os == 'Windows'
         shell: bash
         # crt-static matches the release build (release.yml), so every PR tests
         # the same statically linked C runtime that ships.
         run: |
-          echo "RUSTFLAGS=-C link-arg=/STACK:8388608 -C target-feature=+crt-static" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
 
       # ⚠️ Every platform since WP-7: with the flags it added, building the
       # derived command tree in a debug test thread outgrew libtest's 2 MB on
       # Linux too, and the `--lib` run aborted (stack overflow in
-      # `cli::tests`). Debug-only frame bloat, as above; the released binary's
-      # main thread has 8 MB everywhere.
+      # `cli::tests`). Debug-only frame bloat; libtest runs each test on its own
+      # thread, which `main`'s 8 MB thread does not cover.
       - name: Give test threads 8 MB
         shell: bash
         run: echo "RUST_MIN_STACK=8388608" >> "$GITHUB_ENV"
@@ -120,6 +97,42 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sh-is-bash"
           ln -sf "$(command -v bash)" "$RUNNER_TEMP/sh-is-bash/sh"
           PATH="$RUNNER_TEMP/sh-is-bash:$PATH" cargo test --all-features --no-fail-fast --test '*_runner'
+
+  # ⛔ A **debug** build must start on Windows with nothing configured (RUST-16).
+  #
+  # Windows gives the main thread 1 MB; a debug build's clap command tree needs
+  # more, so `evnx.exe --version` died with STATUS_STACK_OVERFLOW (0xC00000FD)
+  # before any command ran. `main` now runs on an 8 MB thread. This job is the
+  # proof, so it must set **no** `RUSTFLAGS` and no `/STACK` anywhere: if it
+  # passes only with a flag, the fix is not working.
+  windows-debug-start:
+    name: Windows debug build starts
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Build (debug, all features, no linker flags)
+        shell: bash
+        run: cargo build --all-features
+
+      - name: Start the debug binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for args in "--version" "--help" "scan --help" "cloud --help"; do
+            echo "::group::evnx $args"
+            # shellcheck disable=SC2086
+            ./target/debug/evnx.exe $args
+            echo "::endgroup::"
+          done
 
   fmt:
     name: Rustfmt

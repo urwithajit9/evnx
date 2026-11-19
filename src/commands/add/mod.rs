@@ -6,13 +6,14 @@
 //! - `blueprint <id>`  — Add variables from a stack blueprint
 //! - `custom`          — Interactive custom variable addition
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use colored::*;
 use std::path::Path;
 
 pub mod blueprint;
 pub mod custom;
 pub mod framework;
+pub mod report;
 pub mod service;
 pub mod shared;
 use crate::{

@@ -3,8 +3,8 @@
 // ============================================================================
 
 use crate::core::converter::{ConvertOptions, Converter};
+use crate::core::secret::Vars;
 use anyhow::Result;
-use indexmap::IndexMap;
 
 /// A `.env` file, written with the quoting the parser reads back exactly
 /// (`core::envfile::quote`): `convert --to json` then `convert --from json
@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 pub struct DotenvConverter;
 
 impl Converter for DotenvConverter {
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         let mut output = String::new();
         for (key, value) in options.prepare(vars, self)? {
             output.push_str(&crate::core::envfile::line(&key, &value));
@@ -33,13 +33,14 @@ impl Converter for DotenvConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     #[test]
     fn writes_one_quoted_line_per_variable() {
-        let mut vars = IndexMap::new();
-        vars.insert("A".to_string(), "plain".to_string());
-        vars.insert("B".to_string(), "two words # not a comment".to_string());
-        vars.insert("C".to_string(), String::new());
+        let mut vars = Vars::new();
+        vars.insert("A".to_string(), "plain".into());
+        vars.insert("B".to_string(), "two words # not a comment".into());
+        vars.insert("C".to_string(), "".into());
         let out = DotenvConverter
             .convert(&vars, &ConvertOptions::default())
             .unwrap();

@@ -142,40 +142,30 @@ cargo build --all-features
 cargo run -- --help
 ```
 
-### On Windows: give the debug build a bigger stack
+### Debug builds and stack size
 
-If `cargo run` or `cargo test` dies immediately with
-`thread 'main' has overflowed its stack`, this is why — and it is a one-line
-fix, not something you have broken.
+`evnx` runs its CLI on a thread with an 8 MB stack, on every platform, so a
+debug build starts on Windows with nothing to configure. (Windows gives a
+process's main thread 1 MB, and a *debug* build of evnx needs more than that
+just to parse its own arguments.) CI builds debug on Windows with no linker
+flag and runs `--version` and `--help` to keep it that way.
 
-Windows reserves **1 MB** for a process's main thread where Linux reserves 8 MB.
-A *debug* build of evnx needs between 1 MB and 1.5 MB just to parse its own
-arguments, so it overflows before any command runs. Even `evnx --version` dies.
-
-Create `.cargo/config.toml` — it is gitignored, so this stays local to you:
+`cargo test` runs unit tests on threads of its own, which the 8 MB thread does
+not cover. The `cli::tests` that build the whole command tree overflow
+libtest's default 2 MB in a debug build, on any platform. If `cargo test --lib`
+aborts with a stack overflow, raise it, either once in `.cargo/config.toml`
+(gitignored, so local to you):
 
 ```toml
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "link-arg=/STACK:8388608"]
-
 [env]
 RUST_MIN_STACK = "8388608"
 ```
 
-That reserves 8 MB, matching Linux. `/STACK` covers the main thread;
-`RUST_MIN_STACK` covers the threads `cargo test` runs unit tests on, where
-the tests that build the whole command tree otherwise overflow 2 MB. CI sets
-`/STACK` for its Windows job and `RUST_MIN_STACK` for every job.
-
-**On Linux and macOS too**, `cargo test --lib` needs the `[env]` part since
-0.14.2: the `cli::tests` that parse arguments overflow libtest's 2 MB test
-threads in a debug build. Add it to your `.cargo/config.toml`, or run
-`RUST_MIN_STACK=8388608 cargo test`.
+or per run: `RUST_MIN_STACK=8388608 cargo test`. CI sets it for every job.
 
 ⓘ **This affects debug builds only and no released binary.** The optimised
 build runs in under 256 KB, and every published artefact is built
-`--release`. What costs the stack is debug-mode frame bloat in the argument
-parser, not anything the program does at runtime.
+`--release`.
 
 ---
 

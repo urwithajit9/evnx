@@ -26,10 +26,10 @@ fn test_load_env_file() {
     let f = write_env_file("DB_URL=postgres://localhost/test\nSECRET=abc123\n");
     let secrets = load_secrets("env-file", f.path().to_str().unwrap(), false).unwrap();
     assert_eq!(
-        secrets.get("DB_URL").map(String::as_str),
+        secrets.get("DB_URL").map(|s| s.expose()),
         Some("postgres://localhost/test")
     );
-    assert_eq!(secrets.get("SECRET").map(String::as_str), Some("abc123"));
+    assert_eq!(secrets.get("SECRET").map(|s| s.expose()), Some("abc123"));
 }
 
 #[test]

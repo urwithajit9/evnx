@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
-use super::{plan, shown, Session};
+use super::{Session, plan, shown};
 use crate::cli::PlatformDiffArgs;
 use crate::core::verdict::Verdict;
 use crate::platform::local;

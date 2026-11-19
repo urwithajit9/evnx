@@ -5,7 +5,7 @@ use std::path::Path;
 
 use evnx::cloud::creds::{SecretString, Session, Store};
 
-use super::{run_with, Output, Project};
+use super::{Output, Project, run_with};
 
 /// Store a login for `server` in `cfg/credentials.json`, as `evnx auth login`
 /// would, with an access token that is not near expiry.

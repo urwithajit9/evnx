@@ -12,7 +12,7 @@ mod support;
 
 use std::os::unix::fs::PermissionsExt;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn mode(p: &Project, name: &str) -> u32 {
     std::fs::metadata(p.join(name))

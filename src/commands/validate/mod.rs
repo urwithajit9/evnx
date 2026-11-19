@@ -11,6 +11,7 @@ pub mod fixer;
 pub mod policy;
 pub mod types;
 
+use crate::core::secret::{Secret, Vars};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -209,7 +210,7 @@ pub struct Input {
     /// The env file, parsed; its variables are what the checks judge.
     pub doc: crate::core::parser::Document,
     /// The template's (`.env.example`'s) variables.
-    pub template: indexmap::IndexMap<String, String>,
+    pub template: Vars,
     /// Where the env file came from: each finding's location starts with it.
     pub origin: String,
     pub spec: crate::core::spec::Spec,
@@ -221,10 +222,7 @@ pub struct Outcome {
     pub result: ValidationResult,
     /// The env file's variables after `--fix`, and the keys it changed. `None`
     /// when there is nothing to write, including every dry run.
-    pub write: Option<(
-        indexmap::IndexMap<String, String>,
-        std::collections::BTreeSet<String>,
-    )>,
+    pub write: Option<(Vars, std::collections::BTreeSet<String>)>,
 }
 
 /// Every check, and `--fix`'s repairs worked out in memory, with no IO: the
@@ -254,7 +252,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
     // Recounting by re-running the same checks, rather than by subtracting the
     // fixes that were applied, is what keeps the two from drifting: a fix that
     // does not actually resolve its issue stays visible.
-    let collect_issues = |vars: &indexmap::IndexMap<String, String>| -> Vec<Issue> {
+    let collect_issues = |vars: &Vars| -> Vec<Issue> {
         let mut issues = Vec::new();
 
         // ⚠️ The spec replaces the template as the source of requiredness when the
@@ -422,10 +420,10 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
                 } else {
                     FixAction::AddMissing(policy::fill_for_missing(
                         &issue.variable,
-                        input.template.get(&issue.variable).map(String::as_str),
+                        input.template.get(&issue.variable).map(Secret::expose),
                     ))
                 };
-                fixes_to_apply.push((issue.variable.clone(), String::new(), action));
+                fixes_to_apply.push((issue.variable.clone(), Secret::default(), action));
             }
         }
 
@@ -435,7 +433,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
-                        val,
+                        val.expose(),
                         &IssueType::PlaceholderValue,
                         weak_secret_policy,
                     );
@@ -452,7 +450,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
-                        val,
+                        val.expose(),
                         &IssueType::BooleanTrap,
                         weak_secret_policy,
                     );
@@ -474,7 +472,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
-                        val,
+                        val.expose(),
                         &IssueType::WeakSecret,
                         weak_secret_policy,
                     );
@@ -514,14 +512,15 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
 
         // Apply all collected fixes
         for (key, old_val, action) in fixes_to_apply {
-            if let Some(mut fix) = apply_fix(&key, &old_val, &action, &mut env_vars) {
+            if let Some(mut fix) = apply_fix(&key, old_val.expose(), &action, &mut env_vars) {
                 // ⚠️ A dry run never shows a generated secret: the real run
                 // makes a different one, and a value printed here would be
                 // copied somewhere and match nothing.
                 if config.dry_run
                     && matches!(action, FixAction::GenerateSecret | FixAction::AddSecret)
                 {
-                    fix.new_value = "(a new random secret)".to_string();
+                    fix.new_shown = "(a new random secret)".to_string();
+                    fix.placeholder = policy::is_placeholder(&fix.variable, &fix.new_shown);
                 }
                 fixes_applied.push(fix);
             }
@@ -545,9 +544,8 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
 
     // ⚠️ I-037: a variable `--fix` could only add with a placeholder is not
     // fixed. It is listed apart, and is not counted as a repair.
-    let (needs_input, fixed): (Vec<_>, Vec<_>) = fixes_applied
-        .into_iter()
-        .partition(|f| policy::is_placeholder(&f.variable, &f.new_value));
+    let (needs_input, fixed): (Vec<_>, Vec<_>) =
+        fixes_applied.into_iter().partition(|f| f.placeholder);
 
     // ─────────────────────────────────────────
     // Build Result
@@ -803,11 +801,16 @@ pub fn run(opts: Options) -> Result<Verdict> {
     // ─────────────────────────────────────────
     // Output (Improvement #6: UI integration)
     // ─────────────────────────────────────────
-    match format {
-        Format::Json => output_json(&result)?,
-        Format::Github => output_github_actions(&result, &origin)?,
-        Format::Pretty => output_pretty(&result, &env_path)?,
-    }
+    crate::core::output::Out::new(crate::core::output::Mode::of(match format {
+        Format::Json => "Json",
+        Format::Github => "Github",
+        Format::Pretty => "Pretty",
+    }))
+    .emit(&ValidateReport {
+        result: &result,
+        env_path: &env_path,
+        origin: &origin,
+    })?;
 
     // ─────────────────────────────────────────
     // Exit Code Handling
@@ -917,13 +920,10 @@ fn print_fix(fix: &FixApplied, env_path: &str, dry_run: bool) {
         );
         return;
     }
-    let new = if fix.new_value.is_empty() {
+    let new = if fix.new_shown.is_empty() {
         "(empty)".to_string()
-    } else if policy::is_placeholder(&fix.variable, &fix.new_value) {
-        // A placeholder is what the file asks the user to replace.
-        fix.new_value.clone()
     } else {
-        crate::core::mask::mask(&fix.variable, &fix.new_value)
+        fix.new_shown.clone()
     };
     println!(
         "  • {}: {} → {}",
@@ -1131,8 +1131,31 @@ fn listed_problems(mut problems: Vec<crate::core::parser::Problem>, path: &str) 
     )
 }
 
-fn output_json(result: &ValidationResult) -> Result<()> {
-    crate::core::json::emit(result, 1, None)
+/// What `validate` prints at the end: the result, and the two names the text
+/// and the annotations call the file by. Serialises as the result alone.
+#[derive(Debug)]
+struct ValidateReport<'a> {
+    result: &'a ValidationResult,
+    /// The path as the pretty output names it.
+    env_path: &'a str,
+    /// The path as annotations name it (`<stdin>` for stdin).
+    origin: &'a str,
+}
+
+impl serde::Serialize for ValidateReport<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(self.result, s)
+    }
+}
+
+impl crate::core::output::Report for ValidateReport<'_> {
+    fn text(&self, _out: &crate::core::output::Out) -> Result<()> {
+        output_pretty(self.result, self.env_path)
+    }
+
+    fn github(&self) -> Option<Result<()>> {
+        Some(output_github_actions(self.result, self.origin))
+    }
 }
 
 /// Which line of `.env` assigns `key`, if any.
@@ -1214,7 +1237,7 @@ pub use types::{
 fn required_total(
     spec: &crate::core::spec::Spec,
     env_name: Option<&str>,
-    example_vars: &indexmap::IndexMap<String, String>,
+    example_vars: &Vars,
 ) -> usize {
     if spec.is_empty() {
         return example_vars.len();
@@ -1232,9 +1255,9 @@ fn required_total(
 /// present requirements. It counts the declared names that are there.
 fn required_present(
     spec: &crate::core::spec::Spec,
-    env_vars: &indexmap::IndexMap<String, String>,
+    env_vars: &Vars,
     env_name: Option<&str>,
-    example_vars: &indexmap::IndexMap<String, String>,
+    example_vars: &Vars,
 ) -> usize {
     if spec.is_empty() {
         return example_vars
@@ -1260,7 +1283,7 @@ mod tests {
             doc: Parser::default().parse_document("DEBUG=True\n"),
             template: [("DEBUG", ""), ("PORT", "8080")]
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .map(|(k, v)| (k.to_string(), (*v).into()))
                 .collect(),
             origin: "stdin".to_string(),
             spec: Default::default(),
@@ -1291,5 +1314,56 @@ mod tests {
             ..fix
         };
         assert!(validate(&input, &dry).write.is_none());
+    }
+
+    /// The report holds names, counts and masked text, never a value: a canary
+    /// under secret-looking names, replaced by `--fix`, shows in neither the
+    /// report's `Debug` nor its JSON (WP-17).
+    #[test]
+    fn the_report_holds_no_value() {
+        let canary = crate::core::output::canary::value();
+        let text = format!(
+            "SECRET_KEY={canary}\nDB_PASSWORD=changeme\nAPI_TOKEN={canary}\n\
+             DATABASE_URL=postgres://app:{canary}@db:5432/app\nDEBUG=True\n"
+        );
+        let input = Input {
+            doc: Parser::default().parse_document(&text),
+            template: [
+                "SECRET_KEY",
+                "DB_PASSWORD",
+                "API_TOKEN",
+                "DATABASE_URL",
+                "DEBUG",
+                "NEW_SECRET_KEY",
+            ]
+            .into_iter()
+            .map(|k| (k.to_string(), "".into()))
+            .collect(),
+            origin: ".env".to_string(),
+            spec: Default::default(),
+            surroundings: Surroundings {
+                docker: false,
+                exposure: None,
+                known_environments: Vec::new(),
+                readers: Vec::new(),
+                environments: Vec::new(),
+            },
+        };
+        let config = ValidationConfig {
+            fix: true,
+            rotate_weak_secrets: true,
+            ..ValidationConfig::default()
+        };
+        let result = validate(&input, &config).result;
+        assert!(
+            !result.fixed.is_empty() && !result.issues.is_empty(),
+            "the canary run must have something to report"
+        );
+        let report = ValidateReport {
+            result: &result,
+            env_path: ".env",
+            origin: ".env",
+        };
+        crate::core::output::canary::assert_report_clean(&canary, &report);
     }
 }

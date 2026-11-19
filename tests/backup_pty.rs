@@ -6,8 +6,8 @@
 
 mod support;
 
-use support::pty::{Pty, ENTER};
-use support::{run, Project};
+use support::pty::{ENTER, Pty};
+use support::{Project, run};
 
 const ENV: &str = "A=1\nB=two\n";
 const PW: &str = "demo-passphrase-123\n";

@@ -481,6 +481,24 @@ impl Client {
     /// [`Client::new`] with a different overall request timeout, for transfers
     /// that legitimately take longer than a control-plane call.
     pub fn with_timeout(server: impl Into<String>, timeout: Duration) -> Result<Self, ApiError> {
+        Self::with_timeout_and_token(server, timeout, std::env::var(ENV_TOKEN).ok())
+    }
+
+    /// [`Client::new`] with the value of [`ENV_TOKEN`] supplied by the caller
+    /// instead of read from the process environment.
+    #[cfg(test)]
+    pub(crate) fn new_with_token(
+        server: impl Into<String>,
+        token: Option<String>,
+    ) -> Result<Self, ApiError> {
+        Self::with_timeout_and_token(server, REQUEST_TIMEOUT, token)
+    }
+
+    fn with_timeout_and_token(
+        server: impl Into<String>,
+        timeout: Duration,
+        token: Option<String>,
+    ) -> Result<Self, ApiError> {
         let server = server.into();
         let http = crate::core::http::client(timeout, Some(CONNECT_TIMEOUT))
             .context("building the HTTP client")?;
@@ -488,8 +506,8 @@ impl Client {
 
         // An explicitly supplied token wins over a stored session. On a shared CI
         // runner the stored session may belong to someone else entirely.
-        let credential = match std::env::var(ENV_TOKEN) {
-            Ok(t) if !t.trim().is_empty() => Credential::ApiToken(SecretString::new(t.trim())),
+        let credential = match token {
+            Some(t) if !t.trim().is_empty() => Credential::ApiToken(SecretString::new(t.trim())),
             _ => Credential::Session,
         };
 

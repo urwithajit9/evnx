@@ -21,7 +21,7 @@ use std::cell::Cell;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use reqwest::header::{HeaderMap, ACCEPT, CONTENT_TYPE};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
 use reqwest::{Method, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::Value;
@@ -612,11 +612,7 @@ fn clean_code(code: Option<&str>) -> String {
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
         .take(64)
         .collect();
-    if c.is_empty() {
-        "unknown".into()
-    } else {
-        c
-    }
+    if c.is_empty() { "unknown".into() } else { c }
 }
 
 /// The `error.code` of a Vercel error body, as "error code X". For answers to

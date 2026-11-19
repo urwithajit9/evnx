@@ -14,7 +14,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::runner;
 use crate::cli::args::ValidateFormat;
@@ -147,21 +147,21 @@ pub(super) fn run(
             .and_then(|p| crate::cli::NamingPolicy::from_config(p).ok())
             .unwrap_or_default();
         let (result, docs) = captured(json_output, || {
-            crate::commands::sync::run(
-                env.clone(),
-                example.clone(),
-                None,
-                false,
+            crate::commands::sync::run(crate::commands::sync::SyncOptions {
+                env: env.clone(),
+                example: example.clone(),
+                direction: None,
+                placeholder: false,
                 verbose,
-                true,
-                false,
-                true,
-                if json_output { "json" } else { "pretty" }.to_string(),
-                None,
-                naming,
-                config.vars.clone(),
-                false,
-            )
+                dry_run: true,
+                force: false,
+                check: true,
+                format: if json_output { "json" } else { "pretty" }.to_string(),
+                template_config: None,
+                naming_policy: naming,
+                spec: config.vars.clone(),
+                skip_without_env: false,
+            })
         });
         let part = from_result(result);
         add_section(&mut sections, json_output, "sync", &part, docs);

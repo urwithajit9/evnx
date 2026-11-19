@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::core::parser::{Document, Parser, ParserConfig};
 
@@ -131,7 +131,9 @@ pub fn cut_entries(content: &str, names: &BTreeSet<String>, label: &str) -> Resu
         .filter(|k| !names.contains(k))
         .collect();
     if !after.is_clean() || keys(&after) != expected {
-        bail!("removing from {label} would change more than the entries asked for, so nothing was written");
+        bail!(
+            "removing from {label} would change more than the entries asked for, so nothing was written"
+        );
     }
     Ok(Cut { text, removed })
 }
@@ -258,7 +260,7 @@ pub fn dangling(content: &str, removed: &BTreeSet<String>) -> Vec<(usize, String
     let defined: BTreeSet<&str> = kept.clone().map(|e| e.key.as_str()).collect();
     let mut out = Vec::new();
     for e in kept.filter(|e| e.quote != Some('\'')) {
-        for name in crate::core::parser::references(&e.value) {
+        for name in crate::core::parser::references(e.value.expose()) {
             if removed.contains(&name) && !defined.contains(name.as_str()) {
                 out.push((e.span.line, e.key.clone(), name));
             }

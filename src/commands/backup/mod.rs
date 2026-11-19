@@ -104,13 +104,13 @@ pub use error::BackupError;
 //   crate::commands::backup::BackupMetadata    ← pub struct
 //   crate::commands::backup::encrypt_content   ← pub(crate) fn (tests only)
 #[cfg(feature = "backup")]
-pub use self::core::decrypt_content;
-#[cfg(all(feature = "backup", test))]
-pub(crate) use self::core::encrypt_content;
-#[cfg(feature = "backup")]
 pub use self::core::BackupMetadata;
 #[cfg(feature = "backup")]
 pub use self::core::DecryptError;
+#[cfg(feature = "backup")]
+pub use self::core::decrypt_content;
+#[cfg(all(feature = "backup", test))]
+pub(crate) use self::core::encrypt_content;
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 

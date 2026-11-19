@@ -482,9 +482,11 @@ mod tests {
 
     #[test]
     fn alias_resolves_to_the_command() {
-        assert!(run(&["rm", "-p", "x", "KEY"])
-            .unwrap()
-            .contains("'evnx remove'"));
+        assert!(
+            run(&["rm", "-p", "x", "KEY"])
+                .unwrap()
+                .contains("'evnx remove'")
+        );
     }
 
     #[test]
@@ -528,7 +530,9 @@ mod tests {
     fn value_entries_match_both_forms() {
         assert_eq!(
             run(&["diff", "--format", "text"]).as_deref(),
-            Some("error: '--format text' was removed from 'evnx diff' in 0.15.0; use '--format pretty'")
+            Some(
+                "error: '--format text' was removed from 'evnx diff' in 0.15.0; use '--format pretty'"
+            )
         );
         assert_eq!(run(&["diff", "--format", "json"]), None);
     }

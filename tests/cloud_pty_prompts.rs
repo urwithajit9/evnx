@@ -25,12 +25,12 @@
 mod support;
 
 use evnx_crypto::{
-    b64_encode, compute_verifier, derive_master_key, derive_srp_password, encrypt_private_key,
-    encrypt_vault, generate_keypair, generate_salt, salt_to_base64, vault_aad,
-    wrap_vault_key_with_master_key, MasterKey, VaultKey,
+    MasterKey, VaultKey, b64_encode, compute_verifier, derive_master_key, derive_srp_password,
+    encrypt_private_key, encrypt_vault, generate_keypair, generate_salt, salt_to_base64, vault_aad,
+    wrap_vault_key_with_master_key,
 };
-use support::pty::Pty;
 use support::Project;
+use support::pty::Pty;
 
 const VAULT_ID: &str = "0b8a1f8e-3c2d-4e5f-8a9b-1c2d3e4f5a6b";
 const PASSWORD: &str = "correct horse battery staple";

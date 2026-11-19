@@ -1,6 +1,7 @@
 use super::expand::LITERAL_DOLLAR;
 use super::lines::closing_quote_index;
 use super::*;
+use crate::core::secret::Vars;
 
 // ─── D16: a value containing `$` can be written ──────────────────────────
 //
@@ -9,7 +10,7 @@ use super::*;
 // containing `$NAME`, where NAME was also a key, was silently replaced — with
 // another of your secrets, and with no error.
 
-fn parse_one(content: &str) -> IndexMap<String, String> {
+fn parse_one(content: &str) -> Vars {
     Parser::default().parse_content(content).expect("parses")
 }
 
@@ -236,7 +237,7 @@ fn a_name_that_collides_with_a_key_is_no_longer_substituted() {
     let vars = parse_one("DB_PASS=hunter2\nAPI_KEY='prefix$DB_PASS'\n");
     assert_eq!(vars["API_KEY"], "prefix$DB_PASS");
     assert!(
-        !vars["API_KEY"].contains("hunter2"),
+        !vars["API_KEY"].expose().contains("hunter2"),
         "leaked another secret"
     );
 }
@@ -280,7 +281,7 @@ fn the_literal_dollar_marker_never_escapes() {
     ] {
         for (k, v) in parse_one(content) {
             assert!(
-                !v.contains(LITERAL_DOLLAR),
+                !v.expose().contains(LITERAL_DOLLAR),
                 "{k} leaked the marker from {content:?}: {v:?}"
             );
         }
@@ -298,7 +299,11 @@ fn the_marker_is_stripped_even_with_expansion_disabled() {
     let vars = parser
         .parse_content("B=world\nA=\"\\$B\"\n")
         .expect("parses");
-    assert!(!vars["A"].contains(LITERAL_DOLLAR), "{:?}", vars["A"]);
+    assert!(
+        !vars["A"].expose().contains(LITERAL_DOLLAR),
+        "{:?}",
+        vars["A"]
+    );
     assert_eq!(vars["A"], "$B");
 }
 
@@ -519,7 +524,7 @@ fn escape_sequences_mean_the_same_across_lines() {
     assert_eq!(one["V"], "x\ty and \"q\"");
     assert_eq!(two["V"], "x\ty and \"q\"\nz");
     // The spanning value is the single-line one plus a newline and `z`.
-    assert_eq!(two["V"], format!("{}\nz", one["V"]));
+    assert_eq!(two["V"], format!("{}\nz", one["V"].expose()));
 }
 
 /// Single quotes are literal by definition, so a backslash inside them
@@ -712,7 +717,7 @@ fn bare_references_chain() {
 #[test]
 fn bare_forward_reference_is_kept_not_a_cycle() {
     let vars = Parser::default().parse_content("A=$B/x\nB=$A/y\n").unwrap();
-    assert_eq!((vars["A"].as_str(), vars["B"].as_str()), ("$B/x", "$B/x/y"));
+    assert_eq!((vars["A"].expose(), vars["B"].expose()), ("$B/x", "$B/x/y"));
 }
 
 #[test]
@@ -923,8 +928,8 @@ fn q1_parser_conformance_is_pinned() {
             },
         ),
     ];
-    let show = |r: ParseResult<(IndexMap<String, String>, IndexMap<String, usize>)>| match r {
-        Ok(ok) => format!("{ok:?}"),
+    let show = |r: ParseResult<(Vars, IndexMap<String, usize>)>| match r {
+        Ok((vars, lines)) => format!("{:?}", (crate::core::secret::exposed_map(&vars), lines)),
         Err(e) => format!("Err({e:?})"),
     };
     // FNV-1a, 64-bit: stable across Rust versions, unlike `DefaultHasher`.
@@ -1027,11 +1032,14 @@ fn b1_duplicates_are_kept_and_the_last_one_counts() {
     let ks: Vec<(&str, &str, usize)> = doc
         .entries
         .iter()
-        .map(|e| (e.key.as_str(), e.value.as_str(), e.span.line))
+        .map(|e| (e.key.as_str(), e.value.expose(), e.span.line))
         .collect();
     assert_eq!(ks, [("K", "sk_live_x", 1), ("OTHER", "1", 2), ("K", "", 3)]);
     // First position, last value and line: what the parser always returned.
-    assert_eq!(format!("{:?}", doc.vars()), r#"{"K": "", "OTHER": "1"}"#);
+    assert_eq!(
+        format!("{:?}", crate::core::secret::exposed_map(&doc.vars())),
+        r#"{"K": "", "OTHER": "1"}"#
+    );
     assert_eq!(format!("{:?}", doc.lines()), r#"{"K": 3, "OTHER": 2}"#);
 }
 
@@ -1041,7 +1049,7 @@ fn b1_entries_carry_their_form_and_comments_are_kept() {
         .parse_document("# top\nexport A='x'\nB=\"l1\nl2\"\n  #   indented\nC=plain\n");
     let a = &doc.entries[0];
     assert!(a.exported);
-    assert_eq!((a.quote, a.raw.as_str()), (Some('\''), "export A='x'"));
+    assert_eq!((a.quote, a.raw.expose()), (Some('\''), "export A='x'"));
     let b = &doc.entries[1];
     assert_eq!(
         b.span,
@@ -1051,7 +1059,7 @@ fn b1_entries_carry_their_form_and_comments_are_kept() {
         }
     );
     assert_eq!(
-        (b.value.as_str(), b.raw.as_str()),
+        (b.value.expose(), b.raw.expose()),
         ("l1\nl2", "B=\"l1\nl2\"")
     );
     assert_eq!(doc.entries[2].quote, None);
@@ -1238,7 +1246,7 @@ fn p1_d10_expansion_runs_top_to_bottom() {
 
     // Reassigned after a reference: Compose reads A=1, and now so does evnx.
     let v = vars("B=1\nA=${B}\nB=2\n");
-    assert_eq!((v["A"].as_str(), v["B"].as_str()), ("1", "2"));
+    assert_eq!((v["A"].expose(), v["B"].expose()), ("1", "2"));
     // Through another variable, the value seen is the one assigned so far.
     assert_eq!(vars("B=1\nC=${B}\nA=${C}\nB=2\n")["A"], "1");
     // A value built on its earlier self: an error until 0.13.0, now Compose's 13.
@@ -1295,7 +1303,7 @@ fn p1_d12_keys_compose_accepts_are_read() {
     }
     let v = vars("spring.datasource.url=jdbc:x\nexport my-key=2\n");
     assert_eq!(
-        (v["spring.datasource.url"].as_str(), v["my-key"].as_str()),
+        (v["spring.datasource.url"].expose(), v["my-key"].expose()),
         ("jdbc:x", "2")
     );
 }

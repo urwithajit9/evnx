@@ -3,6 +3,7 @@
 // ============================================================================
 
 use crate::core::converter::{ConvertOptions, Converter};
+use crate::core::secret::Vars;
 use anyhow::Result;
 // use std::collections::HashMap;
 use indexmap::IndexMap;
@@ -10,7 +11,7 @@ use indexmap::IndexMap;
 pub struct AwsSecretsConverter;
 
 impl Converter for AwsSecretsConverter {
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         let transformed: IndexMap<String, String> =
             options.prepare(vars, self)?.into_iter().collect();
 

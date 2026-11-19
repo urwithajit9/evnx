@@ -4,7 +4,7 @@
 //! `commands[].path`. This is the one copy; each entry keeps its raw JSON for
 //! the fields a test needs beyond the path.
 
-use super::{run, Project};
+use super::{Project, run};
 use serde_json::Value;
 
 /// One entry of `commands`: a command path and its raw JSON.

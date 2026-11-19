@@ -5,7 +5,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 fn evnx(p: &Project, args: &[&str]) -> support::run::Output {
     run(p.path(), args)
@@ -62,10 +62,12 @@ fn it_is_reported_from_the_absent_side_too() {
     let found = partial(&doc);
     assert_eq!(found.len(), 1, "{doc:#}");
     assert_eq!(found[0]["variable"], "EXTRA");
-    assert!(found[0]["suggestion"]
-        .as_str()
-        .unwrap()
-        .contains("evnx remove EXTRA --all"));
+    assert!(
+        found[0]["suggestion"]
+            .as_str()
+            .unwrap()
+            .contains("evnx remove EXTRA --all")
+    );
 }
 
 #[test]
@@ -124,11 +126,13 @@ fn a_name_missing_here_is_not_reported_twice() {
         &["validate", "--env-name", "staging", "--format", "json"],
     );
     assert!(partial(&doc).is_empty(), "{doc:#}");
-    assert!(doc["issues"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|i| i["type"] == "missing_variable"));
+    assert!(
+        doc["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["type"] == "missing_variable")
+    );
 }
 
 #[test]

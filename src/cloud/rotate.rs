@@ -34,13 +34,13 @@
 //! password. Two independent ways back, for an operation that has no third.
 
 use crate::cloud::client::api_path;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use super::auth;
-use super::client::{reword, ApiError, Client};
+use super::client::{ApiError, Client, reword};
 use super::config::CloudConfig;
 
 // ─── Wire types ───────────────────────────────────────────────────────────────
@@ -83,8 +83,6 @@ struct ChallengeInit {
 struct ChallengeResponse {
     session_id: String,
     srp_salt: String,
-    #[allow(dead_code)]
-    argon2_salt: String,
     server_public: String,
 }
 
@@ -266,7 +264,7 @@ pub fn rotate(
                     "the server returned half a key wrap for {label}. Nothing has been \
                      changed. This should be impossible — a database constraint refuses \
                      that shape — so please report it."
-                ))
+                ));
             }
         }
     }
@@ -746,7 +744,7 @@ fn verify_rewrap(
     opened: &[OpenedVault],
 ) -> Result<()> {
     use evnx_crypto::{
-        b64_decode, decrypt_private_key, unwrap_vault_key_with_master_key, EncryptedPrivateKey,
+        EncryptedPrivateKey, b64_decode, decrypt_private_key, unwrap_vault_key_with_master_key,
     };
 
     let check_sealed = EncryptedPrivateKey::from_base64(new_sealed_b64)
@@ -924,8 +922,8 @@ mod tests {
     use super::*;
     use crate::cloud::testutil::ConfigDirGuard;
     use evnx_crypto::{
-        b64_encode, derive_master_key, encrypt_private_key, generate_keypair, generate_salt,
-        wrap_vault_key_with_master_key, VaultKey,
+        VaultKey, b64_encode, derive_master_key, encrypt_private_key, generate_keypair,
+        generate_salt, wrap_vault_key_with_master_key,
     };
     use serial_test::serial;
 

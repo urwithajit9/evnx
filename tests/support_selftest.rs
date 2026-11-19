@@ -9,7 +9,7 @@ mod support;
 use support::renderers::both_renderers;
 use support::run::strip_ansi;
 use support::snapshot::{check_golden, normalise};
-use support::{run, run_with, Project};
+use support::{Project, run, run_with};
 
 // ── strip_ansi ──────────────────────────────────────────────────────────────
 
@@ -131,9 +131,10 @@ fn git_makes_a_real_repository_on_main() {
     p.commit_all("first");
     assert_eq!(p.git_cmd(&["ls-files"]).trim(), ".gitignore");
     p.force_add(".env");
-    assert!(p
-        .git_cmd(&["diff", "--cached", "--name-only"])
-        .contains(".env"));
+    assert!(
+        p.git_cmd(&["diff", "--cached", "--name-only"])
+            .contains(".env")
+    );
 }
 
 #[test]
@@ -230,7 +231,7 @@ fn both_renderers_rejects_runs_that_change_different_files() {
 #[cfg(unix)]
 #[test]
 fn pty_drives_a_prompt_to_the_end() {
-    use support::pty::{Pty, ENTER};
+    use support::pty::{ENTER, Pty};
     let p = Project::new();
     let mut s = Pty::spawn(p.path(), &["add", "custom"]);
     s.wait_for("Variable name");

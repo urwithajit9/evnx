@@ -17,7 +17,7 @@
 //! the command is a login alert you did not recognise.
 
 use crate::cloud::client::api_path;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 

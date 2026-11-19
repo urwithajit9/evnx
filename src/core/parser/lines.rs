@@ -2,7 +2,7 @@
 //! escapes, and where a multiline value ends.
 
 use super::expand::LITERAL_DOLLAR;
-use super::{is_env_key, ParseError, ParseResult, Parser};
+use super::{ParseError, ParseResult, Parser, is_env_key};
 
 /// Where an unquoted value ends, given that `#` may start a comment.
 ///

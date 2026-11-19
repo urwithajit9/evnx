@@ -8,7 +8,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 /// The `[vars.NAME]` table for `name` in `text`, up to the next table.
 fn table<'a>(text: &'a str, name: &str) -> &'a str {

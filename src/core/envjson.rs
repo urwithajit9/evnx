@@ -9,7 +9,7 @@
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 
-use super::parser::{is_env_key, Document, Entry, Span};
+use super::parser::{Document, Entry, Span, is_env_key};
 
 /// The variables in `text`, as a [`Document`] with one entry per name.
 pub fn document_from_json(text: &str) -> Result<Document> {
@@ -57,9 +57,9 @@ pub fn document_from_json(text: &str) -> Result<Document> {
         }
         doc.entries.push(Entry {
             key,
-            value,
+            value: value.into(),
             span: Span::line(0),
-            raw: String::new(),
+            raw: String::new().into(),
             exported: false,
             quote: None,
         });

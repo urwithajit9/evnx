@@ -7,12 +7,12 @@
 mod support;
 
 use mockito::Matcher;
-use support::cloud::signed_in;
 use support::Project;
+use support::cloud::signed_in;
 
 use evnx_crypto::{
-    b64_encode, derive_master_key, encrypt_private_key, generate_keypair, generate_salt,
-    salt_to_base64, wrap_vault_key_with_master_key, VaultKey,
+    VaultKey, b64_encode, derive_master_key, encrypt_private_key, generate_keypair, generate_salt,
+    salt_to_base64, wrap_vault_key_with_master_key,
 };
 
 const VAULT_ID: &str = "22222222-2222-2222-2222-222222222222";

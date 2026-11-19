@@ -8,8 +8,8 @@
 mod support;
 
 #[cfg(unix)]
-use support::pty::{Pty, ENTER};
-use support::{run, Project};
+use support::pty::{ENTER, Pty};
+use support::{Project, run};
 
 fn sentinel() -> String {
     format!("SENTINEL_{}{}", "7b2e", "_decafe")

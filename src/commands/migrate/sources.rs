@@ -7,8 +7,8 @@
 //! | `env-file`      | Parse a `.env` file via `crate::core::Parser` |
 //! | `environment`   | Read from current process environment vars |
 
-use anyhow::{anyhow, Result};
-use indexmap::IndexMap;
+use crate::core::secret::Vars;
+use anyhow::{Result, anyhow};
 
 use crate::core::Parser;
 
@@ -19,7 +19,17 @@ use crate::core::Parser;
 /// * `source`   — one of `"env-file"` or `"environment"`.
 /// * `file`     — path to the `.env` file (only used when `source == "env-file"`).
 /// * `verbose`  — if `true`, print diagnostic messages.
-pub fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<IndexMap<String, String>> {
+pub fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<Vars> {
+    load_secrets_from(source, file, verbose, std::env::vars())
+}
+
+/// [`load_secrets`] with the process environment given as `environment`.
+pub fn load_secrets_from(
+    source: &str,
+    file: &str,
+    verbose: bool,
+    environment: impl IntoIterator<Item = (String, String)>,
+) -> Result<Vars> {
     if verbose {
         println!("Loading secrets from source='{}' file='{}'", source, file);
     }
@@ -33,7 +43,10 @@ pub fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<IndexMap<
             )?;
             Ok(env_file.vars)
         }
-        "environment" => Ok(crate::core::envsource::read()),
+        "environment" => Ok(crate::core::envsource::read_from(environment)
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect()),
         other => Err(anyhow!(
             "Unsupported source: '{}'. Valid options: env-file, environment",
             other
@@ -70,26 +83,29 @@ mod tests {
 
     #[test]
     fn test_load_secrets_from_environment() {
-        std::env::set_var("EVNX_TEST_SECRET_A", "alpha");
-        std::env::set_var("EVNX_TEST_SECRET_B", "beta");
+        let environment = [
+            ("EVNX_TEST_SECRET_A", "alpha"),
+            ("EVNX_TEST_SECRET_B", "beta"),
+            ("PATH", "/usr/bin"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string()));
 
-        let secrets = load_secrets("environment", "", false).unwrap();
+        let secrets = load_secrets_from("environment", "", false, environment).unwrap();
 
         assert!(secrets.contains_key("EVNX_TEST_SECRET_A"));
         assert!(secrets.contains_key("EVNX_TEST_SECRET_B"));
         assert!(!secrets.contains_key("PATH")); // system var filtered out
-
-        std::env::remove_var("EVNX_TEST_SECRET_A");
-        std::env::remove_var("EVNX_TEST_SECRET_B");
     }
 
     #[test]
     fn test_load_secrets_unsupported_source() {
         let result = load_secrets("vault", "", false);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unsupported source"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unsupported source")
+        );
     }
 }

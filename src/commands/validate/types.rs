@@ -155,11 +155,18 @@ pub struct FixApplied {
     /// one file, 0600, not a terminal scrollback or a CI log.
     #[serde(default)]
     pub old_value_withheld: bool,
-    /// What was written. ⛔ Never serialised: a report says how long the new
-    /// value is ([`new_length`](Self::new_length)), not what it is, because a
-    /// generated secret printed here lands in terminal scrollback and CI logs.
-    #[serde(skip_serializing, default)]
-    pub new_value: String,
+    /// What was written, **as a report may show it** (WP-17): `(empty)`, a
+    /// placeholder as it is, any other value masked, and nothing for a
+    /// generated one. ⛔ Never serialised, and never the value itself: the
+    /// fixer keeps that in the map it writes, so a report (and its `Debug`)
+    /// cannot hold a secret. A report says how long the new value is
+    /// ([`new_length`](Self::new_length)), not what it is.
+    #[serde(skip, default)]
+    pub new_shown: String,
+    /// Whether the written value is a placeholder the user must replace
+    /// (decides "Fixed" against "Needs your input", I-037).
+    #[serde(skip, default)]
+    pub placeholder: bool,
     /// Characters in the value that was written.
     #[serde(default)]
     pub new_length: usize,

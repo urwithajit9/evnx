@@ -11,6 +11,8 @@ use std::path::PathBuf;
 pub trait FormatSet: ValueEnum + Clone + Default + Send + Sync + 'static {
     /// The value `--json` stands for.
     fn json() -> Self;
+    /// How this format is written (`core::output`).
+    fn mode(&self) -> crate::core::output::Mode;
 }
 
 macro_rules! format_enum {
@@ -36,6 +38,12 @@ macro_rules! format_enum {
         impl FormatSet for $name {
             fn json() -> Self {
                 Self::Json
+            }
+            fn mode(&self) -> crate::core::output::Mode {
+                match self {
+                    Self::$first => crate::core::output::Mode::of(stringify!($first)),
+                    $(Self::$variant => crate::core::output::Mode::of(stringify!($variant)),)*
+                }
             }
         }
     };

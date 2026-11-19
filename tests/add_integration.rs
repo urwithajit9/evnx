@@ -17,7 +17,7 @@ mod support;
 
 use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
-use support::{run, Project};
+use support::{Project, run};
 use tempfile::TempDir;
 
 fn read_env_example(dir: &std::path::Path) -> anyhow::Result<String> {
@@ -34,8 +34,10 @@ fn setup_minimal_project(dir: &std::path::Path) -> anyhow::Result<()> {
 }
 
 fn setup_postgres_project(dir: &std::path::Path) -> anyhow::Result<()> {
-    std::fs::write(dir.join(".env.example"),
-        "DATABASE_URL=postgresql://user:pass@localhost/prod_db\nDB_HOST=prod-db.example.com\nDB_NAME=production\n")?;
+    std::fs::write(
+        dir.join(".env.example"),
+        "DATABASE_URL=postgresql://user:pass@localhost/prod_db\nDB_HOST=prod-db.example.com\nDB_NAME=production\n",
+    )?;
     Ok(())
 }
 
@@ -1490,9 +1492,10 @@ fn t_i250_postgres_stacks_use_the_postgres_url() {
     // Django on its own keeps its own default (N-21).
     let p = Project::new();
     run(p.path(), &["init", "--with", "django", "--yes"]).assert_code(0);
-    assert!(p
-        .read(".env.example")
-        .contains("DATABASE_URL=sqlite:///db.sqlite3\n"));
+    assert!(
+        p.read(".env.example")
+            .contains("DATABASE_URL=sqlite:///db.sqlite3\n")
+    );
 }
 
 /// I-251: `add custom` into a folder with no `.env` creates one (0600) holding

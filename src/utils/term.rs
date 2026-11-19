@@ -28,7 +28,7 @@ pub fn silence_output() {
 #[cfg(windows)]
 pub fn silence_output() {
     use std::os::windows::io::IntoRawHandle;
-    extern "system" {
+    unsafe extern "system" {
         fn SetStdHandle(which: u32, handle: *mut std::ffi::c_void) -> i32;
     }
     const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
@@ -126,21 +126,38 @@ pub fn restore_cursor_on_interrupt() {
 
     extern "C" fn on_interrupt(signal: libc::c_int) {
         const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
-        // SAFETY: `write`, `signal` and `raise` are async-signal-safe, and
-        // nothing else happens in this handler.
+        // SAFETY: `write` and `raise` are async-signal-safe, and nothing else
+        // happens in this handler. `SA_RESETHAND` (below) already put the
+        // default action back before the handler started, so the `raise` ends
+        // the process the way an uncaught SIGINT does: the signal is blocked
+        // while the handler runs and is delivered, with `SIG_DFL`, on return.
         unsafe {
             libc::write(2, SHOW_CURSOR.as_ptr().cast(), SHOW_CURSOR.len());
-            libc::signal(signal, libc::SIG_DFL);
             libc::raise(signal);
         }
     }
 
-    // SAFETY: installs a handler that only calls async-signal-safe functions.
+    install_reset_handler(libc::SIGINT, on_interrupt);
+}
+
+/// Install `handler` for `signal` with `sigaction` and `SA_RESETHAND`: the
+/// kernel puts the default action back as the handler starts, so the handler
+/// never has to call `signal` itself.
+#[cfg(unix)]
+fn install_reset_handler(signal: libc::c_int, handler: extern "C" fn(libc::c_int)) {
+    // SAFETY: a zeroed `sigaction` is a valid starting value (empty mask, no
+    // flags); the fields that matter are set below.
+    let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+    action.sa_sigaction = handler as libc::sighandler_t;
+    action.sa_flags = libc::SA_RESETHAND;
+    // SAFETY: `action.sa_mask` is a valid `sigset_t` to initialise.
     unsafe {
-        libc::signal(
-            libc::SIGINT,
-            on_interrupt as extern "C" fn(libc::c_int) as libc::sighandler_t,
-        );
+        libc::sigemptyset(&mut action.sa_mask);
+    }
+    // SAFETY: `action` is fully initialised, a null old-action pointer is
+    // allowed, and the handlers passed in only call async-signal-safe functions.
+    unsafe {
+        libc::sigaction(signal, &action, std::ptr::null_mut());
     }
 }
 
@@ -226,6 +243,50 @@ mod tests {
         for v in ["", " ", "0", "false", "False"] {
             assert!(!is_ci_value(v), "{v:?}");
         }
+    }
+
+    /// RUST-9: the handler is installed with `sigaction` and `SA_RESETHAND`, so
+    /// the kernel, not the handler, restores the default action. Tested by
+    /// behaviour, not by reading `sa_flags` back: macOS honours
+    /// `SA_RESETHAND` but does not report it in the flags it returns.
+    #[cfg(unix)]
+    #[test]
+    fn the_cursor_handler_resets_itself_on_entry() {
+        use std::mem::MaybeUninit;
+        use std::sync::atomic::Ordering;
+        // The handler is only installed on a terminal, so test a signal we own,
+        // installed the same way.
+        let mut old = MaybeUninit::<libc::sigaction>::uninit();
+        // SAFETY: reads SIGUSR2's current action into `old`.
+        let rc = unsafe { libc::sigaction(libc::SIGUSR2, std::ptr::null(), old.as_mut_ptr()) };
+        assert_eq!(rc, 0);
+        // SAFETY: initialised by the successful call above.
+        let old = unsafe { old.assume_init() };
+
+        RAN.store(false, Ordering::SeqCst);
+        install_reset_handler(libc::SIGUSR2, flag_handler);
+        // SAFETY: `raise` delivers SIGUSR2 to this thread before it returns;
+        // the handler installed above only stores to an atomic.
+        unsafe { libc::raise(libc::SIGUSR2) };
+        assert!(RAN.load(Ordering::SeqCst), "the handler ran once");
+
+        let mut now = MaybeUninit::<libc::sigaction>::uninit();
+        // SAFETY: as above.
+        unsafe { libc::sigaction(libc::SIGUSR2, std::ptr::null(), now.as_mut_ptr()) };
+        // SAFETY: initialised by the call above.
+        let now = unsafe { now.assume_init() };
+        let reset = now.sa_sigaction == libc::SIG_DFL;
+        // SAFETY: puts back what was there.
+        unsafe { libc::sigaction(libc::SIGUSR2, &old, std::ptr::null_mut()) };
+        assert!(reset, "after one delivery the action is the default again");
+    }
+
+    #[cfg(unix)]
+    static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    #[cfg(unix)]
+    extern "C" fn flag_handler(_: libc::c_int) {
+        RAN.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     #[test]

@@ -10,7 +10,7 @@
 mod support;
 
 use support::install::Install;
-use support::{run, Project};
+use support::{Project, run};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -68,9 +68,11 @@ fn t_sf02_json_is_schema_1_from_this_version() {
     let json = support::surface::payload();
     assert_eq!(json["schema"], 1);
     assert_eq!(json["evnx_version"], VERSION);
-    assert!(support::surface::entries()
-        .iter()
-        .all(|e| !e.path.iter().any(|p| p == "help")));
+    assert!(
+        support::surface::entries()
+            .iter()
+            .all(|e| !e.path.iter().any(|p| p == "help"))
+    );
 }
 
 /// T-SF-03: `--compact` is one line of the same payload, and needs `--json`.

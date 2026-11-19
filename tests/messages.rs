@@ -6,7 +6,7 @@ mod support;
 
 use serde_json::Value;
 use support::surface::{entries, payload};
-use support::{run, Project};
+use support::{Project, run};
 
 /// Every command path of the build, from `evnx commands --json`.
 fn paths() -> Vec<Vec<String>> {

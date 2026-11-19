@@ -18,9 +18,9 @@
 
 use evnx::core::classify::is_sensitive_key;
 use evnx::core::secretscan::engine::{self, Context, Kind};
-use evnx::core::secretscan::rules::{builtin_rules, catalogue_ids, public_prefix, CHECK_IDS};
+use evnx::core::secretscan::rules::{CHECK_IDS, builtin_rules, catalogue_ids, public_prefix};
 use evnx::core::secretscan::{DetectorRegistry, PatternSet};
-use evnx::schema::loader::{scan_view, ScanView};
+use evnx::schema::loader::{ScanView, scan_view};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn schema() -> serde_json::Value {

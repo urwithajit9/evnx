@@ -167,40 +167,50 @@ fn install_is_idempotent_and_keeps_and_restores_an_existing_hook() {
     fs::create_dir_all(hook.parent().unwrap()).unwrap();
     fs::write(&hook, "#!/bin/sh\necho mine\n").unwrap();
     for _ in 0..2 {
-        assert!(evnx(d.path(), &["scan", "hook", "install"])
-            .status
-            .success());
+        assert!(
+            evnx(d.path(), &["scan", "hook", "install"])
+                .status
+                .success()
+        );
     }
     let text = fs::read_to_string(&hook).unwrap();
     assert_eq!(text.matches(">>> evnx scan (managed) >>>").count(), 1);
     assert!(text.starts_with("#!/bin/sh\necho mine\n"));
     let status = evnx(d.path(), &["scan", "hook", "status"]);
     assert!(String::from_utf8_lossy(&status.stdout).contains("installed:"));
-    assert!(evnx(d.path(), &["scan", "hook", "uninstall"])
-        .status
-        .success());
+    assert!(
+        evnx(d.path(), &["scan", "hook", "uninstall"])
+            .status
+            .success()
+    );
     assert_eq!(fs::read_to_string(&hook).unwrap(), "#!/bin/sh\necho mine\n");
 }
 
 #[test]
 fn a_new_hook_is_removed_whole_by_uninstall() {
     let Some(d) = repo() else { return };
-    assert!(evnx(d.path(), &["scan", "hook", "install"])
-        .status
-        .success());
+    assert!(
+        evnx(d.path(), &["scan", "hook", "install"])
+            .status
+            .success()
+    );
     let hook = hook_file(d.path());
-    assert!(fs::read_to_string(&hook)
-        .unwrap()
-        .starts_with("#!/bin/sh\n"));
+    assert!(
+        fs::read_to_string(&hook)
+            .unwrap()
+            .starts_with("#!/bin/sh\n")
+    );
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let mode = fs::metadata(&hook).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o755);
     }
-    assert!(evnx(d.path(), &["scan", "hook", "uninstall"])
-        .status
-        .success());
+    assert!(
+        evnx(d.path(), &["scan", "hook", "uninstall"])
+            .status
+            .success()
+    );
     assert!(!hook.exists());
 }
 
@@ -209,9 +219,11 @@ fn core_hooks_path_is_honoured() {
     let Some(d) = repo() else { return };
     assert!(git(d.path(), &["config", "core.hooksPath", "githooks"]));
     // `git config` above wrote the repository's own config, which the run reads.
-    assert!(evnx(d.path(), &["scan", "hook", "install"])
-        .status
-        .success());
+    assert!(
+        evnx(d.path(), &["scan", "hook", "install"])
+            .status
+            .success()
+    );
     assert!(d.path().join("githooks/pre-commit").exists());
     assert!(!hook_file(d.path()).exists());
 }
@@ -258,9 +270,11 @@ fn with_evnx_on_path() -> String {
 #[test]
 fn the_hook_blocks_a_staged_secret_without_printing_it() {
     let Some(d) = repo() else { return };
-    assert!(evnx(d.path(), &["scan", "hook", "install"])
-        .status
-        .success());
+    assert!(
+        evnx(d.path(), &["scan", "hook", "install"])
+            .status
+            .success()
+    );
     fs::write(
         d.path().join("a.env"),
         format!("AWS_ACCESS_KEY_ID={}\n", aws()),
@@ -289,9 +303,11 @@ fn the_hook_blocks_a_staged_secret_without_printing_it() {
 #[test]
 fn the_hook_blocks_when_evnx_is_missing() {
     let Some(d) = repo() else { return };
-    assert!(evnx(d.path(), &["scan", "hook", "install"])
-        .status
-        .success());
+    assert!(
+        evnx(d.path(), &["scan", "hook", "install"])
+            .status
+            .success()
+    );
     fs::write(d.path().join("a.txt"), "hello\n").unwrap();
     assert!(git(d.path(), &["add", "a.txt"]));
     // git and sh, without the folder evnx is built into.

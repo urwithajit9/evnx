@@ -14,7 +14,7 @@
 
 mod support;
 
-use support::{run, run_with, Project};
+use support::{Project, run, run_with};
 
 const DB_URL_ENV: &str = "postgres://admin:s3cr3t@db.internal:5432/app";
 const TOKEN: &str = "sk_live_51H1234567890abcdefghijk";

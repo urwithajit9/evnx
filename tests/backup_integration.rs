@@ -11,7 +11,7 @@
 
 mod support;
 
-use support::{run, run_with, Project};
+use support::{Project, run, run_with};
 
 const ENV: &str = "DB_URL=postgres://user:pw@db.internal/app\nAPI_SECRET=sk_demo_000\n";
 const PW: &str = "demo-passphrase-123\n";

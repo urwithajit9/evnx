@@ -14,6 +14,7 @@ use std::path::Path;
 use anyhow::Result;
 
 use crate::core::gitignore;
+use crate::core::output::{Out, Report};
 use crate::schema::models::VarCollection;
 use crate::utils::ui;
 
@@ -301,36 +302,102 @@ pub(crate) fn print_dry_run(p: &Planned, root: &Path) {
     }
 }
 
-/// `--json`: the result (or, with `--dry-run`, the plan) as one document.
-/// Names only; nothing from `.env`, ever.
+/// `init`'s final result: the plan as the dry-run listing, or as the `--json`
+/// document. Names only; nothing from `.env`, ever.
 ///
 /// Fields shared with `add --json` (DQ-21): `dry_run`, `written`, `added`,
 /// `skipped`, `conflicts`, `env_added`, `env_created`, `env_committable`,
 /// `template`, `gitignore`, `contract` (`action`, `file`, `added`), `notices`.
-pub(crate) fn print_json(p: &Planned, dry_run: bool, root: &Path) -> anyhow::Result<()> {
-    let env_committable = !dry_run && !gitignore::env_file_is_protected(root, &p.env_file);
-    let doc = serde_json::json!({
-        "dry_run": dry_run,
-        "written": !dry_run,
-        "added": p.added,
-        "skipped": Vec::<String>::new(),
-        "conflicts": Vec::<serde_json::Value>::new(),
-        "env_added": p.env_added,
-        "env_created": matches!(p.env, EnvAction::Create | EnvAction::Copy),
-        "env_committable": env_committable,
-        "template": p.template,
-        "gitignore": p.gitignore,
-        "contract": {
-            "action": p.contract.action,
-            "file": p.contract.file.as_deref().map(ui::short_path),
-            "added": p.contract.added,
-        },
-        "notices": p.notices,
-    });
-    // Only when set, so every other run's document is as it was.
-    let mut doc = doc;
-    if let Some(name) = &p.defaults {
-        doc["defaults"] = serde_json::json!({ "env_name": name });
+#[derive(Debug)]
+pub(crate) struct InitReport<'a> {
+    pub plan: &'a Planned,
+    pub dry_run: bool,
+    /// `.env` was written and git would commit it.
+    pub env_committable: bool,
+    /// The project folder the dry-run listing names files under.
+    pub root: &'a Path,
+}
+
+impl<'a> InitReport<'a> {
+    pub(crate) fn new(plan: &'a Planned, dry_run: bool, root: &'a Path) -> Self {
+        Self {
+            plan,
+            dry_run,
+            env_committable: !dry_run && !gitignore::env_file_is_protected(root, &plan.env_file),
+            root,
+        }
     }
-    crate::core::json::emit(&doc, 1, None)
+}
+
+impl serde::Serialize for InitReport<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        let p = self.plan;
+        let dry_run = self.dry_run;
+        let doc = serde_json::json!({
+            "dry_run": dry_run,
+            "written": !dry_run,
+            "added": p.added,
+            "skipped": Vec::<String>::new(),
+            "conflicts": Vec::<serde_json::Value>::new(),
+            "env_added": p.env_added,
+            "env_created": matches!(p.env, EnvAction::Create | EnvAction::Copy),
+            "env_committable": self.env_committable,
+            "template": p.template,
+            "gitignore": p.gitignore,
+            "contract": {
+                "action": p.contract.action,
+                "file": p.contract.file.as_deref().map(ui::short_path),
+                "added": p.contract.added,
+            },
+            "notices": p.notices,
+        });
+        // Only when set, so every other run's document is as it was.
+        let mut doc = doc;
+        if let Some(name) = &p.defaults {
+            doc["defaults"] = serde_json::json!({ "env_name": name });
+        }
+        doc.serialize(s)
+    }
+}
+
+impl Report for InitReport<'_> {
+    fn text(&self, _out: &Out) -> Result<()> {
+        print_dry_run(self.plan, self.root);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A planned run names files and variables; its `Debug` and JSON hold
+    /// no value (WP-17).
+    #[test]
+    fn the_report_holds_no_value() {
+        let canary = crate::core::output::canary::value();
+        let plan = Planned {
+            template: ".env.example".to_string(),
+            env_file: ".env".to_string(),
+            template_action: TemplateAction::Create,
+            added: vec!["API_TOKEN".to_string()],
+            env: EnvAction::Create,
+            env_added: vec!["API_TOKEN".to_string()],
+            gitignore: Vec::new(),
+            contract: ContractPlan {
+                action: "created",
+                file: None,
+                added: vec!["API_TOKEN".to_string()],
+            },
+            notices: Vec::new(),
+            defaults: None,
+        };
+        let report = InitReport {
+            plan: &plan,
+            dry_run: true,
+            env_committable: false,
+            root: Path::new("."),
+        };
+        crate::core::output::canary::assert_report_clean(&canary, &report);
+    }
 }

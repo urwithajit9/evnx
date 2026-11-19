@@ -8,7 +8,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 #[test]
 fn t_i135_bare_dollar_names_in_nginx_text_are_left_alone() {

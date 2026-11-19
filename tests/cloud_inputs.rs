@@ -13,7 +13,7 @@
 
 mod support;
 
-use support::{run_with, Project};
+use support::{Project, run_with};
 
 const CLOSED: &str = "http://127.0.0.1:9";
 

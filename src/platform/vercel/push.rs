@@ -37,17 +37,17 @@
 //!   has a value in it. A response body is never printed: create and delete
 //!   answers echo ciphertext.
 
+use crate::core::secret::{Secret, Vars};
 use std::collections::HashMap;
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use colored::Colorize;
-use indexmap::IndexMap;
 use serde_json::json;
 
 use super::api::{Created, Failure, Kind, NewEnv, RemoteVar};
 use super::plan::{self, Action, Environment, Remote, Why};
-use super::{shown, state, Session};
+use super::{Session, shown, state};
 use crate::cli::PlatformPushArgs;
 use crate::core::verdict::Verdict;
 use crate::platform::error::PlatformError;
@@ -237,14 +237,20 @@ impl PushPlan {
 
 /// A new entry for `env` (and the branch, for preview): a built-in environment
 /// by `target`, a custom one by `customEnvironmentIds` with no `target`.
-fn new_entry(env: &Environment, opts: &Options, key: &str, value: &str, type_: String) -> NewEnv {
+fn new_entry(
+    env: &Environment,
+    opts: &Options,
+    key: &str,
+    value: &Secret,
+    type_: String,
+) -> NewEnv {
     let (target, custom_environment_ids) = match env {
         Environment::Custom(c) => (vec![], c.id.iter().cloned().collect()),
         built_in => (vec![built_in.name().to_string()], vec![]),
     };
     NewEnv {
         key: key.to_string(),
-        value: SecretString::new(value),
+        value: value.clone(),
         type_,
         target,
         custom_environment_ids,
@@ -321,15 +327,10 @@ fn existing_type(r: &Remote) -> String {
 
 /// Work out what push does. `remote` holds the chosen environment's entries,
 /// with the Config values the local file has keys for already read.
-pub fn build(
-    local: &IndexMap<String, String>,
-    remote: &[Remote],
-    env: &Environment,
-    opts: &Options,
-) -> PushPlan {
+pub fn build(local: &Vars, remote: &[Remote], env: &Environment, opts: &Options) -> PushPlan {
     // A key with an empty value is out of the comparison altogether, so that it
     // is neither "remote only" nor an update that would blank a Secret.
-    let sendable: IndexMap<String, String> = local
+    let sendable: Vars = local
         .iter()
         .filter(|(_, v)| !v.is_empty())
         .map(|(k, v)| (k.clone(), v.clone()))
@@ -346,7 +347,7 @@ pub fn build(
             let (kind, note) = match remote_by_key.get(key.as_str()) {
                 Some(r) => (r.kind, "empty value locally; Vercel's is left as it is"),
                 None => (
-                    plan::suggested_kind(key, value),
+                    plan::suggested_kind(key, value.expose()),
                     "empty value; nothing to create",
                 ),
             };
@@ -416,7 +417,7 @@ pub fn build(
                             out.patches.push(Patch {
                                 key: key.clone(),
                                 id: r.var.id.clone(),
-                                value: SecretString::new(value.as_str()),
+                                value: value.clone(),
                             });
                         } else {
                             push_row.note = Some(format!(
@@ -632,7 +633,7 @@ pub fn apply(session: &Session, plan: &PushPlan) -> Result<Outcome> {
                         "leaving a shared entry of {}: {}",
                         s.key,
                         progress(&out)
-                    )))
+                    )));
                 }
             },
         }
@@ -699,7 +700,7 @@ pub fn apply(session: &Session, plan: &PushPlan) -> Result<Outcome> {
                         "updating {}: {}",
                         p.key,
                         progress(&out)
-                    )))
+                    )));
                 }
             },
         }
@@ -724,7 +725,7 @@ pub fn apply(session: &Session, plan: &PushPlan) -> Result<Outcome> {
                         "removing {} from a shared entry: {}",
                         d.key,
                         progress(&out)
-                    )))
+                    )));
                 }
             },
         }
@@ -745,7 +746,7 @@ pub fn apply(session: &Session, plan: &PushPlan) -> Result<Outcome> {
                         "deleting {}: {}",
                         d.key,
                         progress(&out)
-                    )))
+                    )));
                 }
             },
         }
@@ -988,11 +989,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
 }
 
 fn plural(n: usize) -> &'static str {
-    if n == 1 {
-        ""
-    } else {
-        "s"
-    }
+    if n == 1 { "" } else { "s" }
 }
 
 /// `super::record`, with its "recorded" line off stdout under `--format json`.
@@ -1149,6 +1146,7 @@ mod tests {
     }
 
     use super::*;
+    use crate::core::secret::Vars;
     use serde_json::Value;
 
     fn remote(id: &str, key: &str, kind: Kind, target: &[&str], value: Option<&str>) -> Remote {
@@ -1173,10 +1171,10 @@ mod tests {
         }
     }
 
-    fn local(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+    fn local(pairs: &[(&str, &str)]) -> Vars {
         pairs
             .iter()
-            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .map(|(k, v)| ((*k).to_string(), (*v).into()))
             .collect()
     }
 
@@ -1306,11 +1304,13 @@ mod tests {
         assert_eq!(p.creates[0].type_, "encrypted");
         assert_eq!(p.creates[1].type_, "sensitive");
         assert!(p.creates.iter().all(|c| c.target == ["development"]));
-        assert!(p.rows[0]
-            .note
-            .as_deref()
-            .unwrap()
-            .starts_with("split: Preview keeps its own entry"));
+        assert!(
+            p.rows[0]
+                .note
+                .as_deref()
+                .unwrap()
+                .starts_with("split: Preview keeps its own entry")
+        );
         assert_eq!(p.rows[0].split, ["Preview"]);
         assert_eq!(p.rows[1].split, ["Production"]);
         assert_eq!(
@@ -1442,10 +1442,11 @@ mod tests {
         assert!(p.patches.is_empty() && p.splits.is_empty());
         assert!(p.deletes.is_empty() && p.detaches.is_empty());
         assert_eq!(p.creates.len(), 2);
-        assert!(p
-            .creates
-            .iter()
-            .all(|c| c.git_branch.as_deref() == Some("feature") && c.target == ["preview"]));
+        assert!(
+            p.creates
+                .iter()
+                .all(|c| c.git_branch.as_deref() == Some("feature") && c.target == ["preview"])
+        );
         assert_eq!(op(&p, "SAME"), PushOp::Unchanged);
         let note = |k: &str| {
             p.rows

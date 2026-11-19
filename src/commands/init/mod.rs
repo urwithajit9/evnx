@@ -26,7 +26,26 @@ mod report;
 pub(crate) mod shared;
 mod source;
 
-pub use shared::{target_config, write_env_files, WriteOptions};
+pub use shared::{WriteOptions, target_config, write_env_files};
+
+/// What `evnx init` was asked for.
+pub struct InitOptions {
+    pub path: String,
+    pub yes: bool,
+    pub force: bool,
+    pub blueprint: Option<String>,
+    pub with: Vec<String>,
+    pub list_components: bool,
+    pub detect_flag: bool,
+    pub from_source: bool,
+    pub verbose: bool,
+    pub config: crate::core::config::Config,
+    pub dry_run: bool,
+    pub json: bool,
+    pub env_name: Option<String>,
+    pub here: bool,
+    pub no_contract: bool,
+}
 
 /// Main entry point for `evnx init`
 ///
@@ -43,24 +62,24 @@ pub use shared::{target_config, write_env_files, WriteOptions};
 ///
 /// A blueprint is still available non-interactively — by name:
 /// `evnx init --yes --blueprint t3_modern`.
-#[allow(clippy::too_many_arguments)]
-pub fn run(
-    path: String,
-    yes: bool,
-    force: bool,
-    blueprint: Option<String>,
-    with: Vec<String>,
-    list_components: bool,
-    detect_flag: bool,
-    from_source: bool,
-    verbose: bool,
-    config: crate::core::config::Config,
-    dry_run: bool,
-    json: bool,
-    env_name: Option<String>,
-    here: bool,
-    no_contract: bool,
-) -> Result<()> {
+pub fn run(options: InitOptions) -> Result<()> {
+    let InitOptions {
+        path,
+        yes,
+        force,
+        blueprint,
+        with,
+        list_components,
+        detect_flag,
+        from_source,
+        verbose,
+        config,
+        dry_run,
+        json,
+        env_name,
+        here,
+        no_contract,
+    } = options;
     // ⚠️ Before the header and before any project is touched. Listing is a
     // question about evnx, not about this directory — it has to work with no
     // project, no prompt and no side effects, because it is what the "unknown

@@ -20,7 +20,7 @@ use colored::Colorize;
 
 use super::api::Kind;
 use super::plan::{self, PullChange, PullOp};
-use super::{shown, Session};
+use super::{Session, shown};
 use crate::cli::PlatformPullArgs;
 use crate::platform::local;
 use crate::utils::protect::GitignoreMode;

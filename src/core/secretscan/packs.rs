@@ -6,7 +6,7 @@
 //! is not hash-checked. Nothing here touches the network: fetching is the
 //! `evnx scan rules add|update` command's, and only theirs.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -74,7 +74,7 @@ impl Lock {
                 return Ok(Lock {
                     version: 1,
                     packs: Vec::new(),
-                })
+                });
             }
             Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
         };
@@ -441,8 +441,8 @@ fn ascii_classes(re: &str) -> String {
 
 /// `rules` as an evnx rule file (version 1), after `header` comment lines.
 pub fn to_rule_file(rules: &[PatternRule], header: &[String]) -> Result<String> {
-    use toml::map::Map;
     use toml::Value;
+    use toml::map::Map;
     let mut list = Vec::with_capacity(rules.len());
     for r in rules {
         let mut t = Map::new();

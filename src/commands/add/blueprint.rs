@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::path::Path;
 
-use super::shared::{confirm_and_apply, Flow, Mode, Outcome};
+use super::shared::{Flow, Mode, Outcome, confirm_and_apply};
 use crate::schema::{formatter, loader, resolver};
 use crate::utils::string::count;
 

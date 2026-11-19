@@ -4,7 +4,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const VARS: &str = "[vars.DB_URL]\nformat = \"url\"\n\n[vars.PORT]\nrequired = false\n\n\
                     [vars.STRIPE_KEY]\nenvironments = [\"production\"]\n";

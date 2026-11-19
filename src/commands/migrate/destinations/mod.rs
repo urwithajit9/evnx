@@ -28,7 +28,7 @@ pub mod vercel;
 pub mod github;
 
 use crate::core::args::{self, Name};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 // Re-export the trait so callers can write `destinations::MigrationDestination`
 // without having to reach back up two levels to `migrate::destination`.
@@ -172,11 +172,7 @@ pub fn flags_a_real_run_needs(slug: &str, args: &MigrateArgs) -> Vec<&'static st
         "heroku" => ("--heroku-app", args.heroku_app.is_some()),
         _ => return Vec::new(),
     };
-    if given {
-        Vec::new()
-    } else {
-        vec![flag]
-    }
+    if given { Vec::new() } else { vec![flag] }
 }
 
 /// Resolve a destination slug to a boxed `MigrationDestination`.
@@ -448,11 +444,13 @@ mod tests {
         let args = full_args();
         let result = get_destination("consul", &args);
         assert!(result.is_err());
-        assert!(result
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("Unknown destination"));
+        assert!(
+            result
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Unknown destination")
+        );
     }
 
     #[test]

@@ -19,8 +19,8 @@
 
 mod support;
 
-use support::pty::{Pty, ENTER};
-use support::{run_with, Project};
+use support::pty::{ENTER, Pty};
+use support::{Project, run_with};
 
 /// 32 bytes, base64: a key GitHub's sealed-box encryption accepts.
 const PUBLIC_KEY: &str = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=";

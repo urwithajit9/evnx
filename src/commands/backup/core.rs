@@ -545,7 +545,9 @@ pub enum DecryptError {
     #[error("Decryption failed. The passphrase may be incorrect or the backup file is corrupt.")]
     WrongPasswordOrTampered,
     /// The envelope's schema is newer than this evnx.
-    #[error("This backup's contents use schema version {schema}, made by a newer evnx. Upgrade evnx to restore it.")]
+    #[error(
+        "This backup's contents use schema version {schema}, made by a newer evnx. Upgrade evnx to restore it."
+    )]
     NewerSchema {
         /// The envelope's `schema_version`.
         schema: u64,
@@ -588,10 +590,10 @@ pub(crate) fn encrypt_content(
     original_filename: &str,
 ) -> Result<String> {
     use aes_gcm::{
-        aead::{rand_core::RngCore, Aead, KeyInit, OsRng},
         Aes256Gcm, Nonce,
+        aead::{Aead, KeyInit, OsRng, rand_core::RngCore},
     };
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
 
     // ── JSON metadata envelope ────────────────────────────────────────────────
     // Stored inside the ciphertext so it is confidential and tamper-evident.
@@ -665,10 +667,10 @@ pub(crate) fn encrypt_content(
 #[cfg(feature = "backup")]
 pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupMetadata)> {
     use aes_gcm::{
-        aead::{Aead, KeyInit},
         Aes256Gcm, Nonce,
+        aead::{Aead, KeyInit},
     };
-    use base64::{engine::general_purpose, DecodeError, Engine as _};
+    use base64::{DecodeError, Engine as _, engine::general_purpose};
 
     // ── Base64 decode ─────────────────────────────────────────────────────────
     let text = encoded.trim();
@@ -836,7 +838,7 @@ mod tests {
     /// The smallest backup evnx can write is not called truncated.
     #[test]
     fn t_i149_the_smallest_backup_is_not_too_short() {
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         let encoded = encrypt_content("", "password-123", "a").unwrap();
         let raw = general_purpose::STANDARD.decode(&encoded).unwrap();
         assert!(raw.len() >= MIN_LEN, "{} < {MIN_LEN}", raw.len());
@@ -855,7 +857,7 @@ mod tests {
                 other => panic!("unexpected {other:?}"),
             }
         };
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         let good = encrypt_content("A=1\n", "password-123", ".env").unwrap();
         let mut raw = general_purpose::STANDARD.decode(&good).unwrap();
 
@@ -919,7 +921,7 @@ mod tests {
     #[test]
     #[cfg(feature = "backup")]
     fn test_tampered_ciphertext_is_rejected() {
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
 
         let encrypted =
             encrypt_content("KEY=value\n", "password", ".env").expect("encryption must succeed");

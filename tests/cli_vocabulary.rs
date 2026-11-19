@@ -24,7 +24,7 @@
 mod support;
 
 use serde_json::Value;
-use support::surface::{entries, Entry};
+use support::surface::{Entry, entries};
 
 /// (command path, rule) pairs that are allowed to fail. Every row is a permanent
 /// exception and says why (`// permanent: <reason>`); a command that merely has
@@ -158,7 +158,7 @@ fn allow_list_has_no_duplicates() {
 /// is reported with the exact message.
 #[test]
 fn removed_spellings_are_reported_by_check() {
-    use evnx::cli::removed::{check, message, Removed};
+    use evnx::cli::removed::{Removed, check, message};
     use std::ffi::OsString;
     let all = entries();
     for r in evnx::cli::removed::REMOVED {

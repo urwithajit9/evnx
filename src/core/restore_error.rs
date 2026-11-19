@@ -191,10 +191,12 @@ mod tests {
     #[test]
     fn cancelled_and_validation_fallback_are_silent() {
         assert!(RestoreError::Cancelled.is_silent());
-        assert!(RestoreError::ValidationFallback {
-            fallback_path: "x".into()
-        }
-        .is_silent());
+        assert!(
+            RestoreError::ValidationFallback {
+                fallback_path: "x".into()
+            }
+            .is_silent()
+        );
     }
 
     #[test]

@@ -556,7 +556,7 @@ fn extract_key_names(content: &str) -> Vec<String> {
     // inside a multiline value: a base64 line ending in `=` is a key body.
     let doc = parser.parse_document(content);
     let refused = doc.problems.iter().filter_map(|p| {
-        let first = p.raw.lines().next()?.trim();
+        let first = p.raw.expose().lines().next()?.trim();
         let first = first.strip_prefix("export ").unwrap_or(first);
         let (key, _) = first.split_once('=')?;
         let key = key.trim();
@@ -996,8 +996,7 @@ mod tests {
         use tempfile::TempDir;
 
         let dir = TempDir::new().unwrap();
-        let prose_content =
-            "This is plain prose.\nNo variables here.\nNot a dotenv file.\nStill not.\nNope.\nNope.\n";
+        let prose_content = "This is plain prose.\nNo variables here.\nNot a dotenv file.\nStill not.\nNope.\nNope.\n";
         let backup_path = dir.path().join("test.backup");
         let output_path = dir.path().join(".env");
 

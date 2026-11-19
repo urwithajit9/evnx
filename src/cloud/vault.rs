@@ -24,14 +24,14 @@
 //! [`VaultKey`]: evnx_crypto::VaultKey
 
 use crate::cloud::client::api_path;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
 use super::auth;
 use super::client::{ApiError, Client};
 use super::config::CloudConfig;
-use super::role::{parse_role, VAULT_OWNER, VAULT_ROLES};
+use super::role::{VAULT_OWNER, VAULT_ROLES, parse_role};
 
 /// AES-GCM nonce length — the prefix every stored blob carries.
 const NONCE_LEN: usize = 12;
@@ -111,7 +111,7 @@ fn list_and_pick(client: &Client, target: &str) -> Result<VaultSummary> {
                  \x20 Find it with `evnx vault list --verbose` from a normal login. \
                  The restriction is deliberate — a token issued for one vault should \
                  not be able to enumerate the others."
-            ))
+            ));
         }
         Err(e) => return Err(anyhow::Error::from(e)),
     };
@@ -217,7 +217,7 @@ pub fn create(
     password_stdin: bool,
     verbose: bool,
 ) -> Result<()> {
-    use evnx_crypto::{b64_encode, wrap_vault_key_with_master_key, VaultKey};
+    use evnx_crypto::{VaultKey, b64_encode, wrap_vault_key_with_master_key};
 
     validate_name(&name)?;
     let environment = validate_environment(&environment)?;
@@ -441,7 +441,7 @@ pub fn share(
     password_stdin: bool,
     verbose: bool,
 ) -> Result<()> {
-    use evnx_crypto::{wrap_vault_key_for_user, UserPublicKeys};
+    use evnx_crypto::{UserPublicKeys, wrap_vault_key_for_user};
 
     // Case-insensitive, like `--env` (I-223, DEC-CL8): `--role Admin` was refused.
     let role = parse_role(&role, VAULT_ROLES, VAULT_OWNER)?;
@@ -1274,7 +1274,6 @@ struct RekeyRequest {
 /// cannot recall copies of what they could already read. If they had access to a
 /// secret, treat that secret as theirs and rotate it at its source — the same
 /// advice that applies to a leaked API token, and the step people skip.
-#[allow(clippy::too_many_arguments)]
 pub fn revoke(
     server_override: Option<&str>,
     target: String,
@@ -1659,7 +1658,6 @@ pub fn rekey(
 /// then **one** request swaps all the metadata atomically. Staged blobs that are
 /// never committed are orphans in object storage — wasted bytes, not a correctness
 /// problem, and unreachable because nothing references them.
-#[allow(clippy::too_many_arguments)]
 fn rotate_vault_key(
     client: &Client,
     vault: &VaultSummary,
@@ -1670,9 +1668,9 @@ fn rotate_vault_key(
     verbose: bool,
 ) -> Result<usize> {
     use evnx_crypto::{
-        b64_encode, blob_hash, reencrypt_vault, unwrap_vault_key, unwrap_vault_key_with_master_key,
-        vault_aad, wrap_vault_key_for_user, wrap_vault_key_with_master_key, EncryptedBlob,
-        UserPublicKeys, VaultKey, WrappedVaultKey,
+        EncryptedBlob, UserPublicKeys, VaultKey, WrappedVaultKey, b64_encode, blob_hash,
+        reencrypt_vault, unwrap_vault_key, unwrap_vault_key_with_master_key, vault_aad,
+        wrap_vault_key_for_user, wrap_vault_key_with_master_key,
     };
 
     let my_key: MyWrappedKey =
@@ -1696,7 +1694,7 @@ fn rotate_vault_key(
             return Err(anyhow!(
                 "the server sent a malformed key for {label} — half a wrap. \n\
                  \x20 Treat this server as untrusted."
-            ))
+            ));
         }
     };
 

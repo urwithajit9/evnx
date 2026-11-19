@@ -573,7 +573,7 @@ fn placeholder_pattern(value: &str) -> bool {
 mod tests {
     #[test]
     fn an_angle_bracket_hole_holds_only_words() {
-        use super::{is_placeholder, Strictness::Strict};
+        use super::{Strictness::Strict, is_placeholder};
         assert!(is_placeholder("K", "<your-key>", Strict));
         assert!(is_placeholder("K", "<set me>", Strict));
         assert!(is_placeholder("K", "<your_value>", Strict));

@@ -158,8 +158,8 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
         use zeroize::Zeroize;
 
         use self::core::{
-            commit_restore, existing_output, finish, keep_previous, prepare_restore, Existing,
-            PrepareResult, RestoreOptions,
+            Existing, PrepareResult, RestoreOptions, commit_restore, existing_output, finish,
+            keep_previous, prepare_restore,
         };
         use self::error::RestoreError;
         use crate::utils::secret_source::{self, Purpose};

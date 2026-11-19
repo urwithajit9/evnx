@@ -68,6 +68,7 @@
 //! | `core/converter.rs`    | `EnvFile.vars`     | None — field name preserved |
 //! | Tests                  | `parse_content`    | None — method name preserved |
 
+use crate::core::secret::Vars;
 use indexmap::IndexMap;
 use std::collections::HashSet;
 // use std::collections::HashMap;
@@ -277,7 +278,7 @@ pub struct EnvFile {
     /// `HashMap`. Use an `IndexMap` if deterministic ordering is needed.
     /// Changed from `HashMap` to `IndexMap` to preserve key order for
     /// predictable diff output and consistent user experience.
-    pub vars: IndexMap<String, String>,
+    pub vars: Vars,
 
     /// The file path this was parsed from, or `None` when parsed from a string.
     ///
@@ -527,7 +528,7 @@ impl Parser {
     pub fn parse_content_located(
         &self,
         content: &str,
-    ) -> ParseResult<(IndexMap<String, String>, IndexMap<String, usize>)> {
+    ) -> ParseResult<(Vars, IndexMap<String, usize>)> {
         self.parse_document(content).into_result()
     }
 
@@ -598,12 +599,12 @@ impl Parser {
                 };
                 doc.entries.push(Entry {
                     key: o.key,
-                    value,
+                    value: value.into(),
                     span: Span {
                         line: o.start,
                         end_line: line_num,
                     },
-                    raw: o.raw,
+                    raw: o.raw.into(),
                     exported: o.exported,
                     quote: Some(o.quote),
                 });
@@ -635,7 +636,7 @@ impl Parser {
                 Err(error) => {
                     doc.problems.push(Problem {
                         span: Span::line(line_num),
-                        raw: raw_line.to_string(),
+                        raw: raw_line.into(),
                         error,
                     });
                     continue;
@@ -667,16 +668,16 @@ impl Parser {
                             .filter(|c| matches!(c, '"' | '\'' | '`'));
                         doc.entries.push(Entry {
                             key,
-                            value,
+                            value: value.into(),
                             span: Span::line(line_num),
-                            raw: raw_line.to_string(),
+                            raw: raw_line.into(),
                             exported,
                             quote,
                         });
                     }
                     Err(error) => doc.problems.push(Problem {
                         span: Span::line(line_num),
-                        raw: raw_line.to_string(),
+                        raw: raw_line.into(),
                         error,
                     }),
                 },
@@ -690,7 +691,7 @@ impl Parser {
                     line: o.start,
                     end_line: last_line,
                 },
-                raw: o.raw,
+                raw: o.raw.into(),
                 error: ParseError::UnterminatedString { line: o.start },
             });
         }
@@ -707,7 +708,7 @@ impl Parser {
             // noncharacter. `allow_expansion` is a library setting no CLI flag
             // reaches, so only a consumer of the crate could hit this.
             for e in &mut doc.entries {
-                e.value = strip_markers(&e.value);
+                e.value = strip_markers(e.value.expose()).into();
             }
         }
 
@@ -720,7 +721,7 @@ impl Parser {
     /// is the same work and also returns where each key was written — needed by
     /// anything that reports a position, which until D21 meant `scan` kept its
     /// own `.env` splitting instead.
-    pub fn parse_content(&self, content: &str) -> ParseResult<IndexMap<String, String>> {
+    pub fn parse_content(&self, content: &str) -> ParseResult<Vars> {
         self.parse_content_located(content).map(|(vars, _)| vars)
     }
 }

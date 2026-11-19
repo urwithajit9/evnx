@@ -4,7 +4,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 /// I-279: with no `.env`, `--check` returned before loading
 /// `--template-config`, so a misspelt key or a missing file passed in CI

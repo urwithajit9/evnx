@@ -11,7 +11,7 @@
 //! ⚠️ A conflict is exit 2, "no verdict", before any file is read. A scan the
 //! policy forbids must not be able to report clean.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
@@ -103,7 +103,9 @@ impl Policy {
             AllowDisable::All(_) => [].iter(),
         }) {
             if canonical(name, &cat).is_none() {
-                bail!("policy file {shown} names `{name}`, which is not a rule evnx has (see `evnx scan rules list`)");
+                bail!(
+                    "policy file {shown} names `{name}`, which is not a rule evnx has (see `evnx scan rules list`)"
+                );
             }
         }
         if let Some(floor) = &body.max_severity_floor {
@@ -165,7 +167,9 @@ impl Policy {
                 bail!("policy {shown} forbids scan.builtins = false (required_rules)");
             }
             if self.body.allow_disable != AllowDisable::All(true) {
-                bail!("policy {shown} forbids scan.builtins = false (allow_disable restricts disabling)");
+                bail!(
+                    "policy {shown} forbids scan.builtins = false (allow_disable restricts disabling)"
+                );
             }
         }
         if let Some(floor) = &self.body.max_severity_floor {
@@ -221,29 +225,34 @@ mod tests {
         let err = p
             .check(&scan(r#"disable = ["Sensitive config key"]"#), None)
             .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("policy policy.toml forbids scan.disable"));
-        assert!(p
-            .check(&scan(r#"disable = ["aws-access-key"]"#), None)
-            .is_ok());
+        assert!(
+            err.to_string()
+                .contains("policy policy.toml forbids scan.disable")
+        );
+        assert!(
+            p.check(&scan(r#"disable = ["aws-access-key"]"#), None)
+                .is_ok()
+        );
     }
 
     #[test]
     fn the_floor_compares_severities_not_strings() {
         let p = policy(r#"max_severity_floor = "medium""#);
-        assert!(p
-            .check(&scan(r#"severity = "low""#), Some("medium"))
-            .is_ok());
+        assert!(
+            p.check(&scan(r#"severity = "low""#), Some("medium"))
+                .is_ok()
+        );
         assert!(p.check(&scan(r#"severity = "high""#), None).is_err());
         assert!(p.check(&scan(""), Some("critical")).is_err());
     }
 
     #[test]
     fn allow_disable_defaults_to_unrestricted() {
-        assert!(policy("")
-            .check(&scan(r#"disable = ["Sensitive config key"]"#), None)
-            .is_ok());
+        assert!(
+            policy("")
+                .check(&scan(r#"disable = ["Sensitive config key"]"#), None)
+                .is_ok()
+        );
     }
 
     #[test]

@@ -28,9 +28,15 @@ struct Table {
 struct Case {
     id: String,
     // Read by the test that pins evnx's column, and by the measurement script.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read by the tests that pin evnx's column")
+    )]
     fixture: String,
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read by the tests that pin evnx's column")
+    )]
     key: String,
     /// `null` when the reader leaves the key unset (python-dotenv on a BOM).
     values: IndexMap<String, Option<String>>,
@@ -155,7 +161,7 @@ fn case_of_entry(doc: &Document, i: usize) -> Option<&'static str> {
 /// value, so `X=#ff0000` there is not an assignment for any reader.
 fn classify(e: &Entry) -> Option<&'static str> {
     // A key cannot contain `=`, so the first one ends it.
-    let (_, raw) = e.raw.split_once('=')?;
+    let (_, raw) = e.raw.expose().split_once('=')?;
     let v = raw.trim_start();
     match e.quote {
         Some('"') => return v.contains("${").then_some("expansion"),
@@ -182,7 +188,7 @@ fn classify(e: &Entry) -> Option<&'static str> {
 /// Whether an entry holds `$$`, which Compose reads as one `$` unquoted and in
 /// double quotes (D11). Checked beside [`classify`]: `${A}$$` is both cases.
 fn has_dollar_dollar(e: &Entry) -> bool {
-    let Some((_, raw)) = e.raw.split_once('=') else {
+    let Some((_, raw)) = e.raw.expose().split_once('=') else {
         return false;
     };
     let value = match e.quote {
@@ -257,6 +263,7 @@ fn join(n: Vec<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Secret;
 
     const NODE: Reader = Reader::NodeDotenv {
         expand: Some(false),
@@ -295,8 +302,8 @@ mod tests {
                 .parse_content(&case.fixture)
                 .unwrap();
             assert_eq!(
-                vars.get(&case.key),
-                case.values["evnx"].as_ref(),
+                vars.get(&case.key).map(Secret::expose),
+                case.values["evnx"].as_deref(),
                 "{}: evnx's column is not what evnx reads",
                 case.id
             );

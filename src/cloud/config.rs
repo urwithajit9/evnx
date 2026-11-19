@@ -18,7 +18,7 @@
 //! A per-directory vault *binding* would be safe there — a vault id is not a
 //! secret — but that is a later change and it still would not hold credentials.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -38,7 +38,18 @@ pub const ENV_SERVER: &str = "EVNX_SERVER";
 /// `XDG_CONFIG_HOME`), `~/Library/Application Support/evnx` on macOS,
 /// `%APPDATA%\evnx` on Windows — unless [`ENV_CONFIG_DIR`] overrides it.
 pub fn config_dir() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os(ENV_CONFIG_DIR) {
+    // Tests choose their directory per thread; they never write the process
+    // environment (RUST-12).
+    #[cfg(test)]
+    if let Some(dir) = test_config_dir::get() {
+        return Ok(dir);
+    }
+    config_dir_with(&|name| std::env::var_os(name))
+}
+
+/// [`config_dir`] reading its environment through `env` instead of the process's.
+pub fn config_dir_with(env: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> Result<PathBuf> {
+    if let Some(dir) = env(ENV_CONFIG_DIR) {
         if dir.is_empty() {
             return Err(anyhow!("{ENV_CONFIG_DIR} is set but empty"));
         }
@@ -47,6 +58,26 @@ pub fn config_dir() -> Result<PathBuf> {
     dirs::config_dir()
         .map(|d| d.join("evnx"))
         .ok_or_else(|| anyhow!("could not determine a config directory; set {ENV_CONFIG_DIR}"))
+}
+
+/// A per-thread config directory for unit tests, so none of them has to set
+/// `EVNX_CONFIG_DIR` in the shared process environment.
+#[cfg(test)]
+pub(crate) mod test_config_dir {
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+
+    thread_local! {
+        static DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    }
+
+    pub(crate) fn get() -> Option<PathBuf> {
+        DIR.with(|d| d.borrow().clone())
+    }
+
+    pub(crate) fn set(dir: Option<PathBuf>) {
+        DIR.with(|d| *d.borrow_mut() = dir);
+    }
 }
 
 /// Create the config directory if needed, restricted to the owner.
@@ -128,10 +159,18 @@ impl CloudConfig {
     /// `config.toml`, then [`DEFAULT_SERVER`]. The result is canonicalised, so it
     /// is safe to use as the credential-store key.
     pub fn resolve_server(cli_override: Option<&str>) -> Result<String> {
+        Self::resolve_server_with(cli_override, &|name| std::env::var_os(name))
+    }
+
+    /// [`CloudConfig::resolve_server`] reading [`ENV_SERVER`] through `env`.
+    pub fn resolve_server_with(
+        cli_override: Option<&str>,
+        env: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+    ) -> Result<String> {
         if let Some(s) = cli_override {
             return canonical_server(s).context("invalid --server value");
         }
-        if let Ok(s) = std::env::var(ENV_SERVER) {
+        if let Some(s) = env(ENV_SERVER).and_then(|s| s.into_string().ok()) {
             if !s.trim().is_empty() {
                 return canonical_server(&s).with_context(|| format!("invalid {ENV_SERVER} value"));
             }
@@ -453,18 +492,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            CloudConfig::resolve_server(None).unwrap(),
+            CloudConfig::resolve_server_with(None, &|_| None).unwrap(),
             "https://file.example"
         );
 
-        std::env::set_var(ENV_SERVER, "https://env.example");
+        let env = |name: &str| {
+            (name == ENV_SERVER).then(|| std::ffi::OsString::from("https://env.example"))
+        };
         assert_eq!(
-            CloudConfig::resolve_server(None).unwrap(),
+            CloudConfig::resolve_server_with(None, &env).unwrap(),
             "https://env.example"
         );
 
         assert_eq!(
-            CloudConfig::resolve_server(Some("https://flag.example")).unwrap(),
+            CloudConfig::resolve_server_with(Some("https://flag.example"), &env).unwrap(),
             "https://flag.example"
         );
     }

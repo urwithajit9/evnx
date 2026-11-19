@@ -17,8 +17,8 @@
 //! ```
 
 use super::walk::{
-    decode, decode_bytes, is_notebook, is_pkcs12, named_like_dotenv, structured_format, Decoded,
-    STDIN_LABEL,
+    Decoded, STDIN_LABEL, decode, decode_bytes, is_notebook, is_pkcs12, named_like_dotenv,
+    structured_format,
 };
 
 /// The id of a PKCS#12 keystore finding (C3). Found by file content, so it is
@@ -29,7 +29,7 @@ use super::{
     filters::FileFilter,
     models::UnreadableFile,
     models::{Confidence, Finding, ScanResults},
-    output::{render, OutputFormat},
+    output::{OutputFormat, render},
 };
 use crate::utils::fs::display_portable;
 use crate::utils::ui;

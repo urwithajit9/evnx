@@ -23,7 +23,7 @@
 //! Values are fixtures, never live credentials: documented example keys, or
 //! strings shaped like a format.
 
-use evnx::core::classify::{holds_secret, is_placeholder, Strictness};
+use evnx::core::classify::{Strictness, holds_secret, is_placeholder};
 use evnx::core::mask::mask;
 use std::path::Path;
 

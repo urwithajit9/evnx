@@ -4,8 +4,8 @@
 //! The `run()` entry point in `mod.rs` resolves a boxed trait object and calls
 //! `migrate()`, keeping the dispatch table trivially extensible.
 
+use crate::core::secret::Vars;
 use anyhow::Result;
-use indexmap::IndexMap;
 use std::fmt::Display;
 
 // ─── Where each line goes ────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ pub struct MigrationOptions {
 /// # Example
 ///
 /// ```rust,no_run
-/// use indexmap::IndexMap;
+/// use evnx::core::secret::Vars;
 /// use anyhow::Result;
 /// use evnx::commands::migrate::destination::{
 ///     MigrationDestination, MigrationOptions, MigrationResult,
@@ -274,7 +274,7 @@ pub struct MigrationOptions {
 ///
 ///     fn migrate(
 ///         &self,
-///         secrets: &IndexMap<String, String>,
+///         secrets: &Vars,
 ///         opts: &MigrationOptions,
 ///     ) -> Result<MigrationResult> {
 ///         // upload logic …
@@ -314,11 +314,7 @@ pub trait MigrationDestination {
     ///
     /// Implementations must honour `opts.dry_run`: when true they must not
     /// make any external mutations, only print what would happen.
-    fn migrate(
-        &self,
-        secrets: &IndexMap<String, String>,
-        opts: &MigrationOptions,
-    ) -> Result<MigrationResult>;
+    fn migrate(&self, secrets: &Vars, opts: &MigrationOptions) -> Result<MigrationResult>;
 
     /// Optional: platform-specific "next steps" after a successful migration,
     /// as status lines.

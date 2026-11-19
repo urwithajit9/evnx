@@ -5,7 +5,7 @@
 //! blob is what is scanned. Two git processes in all: `git diff --cached --raw`
 //! lists the files, and one `git cat-file --batch` reads every blob.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

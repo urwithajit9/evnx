@@ -16,6 +16,7 @@
 //! ```
 
 use super::models::{Confidence, ScanResults, Severity};
+use crate::core::output::{Mode, Out, Report};
 use crate::utils::string::pluralize;
 use crate::utils::ui;
 use crate::utils::ui::glyph;
@@ -90,11 +91,66 @@ pub enum OutputFormat {
 /// render(&results, OutputFormat::Json, &[]).unwrap();
 /// ```
 pub fn render(results: &ScanResults, format: OutputFormat, files: &[PathBuf]) -> Result<()> {
-    match format {
-        OutputFormat::Pretty => render_pretty(results, files),
-        OutputFormat::Json => render_json(results),
-        OutputFormat::Sarif => render_sarif(results),
-        OutputFormat::Github => render_github(results),
+    let mode = match format {
+        OutputFormat::Pretty => Mode::Text,
+        OutputFormat::Json => Mode::Json,
+        OutputFormat::Sarif => Mode::Sarif,
+        OutputFormat::Github => Mode::Github,
+    };
+    Out::new(mode).emit(&ScanReport { results, files })
+}
+
+/// What `scan` prints at the end: the results, and the files for the summary
+/// line of the pretty output. Findings carry a masked preview, never a value.
+///
+/// `schema_version` 2 (C2): every finding carries `rule_id` and `severity`, and
+/// `summary.severity` counts by it. Version 1 had no field.
+#[derive(Debug)]
+pub struct ScanReport<'a> {
+    pub results: &'a ScanResults,
+    pub files: &'a [PathBuf],
+}
+
+impl serde::Serialize for ScanReport<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        // `flatten` keeps every existing top-level key exactly where it was —
+        // adding `summary` is purely additive, so anything already parsing
+        // `secrets_found` or `high_confidence` keeps working.
+        #[derive(serde::Serialize)]
+        struct JsonReport<'a> {
+            schema_version: u32,
+            #[serde(flatten)]
+            results: &'a ScanResults,
+            summary: super::models::Summary,
+        }
+        serde::Serialize::serialize(
+            &JsonReport {
+                schema_version: 2,
+                results: self.results,
+                summary: self.results.summary(),
+            },
+            s,
+        )
+    }
+}
+
+impl Report for ScanReport<'_> {
+    const SCHEMA_VERSION: u32 = 2;
+
+    fn ruleset(&self) -> Option<&str> {
+        Some(RULESET)
+    }
+
+    fn text(&self, _out: &Out) -> Result<()> {
+        render_pretty(self.results, self.files)
+    }
+
+    fn sarif(&self) -> Option<Result<serde_json::Value>> {
+        Some(Ok(sarif_document(self.results)))
+    }
+
+    fn github(&self) -> Option<Result<()>> {
+        Some(render_github(self.results))
     }
 }
 
@@ -665,38 +721,6 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
 /// in `rules.lock`, not here.
 const RULESET: &str = concat!("builtin@", env!("CARGO_PKG_VERSION"));
 
-/// Render results in JSON format.
-///
-/// Suitable for machine parsing, CI/CD integration, and custom tooling.
-///
-/// # Arguments
-///
-/// * `results` - Scan results to serialize
-fn render_json(results: &ScanResults) -> Result<()> {
-    // `flatten` keeps every existing top-level key exactly where it was — adding
-    // `summary` is purely additive, so anything already parsing `secrets_found`
-    // or `high_confidence` keeps working.
-    // `schema_version` 2 (C2): every finding carries `rule_id` and
-    // `severity`, and `summary.severity` counts by it. Version 1 had no field.
-    #[derive(serde::Serialize)]
-    struct JsonReport<'a> {
-        schema_version: u32,
-        #[serde(flatten)]
-        results: &'a ScanResults,
-        summary: super::models::Summary,
-    }
-
-    crate::core::json::emit(
-        &JsonReport {
-            schema_version: 2,
-            results,
-            summary: results.summary(),
-        },
-        2,
-        Some(RULESET),
-    )
-}
-
 /// Split a finding's `location` into (file, line).
 ///
 /// `location` is built as `path:line` or `path:line (VAR)`. Splitting from the
@@ -829,7 +853,7 @@ fn sarif_level(severity: Severity) -> &'static str {
 ///
 /// - [SARIF Specification](https://docs.oasis-open.org/sarif/sarif/v2.1.0/)
 /// - [GitHub Code Scanning](https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning)
-fn render_sarif(results: &ScanResults) -> Result<()> {
+fn sarif_document(results: &ScanResults) -> serde_json::Value {
     // ⚠️ `rules[]` was absent entirely. Without it GitHub has no name, no
     // description and no help link for an alert — the Security tab shows a bare
     // id. Collected in first-seen order so the document is reproducible.
@@ -934,8 +958,8 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
         }]
     });
 
-    // SARIF has its own schema: no `run` header.
-    crate::core::json::emit_unwrapped(&sarif)
+    // SARIF has its own schema: no `run` header (`Out::emit` writes it unwrapped).
+    sarif
 }
 
 #[cfg(test)]
@@ -955,9 +979,43 @@ mod tests {
             None,
         ));
 
-        // Just verify it doesn't panic and produces valid JSON
-        let result = render_json(&results);
-        assert!(result.is_ok());
+        // The document has the `run` header, then the results and the summary.
+        let (res, docs) = crate::core::json::capture(|| render(&results, OutputFormat::Json, &[]));
+        res.unwrap();
+        let v: serde_json::Value = serde_json::from_str(&docs[0]).unwrap();
+        assert_eq!(v["run"]["schema_version"], 2);
+        assert_eq!(v["schema_version"], 2);
+        assert!(
+            v["run"]["ruleset"]
+                .as_str()
+                .unwrap()
+                .starts_with("builtin@")
+        );
+        assert!(v.get("summary").is_some());
+    }
+
+    /// A finding holds a masked preview, so the report's `Debug`, JSON and
+    /// SARIF hold no part of the value that matched (WP-17).
+    #[test]
+    fn the_report_holds_no_value() {
+        use crate::commands::scan::preview_value;
+        let canary = crate::core::output::canary::value();
+        let mut results = ScanResults::new(1);
+        results.add_finding(Finding::new(
+            "High Entropy String",
+            Confidence::High,
+            preview_value("high-entropy-string", &canary),
+            ".env:1",
+            Some("API_TOKEN".to_string()),
+            None,
+        ));
+        let report = ScanReport {
+            results: &results,
+            files: &[],
+        };
+        crate::core::output::canary::assert_report_clean(&canary, &report);
+        let sarif = Report::sarif(&report).unwrap().unwrap();
+        crate::core::output::canary::assert_absent(&canary, "SARIF", &sarif.to_string());
     }
 
     #[test]
@@ -972,8 +1030,8 @@ mod tests {
             Some("https://aws.amazon.com".to_string()),
         ));
 
-        let result = render_sarif(&results);
-        assert!(result.is_ok());
+        let doc = sarif_document(&results);
+        assert_eq!(doc["version"], "2.1.0");
     }
 }
 

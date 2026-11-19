@@ -81,7 +81,10 @@ fn t_scan_62_many_findings_are_valid_sarif() {
             "config/id_rsa.pem",
             "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\n-----END RSA PRIVATE KEY-----\n",
         ),
-        ("src/app.py", "blob = \"q8R9s0T1u2V3w4X5y6Z7a8B9cDeFgHiJkL\"\n"),
+        (
+            "src/app.py",
+            "blob = \"q8R9s0T1u2V3w4X5y6Z7a8B9cDeFgHiJkL\"\n",
+        ),
     ]);
     assert!(
         doc["runs"][0]["results"].as_array().unwrap().len() >= 7,

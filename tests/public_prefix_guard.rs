@@ -5,7 +5,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 /// A Stripe-shaped live key, built at run time so no literal sits in the source.
 fn stripe_key() -> String {

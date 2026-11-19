@@ -4,7 +4,7 @@
 
 mod support;
 
-use support::{run, Project};
+use support::{Project, run};
 
 const TEMPLATE: &str = "PORT=3000\nDATABASE_URL=postgres://u:p@h/db\nAPI_SECRET_KEY=x\nNAME=a\n";
 

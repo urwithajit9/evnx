@@ -3,6 +3,7 @@
 //! All functions in this module are side-effect free and return
 //! collections of issues. They do not modify files or print output.
 
+use crate::core::secret::Vars;
 use regex::Regex;
 use std::sync::LazyLock;
 // use serde_json::value::Index;
@@ -114,8 +115,8 @@ pub fn validate_email(value: &str) -> bool {
 
 /// Check 1: Missing required variables
 pub fn check_missing_variables(
-    env_vars: &IndexMap<String, String>,
-    example_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
+    example_vars: &Vars,
     env_path: &str,
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
@@ -151,7 +152,7 @@ pub fn check_missing_variables(
             // the contract — but a lone `[vars.X]` would switch the whole
             // project to the contract and stop every other template line
             // counting as required, so the hint starts from `spec init`.
-            suggestion: Some(if template_value.trim().is_empty() {
+            suggestion: Some(if template_value.expose().trim().is_empty() {
                 format!(
                     "{}. If it is optional: run `evnx spec init`, \
                      then set `required = false` under [vars.{}] in .evnx.toml",
@@ -286,14 +287,14 @@ pub fn check_shell_names(
 /// file is not repeated.
 pub fn check_partial_presence(
     doc: &crate::core::parser::Document,
-    vars: &IndexMap<String, String>,
+    vars: &Vars,
     siblings: &[crate::core::presence::EnvNames],
-    template: &IndexMap<String, String>,
+    template: &Vars,
     spec: &crate::core::spec::Spec,
     env_path: &str,
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
-    use crate::core::presence::{partial, EnvNames};
+    use crate::core::presence::{EnvNames, partial};
     if ignore.contains(IssueType::PartialPresence.as_str()) || siblings.is_empty() {
         return Vec::new();
     }
@@ -498,8 +499,8 @@ pub fn check_duplicate_keys(
 
 /// Check 2: Extra variables (strict mode only)
 pub fn check_extra_variables(
-    env_vars: &IndexMap<String, String>,
-    example_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
+    example_vars: &Vars,
     env_path: &str,
     strict: bool,
     ignore: &HashSet<String>,
@@ -541,7 +542,7 @@ pub fn check_extra_variables(
 /// declared "production only", and that has to mean it is not wanted anywhere
 /// else (the same reading `VarSpec::applies_to` gives requiredness).
 pub fn check_spec_extras(
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     spec: &Spec,
     env_name: Option<&str>,
     env_path: &str,
@@ -735,19 +736,16 @@ pub fn check_environments(
 }
 
 /// Check 3: Placeholder values
-pub fn check_placeholders(
-    env_vars: &IndexMap<String, String>,
-    env_path: &str,
-    ignore: &HashSet<String>,
-) -> Vec<Issue> {
+pub fn check_placeholders(env_vars: &Vars, env_path: &str, ignore: &HashSet<String>) -> Vec<Issue> {
     if ignore.contains(IssueType::PlaceholderValue.as_str()) {
         return Vec::new();
     }
 
     env_vars
         .iter()
+        .map(|(k, v)| (k, v.expose()))
         .filter(|(k, v)| is_placeholder(k, v))
-        .map(|(key, _value): (&String, &String)| {
+        .map(|(key, _value): (&String, &str)| {
             let suggestion = match key.as_str() {
                 "SECRET_KEY" => Some("Run: openssl rand -hex 32".to_string()),
                 k if k.contains("AWS") => Some("Get from AWS Console".to_string()),
@@ -781,17 +779,14 @@ pub fn check_placeholders(
 }
 
 /// Check 4: Boolean string trap
-pub fn check_boolean_trap(
-    env_vars: &IndexMap<String, String>,
-    env_path: &str,
-    ignore: &HashSet<String>,
-) -> Vec<Issue> {
+pub fn check_boolean_trap(env_vars: &Vars, env_path: &str, ignore: &HashSet<String>) -> Vec<Issue> {
     if ignore.contains(IssueType::BooleanTrap.as_str()) {
         return Vec::new();
     }
 
     env_vars
         .iter()
+        .map(|(k, v)| (k, v.expose()))
         .filter(|(_, v)| *v == "False" || *v == "True")
         .map(|(key, value)| Issue {
             severity: Severity::Warning,
@@ -819,7 +814,7 @@ pub fn check_boolean_trap(
 /// URL): a public-by-design key such as an analytics id or a publishable key is
 /// not secret-shaped, and a name that merely says `KEY` is not enough to fail.
 pub fn check_public_secrets(
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     env_path: &str,
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
@@ -828,6 +823,7 @@ pub fn check_public_secrets(
     }
     env_vars
         .iter()
+        .map(|(k, v)| (k, v.expose()))
         .filter_map(|(name, value)| {
             let (prefix, tool) = crate::core::secretscan::rules::public_prefix(name)?;
             let secret = crate::core::classify::is_secret_shaped(value)
@@ -857,7 +853,7 @@ pub fn check_public_secrets(
 
 /// Check 5: Weak SECRET_KEY
 pub fn check_weak_secret(
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     env_path: &str,
     ignore: &HashSet<String>,
     weak_secrets: super::policy::WeakSecretPolicy,
@@ -873,6 +869,7 @@ pub fn check_weak_secret(
     // `is_weak_secret_key` always took any key; only the call site was narrow.
     env_vars
         .iter()
+        .map(|(k, v)| (k, v.expose()))
         .filter(|(name, _)| {
             crate::core::classify::is_secret_name(name, crate::core::classify::Strictness::Strict)
         })
@@ -938,7 +935,7 @@ pub fn check_weak_secret(
 
 /// Check 6: localhost in Docker context
 pub fn check_localhost_docker(
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     env_path: &str,
     has_docker: bool,
     ignore: &HashSet<String>,
@@ -949,6 +946,7 @@ pub fn check_localhost_docker(
 
     env_vars
         .iter()
+        .map(|(k, v)| (k, v.expose()))
         .filter(|(k, v)| {
             (v.contains("localhost") || v.contains("127.0.0.1"))
                 && (k.contains("URL") || k.contains("HOST") || k.contains("ADDR"))
@@ -972,7 +970,7 @@ pub fn check_localhost_docker(
 /// because its declared `format` is authoritative (and is checked whether or
 /// not this runs).
 pub fn check_formats(
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     env_path: &str,
     validate: bool,
     spec: &Spec,
@@ -984,7 +982,7 @@ pub fn check_formats(
 
     let mut issues = Vec::new();
 
-    for (key, value) in env_vars.iter() {
+    for (key, value) in env_vars.iter().map(|(k, v)| (k, v.expose())) {
         if spec.get(key).is_some() {
             continue;
         }
@@ -1235,12 +1233,12 @@ mod tests {
 
     #[test]
     fn test_check_missing_variables() {
-        let mut env = IndexMap::new();
-        env.insert("DB_URL".to_string(), "postgres://localhost".to_string());
+        let mut env = Vars::new();
+        env.insert("DB_URL".to_string(), "postgres://localhost".into());
 
-        let mut example = IndexMap::new();
-        example.insert("DB_URL".to_string(), "".to_string());
-        example.insert("API_KEY".to_string(), "".to_string());
+        let mut example = Vars::new();
+        example.insert("DB_URL".to_string(), "".into());
+        example.insert("API_KEY".to_string(), "".into());
 
         let issues = check_missing_variables(&env, &example, ".env", &HashSet::new());
         assert_eq!(issues.len(), 1);
@@ -1250,8 +1248,8 @@ mod tests {
 
     #[test]
     fn test_check_boolean_trap() {
-        let mut env = IndexMap::new();
-        env.insert("DEBUG".to_string(), "True".to_string());
+        let mut env = Vars::new();
+        env.insert("DEBUG".to_string(), "True".into());
 
         let issues = check_boolean_trap(&env, ".env", &HashSet::new());
         assert_eq!(issues.len(), 1);
@@ -1265,8 +1263,8 @@ mod tests {
             ("True", "Use true or 1 for proper boolean handling"),
             ("False", "Use false or 0 for proper boolean handling"),
         ] {
-            let mut env = IndexMap::new();
-            env.insert("DEBUG".to_string(), value.to_string());
+            let mut env = Vars::new();
+            env.insert("DEBUG".to_string(), value.into());
             let issues = check_boolean_trap(&env, ".env", &HashSet::new());
             assert_eq!(issues[0].suggestion.as_deref(), Some(advice), "{value}");
         }
@@ -1287,7 +1285,7 @@ use crate::core::spec::Spec;
 /// Variables the spec declares required, applicable to this environment, and
 /// absent from the file being checked.
 pub fn check_spec_required(
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     spec: &Spec,
     env_name: Option<&str>,
     env_path: &str,
@@ -1364,10 +1362,10 @@ pub fn check_spec_keys(spec: &Spec, ignore: &HashSet<String>) -> Vec<Issue> {
                         // D12: `[vars.spring.datasource.url]` is nested tables in
                         // TOML, not one variable whose name has dots.
                         (Some(full), _) => format!(
-                        "TOML reads the dots in [vars.{full}] as nested tables. To declare the \
+                            "TOML reads the dots in [vars.{full}] as nested tables. To declare the \
                          variable {full}, quote its name: [vars.{}]",
-                        crate::core::spec::toml_key(&full)
-                    ),
+                            crate::core::spec::toml_key(&full)
+                        ),
                         (None, Some(k)) => format!("Did you mean `{k}`?"),
                         (None, None) => format!(
                             "Remove it; [vars.{}] understands {}",
@@ -1390,7 +1388,7 @@ pub fn check_spec_keys(spec: &Spec, ignore: &HashSet<String>) -> Vec<Issue> {
 /// reporting the same fact twice under two names makes a report harder to act
 /// on, not more thorough.
 pub fn check_spec_format(
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     spec: &Spec,
     env_name: Option<&str>,
     env_path: &str,
@@ -1411,7 +1409,8 @@ pub fn check_spec_format(
         let Some(format) = &declared.format else {
             continue;
         };
-        if value.trim().is_empty() || format.matches(value.trim()) {
+        let value = value.expose().trim();
+        if value.is_empty() || format.matches(value) {
             continue;
         }
 
@@ -1436,6 +1435,7 @@ pub fn check_spec_format(
 #[cfg(test)]
 mod spec_check_tests {
     use super::*;
+    use crate::core::secret::Vars;
     use crate::core::spec::Spec;
 
     fn spec(src: &str) -> Spec {
@@ -1447,10 +1447,10 @@ mod spec_check_tests {
         toml::from_str::<W>(src).expect("valid spec").vars
     }
 
-    fn env(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+    fn env(pairs: &[(&str, &str)]) -> Vars {
         pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), (*v).into()))
             .collect()
     }
 
@@ -1465,14 +1465,16 @@ mod spec_check_tests {
     #[test]
     fn a_production_only_variable_is_ignored_in_staging() {
         let s = spec("[vars.PROD_KEY]\nenvironments = [\"production\"]\n");
-        assert!(check_spec_required(
-            &env(&[]),
-            &s,
-            Some("staging"),
-            ".env.staging",
-            &HashSet::new()
-        )
-        .is_empty());
+        assert!(
+            check_spec_required(
+                &env(&[]),
+                &s,
+                Some("staging"),
+                ".env.staging",
+                &HashSet::new()
+            )
+            .is_empty()
+        );
         assert_eq!(
             check_spec_required(
                 &env(&[]),
@@ -1490,11 +1492,13 @@ mod spec_check_tests {
     fn a_description_reaches_the_suggestion() {
         let s = spec("[vars.DATABASE_URL]\ndescription = \"Primary Postgres\"\n");
         let issues = check_spec_required(&env(&[]), &s, None, ".env", &HashSet::new());
-        assert!(issues[0]
-            .suggestion
-            .as_ref()
-            .unwrap()
-            .contains("Primary Postgres"));
+        assert!(
+            issues[0]
+                .suggestion
+                .as_ref()
+                .unwrap()
+                .contains("Primary Postgres")
+        );
     }
 
     #[test]
@@ -1541,14 +1545,16 @@ mod spec_check_tests {
     #[test]
     fn a_variable_absent_from_the_spec_is_left_alone() {
         let s = spec("[vars.KNOWN]\nformat = \"int\"\n");
-        assert!(check_spec_format(
-            &env(&[("UNDECLARED", "anything at all")]),
-            &s,
-            None,
-            ".env",
-            &HashSet::new()
-        )
-        .is_empty());
+        assert!(
+            check_spec_format(
+                &env(&[("UNDECLARED", "anything at all")]),
+                &s,
+                None,
+                ".env",
+                &HashSet::new()
+            )
+            .is_empty()
+        );
     }
 
     #[test]

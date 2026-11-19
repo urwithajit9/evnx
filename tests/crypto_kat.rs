@@ -259,7 +259,7 @@ fn aead_check<C: chacha20poly1305::aead::Aead + chacha20poly1305::KeyInit>(
     ciphertext: &str,
     tag: &str,
 ) {
-    use chacha20poly1305::aead::{generic_array::GenericArray, Payload};
+    use chacha20poly1305::aead::{Payload, generic_array::GenericArray};
     let cipher = C::new(GenericArray::from_slice(&unhex(AEAD_KEY)));
     let nonce = unhex(nonce);
     let aad = unhex(AEAD_AAD);
@@ -287,15 +287,17 @@ fn aead_check<C: chacha20poly1305::aead::Aead + chacha20poly1305::KeyInit>(
     // One flipped bit anywhere must be refused.
     let mut bad = want.clone();
     bad[0] ^= 1;
-    assert!(cipher
-        .decrypt(
-            GenericArray::from_slice(&nonce),
-            Payload {
-                msg: &bad,
-                aad: &aad
-            }
-        )
-        .is_err());
+    assert!(
+        cipher
+            .decrypt(
+                GenericArray::from_slice(&nonce),
+                Payload {
+                    msg: &bad,
+                    aad: &aad
+                }
+            )
+            .is_err()
+    );
 }
 
 #[test]
@@ -361,15 +363,17 @@ mod aes {
         );
         let mut bad = got.clone();
         *bad.last_mut().unwrap() ^= 1;
-        assert!(cipher
-            .decrypt(
-                Nonce::from_slice(&iv),
-                Payload {
-                    msg: &bad,
-                    aad: &aad
-                }
-            )
-            .is_err());
+        assert!(
+            cipher
+                .decrypt(
+                    Nonce::from_slice(&iv),
+                    Payload {
+                        msg: &bad,
+                        aad: &aad
+                    }
+                )
+                .is_err()
+        );
     }
 }
 
@@ -412,9 +416,9 @@ fn argon2id_rfc9106_section_5_3() {
 mod envelope {
     use super::*;
     use evnx_crypto::{
-        blob_hash, decrypt_private_key, decrypt_vault, derive_master_key, unwrap_vault_key,
-        unwrap_vault_key_with_master_key, vault_aad, EncryptedBlob, EncryptedPrivateKey,
-        WrappedVaultKey,
+        EncryptedBlob, EncryptedPrivateKey, WrappedVaultKey, blob_hash, decrypt_private_key,
+        decrypt_vault, derive_master_key, unwrap_vault_key, unwrap_vault_key_with_master_key,
+        vault_aad,
     };
     use sha2::{Digest, Sha256};
 
@@ -503,25 +507,29 @@ mod envelope {
 
         // The version and the vault id are part of what is authenticated.
         let other_version = vault_aad(&field(&g, "vault_id"), 4);
-        assert!(decrypt_vault(
-            &EncryptedBlob {
-                nonce,
-                ciphertext: ciphertext.clone()
-            },
-            &vault_key,
-            &other_version
-        )
-        .is_err());
+        assert!(
+            decrypt_vault(
+                &EncryptedBlob {
+                    nonce,
+                    ciphertext: ciphertext.clone()
+                },
+                &vault_key,
+                &other_version
+            )
+            .is_err()
+        );
         let other_vault = vault_aad("vault-0002", 3);
-        assert!(decrypt_vault(
-            &EncryptedBlob {
-                nonce,
-                ciphertext: ciphertext.clone()
-            },
-            &vault_key,
-            &other_vault
-        )
-        .is_err());
+        assert!(
+            decrypt_vault(
+                &EncryptedBlob {
+                    nonce,
+                    ciphertext: ciphertext.clone()
+                },
+                &vault_key,
+                &other_vault
+            )
+            .is_err()
+        );
 
         // The transport hash is BLAKE3 of the ciphertext alone, lowercase hex.
         assert_eq!(blob_hash(&ciphertext), field(&g, "blob_hash"));

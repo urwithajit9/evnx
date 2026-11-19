@@ -526,3 +526,255 @@ fn t_wp9b_json_on_stdout_goes_through_core_json() {
         offenders.join("\n")
     );
 }
+
+/// Files (relative to `src/`, a trailing `/` means a directory) that may call
+/// `expose()`, `serialize_exposed` or `exposed_map`, each with the reason.
+///
+/// WP-17: a value is a `core::secret::Secret`; reading its text is a deliberate
+/// act. A command's renderer is not on this list: it gets lengths and
+/// disclosures, never the text. Adding a line here is the review checkpoint.
+const EXPOSE_ALLOW: &[(&str, &str)] = &[
+    ("core/secret.rs", "the type and its serde bridges"),
+    (
+        "core/",
+        "parsing, classification, masking, converting, injecting and the one safe writer work on the text",
+    ),
+    (
+        "formats/",
+        "a converter's job is to write values in another syntax",
+    ),
+    (
+        "platform/",
+        "reads and pushes values to a hosting platform; tokens go in headers",
+    ),
+    (
+        "cloud/",
+        "encryption, upload, credentials file and request bodies",
+    ),
+    (
+        "commands/get.rs",
+        "get --reveal prints the one value asked for; --json carries it",
+    ),
+    (
+        "commands/parse.rs",
+        "parse reports a value's length, class and, with --values, the value",
+    ),
+    (
+        "commands/convert.rs",
+        "convert reads the values it rewrites",
+    ),
+    (
+        "commands/remove/edit.rs",
+        "remove reads values to find references to a removed key",
+    ),
+    (
+        "commands/restore/",
+        "restore reads a refused line to name the key it looks like",
+    ),
+    (
+        "commands/add/shared.rs",
+        "add compares an existing example value and writes .env and .env.example",
+    ),
+    (
+        "commands/init/shared.rs",
+        "init reads the kept template's values to infer `required` and to warn about a live credential",
+    ),
+    (
+        "commands/migrate/",
+        "a destination prints commands or sends values (a terminal gets <hidden>)",
+    ),
+    (
+        "commands/diff.rs",
+        "diff --show-values, --format patch and the interactive merge write values",
+    ),
+    (
+        "commands/sync/executor.rs",
+        "sync writes .env and .env.example and refuses a credential in a template",
+    ),
+    (
+        "commands/validate/checks.rs",
+        "checks read values for shape, length and placeholders; findings name keys only",
+    ),
+    (
+        "commands/validate/fixer.rs",
+        "the fixer writes repaired values to .env",
+    ),
+    (
+        "commands/validate/mod.rs",
+        "--fix reads the old value and masks what it reports",
+    ),
+    (
+        "commands/template.rs",
+        "template renders values into the output",
+    ),
+];
+
+/// `expose()` is the only way to read a `Secret`. It may appear only in files
+/// on the allow-list, so a renderer cannot grow a value by accident.
+#[test]
+fn t_wp17_expose_only_in_allow_list() {
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    for f in files {
+        let rel = f
+            .strip_prefix(src())
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        if EXPOSE_ALLOW.iter().any(|(p, _)| rel.starts_with(p)) || rel.ends_with("/tests.rs") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&f).unwrap();
+        for (n, l) in code_lines(&text) {
+            if l.contains(".expose()")
+                || l.contains("serialize_exposed")
+                || l.contains("exposed_map")
+            {
+                offenders.push(format!("{rel}:{}: {}", n + 1, l.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "expose() outside the allow-list; add the file with a reason to EXPOSE_ALLOW if it is a real value writer:\n{}\nallow-list:\n{}",
+        offenders.join("\n"),
+        EXPOSE_ALLOW
+            .iter()
+            .map(|(p, why)| format!("  {p}: {why}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+/// Files on the allow-list for `expose()` on a line that also prints or
+/// formats, because printing the value is their purpose.
+const EXPOSE_PRINT_ALLOW: &[(&str, &str)] = &[
+    ("commands/get.rs", "get --reveal"),
+    ("commands/parse.rs", "parse --values"),
+    ("formats/", "converted file contents"),
+    ("commands/template.rs", "rendered value"),
+    ("commands/restore/", "restore - writes values to stdout"),
+    ("core/safe_write.rs", "the one .env writer"),
+    ("core/envfile.rs", "the .env line formatter"),
+    ("core/converter.rs", "shell quoting helpers"),
+];
+
+/// `expose()` never shares a line with a print or format macro, except in the
+/// few files whose job is to print values. Everywhere else the text goes
+/// through a named variable on its own line, so the call is visible in review.
+#[test]
+fn t_wp17_no_expose_on_a_print_line() {
+    let macros = [
+        "println!(",
+        "eprintln!(",
+        "print!(",
+        "eprint!(",
+        "format!(",
+        "write!(",
+        "writeln!(",
+        "panic!(",
+        "dbg!(",
+    ];
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    for f in files {
+        let rel = f
+            .strip_prefix(src())
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        if EXPOSE_PRINT_ALLOW.iter().any(|(p, _)| rel.starts_with(p)) || rel.ends_with("/tests.rs")
+        {
+            continue;
+        }
+        let text = std::fs::read_to_string(&f).unwrap();
+        for (n, l) in code_lines(&text) {
+            if l.contains(".expose()") && macros.iter().any(|m| l.contains(m)) {
+                offenders.push(format!("{rel}:{}: {}", n + 1, l.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "expose() on a print/format line:\n{}",
+        offenders.join("\n")
+    );
+}
+
+/// `core/secret.rs` keeps the type closed: no `Display`, `Serialize`, `Deref`
+/// or `AsRef<str>` (any of them would make a silent exposure possible).
+#[test]
+fn t_wp17_secret_has_no_display_serialize_deref_or_asref() {
+    let text = std::fs::read_to_string(src().join("core/secret.rs")).unwrap();
+    for (n, l) in code_lines(&text) {
+        for banned in [
+            "impl fmt::Display",
+            "impl std::fmt::Display",
+            "impl Display",
+            "Serialize for Secret",
+            "Deref for Secret",
+            "AsRef<str> for Secret",
+            "derive(Serialize",
+        ] {
+            assert!(!l.contains(banned), "core/secret.rs:{}: {banned}", n + 1);
+        }
+    }
+}
+
+/// A report struct holds names, counts, lengths and text that is already
+/// masked, never a `Secret` or a `Vars` map (WP-17, RUST-8). The report files
+/// of the five commands, and the renderer itself, name neither type in shipped
+/// code; a value the fixer or the writer needs lives in its own internal type
+/// (`sync::executor::VarChange`) or in the map it writes.
+#[test]
+fn t_wp17_report_structs_hold_no_secret() {
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for f in files {
+        let rel = f
+            .strip_prefix(src())
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        let name = rel.rsplit('/').next().unwrap_or("");
+        let in_five = ["init", "add", "validate", "sync", "scan"]
+            .iter()
+            .any(|c| rel.starts_with(&format!("commands/{c}/")));
+        let report_file = ["output.rs", "report.rs", "models.rs", "types.rs"].contains(&name);
+        if !(rel == "core/output.rs" || (in_five && report_file)) {
+            continue;
+        }
+        checked += 1;
+        let text = std::fs::read_to_string(&f).unwrap();
+        for (n, l) in code_lines(&text) {
+            // Types only: not a comment, not a string literal.
+            let code = l.split("//").next().unwrap_or("");
+            let code: String = code
+                .split('"')
+                .enumerate()
+                .filter(|(i, _)| i % 2 == 0)
+                .map(|(_, part)| part)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let words = code
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .collect::<Vec<_>>();
+            if words.contains(&"Secret")
+                || words.contains(&"Vars")
+                || words.contains(&"SecretString")
+            {
+                offenders.push(format!("{rel}:{}: {}", n + 1, l.trim()));
+            }
+        }
+    }
+    assert!(checked >= 6, "the report files moved; update this test");
+    assert!(
+        offenders.is_empty(),
+        "a report struct holds a Secret or Vars; keep the value in an internal type and report its masked text or length:\n{}",
+        offenders.join("\n")
+    );
+}
