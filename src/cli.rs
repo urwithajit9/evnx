@@ -1887,6 +1887,7 @@ pub enum CloudCommands {
     /// `--version` is disabled on this subcommand, as it is on `pull`. Use
     /// `evnx --version` for the program version.
     #[command(disable_version_flag = true)]
+    #[command(override_usage = "evnx cloud run [OPTIONS] -- <COMMAND>...")]
     Run {
         /// Vault to read: `name`, `name/environment`, or an id.
         ///
@@ -2878,8 +2879,11 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         /// Also run `validate`, `sync --check` and `scan`, in one report.
         ///
         /// Each part is the command of that name with its defaults, read from
-        /// this project's `.evnx.toml`. `sync --check` looks both ways and is
-        /// skipped, with a note, when there is no template. The verdict is the
+        /// this project's `.evnx.toml`. `validate` runs when there is an env
+        /// file and either a template or a `[vars]` contract in `.evnx.toml`
+        /// (a project with only the contract is still validated).
+        /// `sync --check` looks both ways and is skipped, with a note, when
+        /// there is no template. The verdict is the
         /// worst of the parts: 1 if any found something, 2 if any could not run.
         /// With `--format json`, the document has a `sections` object with
         /// `doctor`, `validate`, `sync` and `scan` (`run.schema_version` 2).
@@ -3000,6 +3004,7 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
     /// The command runs directly, not through a shell. For a pipeline or a
     /// builtin, ask for one: `-- sh -c 'a | b'`. Exits with the command's code.
     #[command(after_help = docs::RUN.after_help)]
+    #[command(override_usage = "evnx run [OPTIONS] -- <COMMAND>...")]
     Run(Box<RunArgs>),
 
     /// Every command this build has, and which features it was compiled with.

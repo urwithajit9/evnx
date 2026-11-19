@@ -4,7 +4,7 @@ The local `evnx cloud run`: the file is read and handed to the child process in 
 
 The command runs directly, not through a shell. For a pipeline or a builtin, ask for one: `-- sh -c 'a | b'`. Exits with the command's code.
 
-Usage: evnx run [OPTIONS] [-- <COMMAND>...]
+Usage: evnx run [OPTIONS] -- <COMMAND>...
 
 Arguments:
   [COMMAND]...

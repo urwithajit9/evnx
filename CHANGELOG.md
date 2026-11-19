@@ -26,6 +26,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   attestation: `gh attestation verify <archive> -R urwithajit9/evnx
   --predicate-type https://cyclonedx.org/bom`.
 
+### Changed
+
+- `evnx run --help` and `evnx cloud run --help` show `-- <COMMAND>...` in the
+  usage line again; running with no command is still a usage error.
+- The `API` line that names a non-default Vercel API address is no longer
+  printed for a loopback address (`127.0.0.1`, `::1`, `localhost`), where the
+  token does not leave the machine.
+- `doctor --help` says that `--all` validates a project that has only a
+  `[vars]` contract in `.evnx.toml` and no template.
+
+### Fixed
+
+- A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own
+  environment while it is read (that needed `unsafe`); `run` still keeps every
+  `EVNX_*` variable out of the command it starts.
+
 ---
 
 ## [0.15.0] - 2026-11-19

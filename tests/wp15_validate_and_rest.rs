@@ -1009,3 +1009,20 @@ mod update {
         pretty.assert_not_contains("No copy of evnx");
     }
 }
+
+#[test]
+fn doctor_all_validates_a_project_with_only_a_vars_contract() {
+    // No template, but a `[vars]` contract: `validate` runs (and finds the
+    // missing required name) instead of being skipped.
+    let p = Project::new()
+        .git()
+        .env("NAME=ok\n")
+        .toml("[vars.MUST_EXIST]\nrequired = true\n")
+        .file(".gitignore", ".env*\n")
+        .private(".env");
+    let out = doctor_all(&p, &["--json"]);
+    let v = json(&out);
+    assert_ne!(v["sections"]["validate"]["status"], "skipped", "{v}");
+    assert!(v["sections"]["validate"].is_object(), "{v}");
+    out.assert_not_contains("no [vars] contract");
+}

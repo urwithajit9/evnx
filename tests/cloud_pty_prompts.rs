@@ -352,10 +352,7 @@ fn decline_server() -> (mockito::ServerGuard, Vec<mockito::Mock>) {
 fn a_no_at_an_auth_or_version_confirmation_exits_4() {
     for (args, prompt) in [
         (&["auth", "token", "revoke", "ci"][..], "Revoke ci?"),
-        (
-            &["auth", "sessions", "revoke-others"][..],
-            "Continue?",
-        ),
+        (&["auth", "sessions", "revoke-others"][..], "Continue?"),
         (
             &["cloud", "delete-version", "1", "--vault", "app"][..],
             "Delete version 1",

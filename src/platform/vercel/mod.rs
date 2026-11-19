@@ -44,7 +44,12 @@ pub struct Session {
 }
 
 /// `API  https://host:port` when `base` is not the default API, else `None`.
+/// A loopback address (a local proxy, the test servers) gets no line: the token
+/// does not leave the machine.
 fn api_override_line(base: &reqwest::Url) -> Option<String> {
+    if api::is_loopback(base) {
+        return None;
+    }
     let default = api::parse_base(api::DEFAULT_BASE).ok()?;
     if base.origin() == default.origin() {
         return None;
@@ -316,5 +321,18 @@ mod api_line_tests {
             "{line}"
         );
         assert!(!line.contains("/v1"), "{line}");
+    }
+
+    #[test]
+    fn a_loopback_api_prints_nothing() {
+        for raw in [
+            "http://127.0.0.1:8080",
+            "http://[::1]:8080/",
+            "http://localhost:8080",
+            "https://localhost:8443",
+        ] {
+            let base = api::parse_base(raw).unwrap();
+            assert_eq!(api_override_line(&base), None, "{raw}");
+        }
     }
 }

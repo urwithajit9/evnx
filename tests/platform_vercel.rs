@@ -2675,12 +2675,14 @@ fn wp12_token_file_0600_silent() {
 }
 
 #[test]
-fn wp12_api_override_prints_host_not_token() {
+fn wp12_api_override_to_loopback_prints_no_api_line() {
+    // The mock is on 127.0.0.1: the token stays on this machine, so there is
+    // nothing to warn about. A non-loopback override prints the line (unit test
+    // `another_api_prints_scheme_host_and_port_only`).
     let v = Vercel::start_for_diff();
     let p = diff_project();
     let out = run_raw(&p, &v.url(), &diff_args(&[]));
-    // The address, as scheme://host:port.
-    out.assert_contains(&format!("API  {}", v.url()));
+    assert!(!out.stderr.contains("API  "), "{}", out.stderr);
     out.assert_not_contains(TOKEN);
 }
 
