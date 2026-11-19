@@ -74,7 +74,8 @@ fn t_i050_a_real_shaped_key_is_still_a_finding() {
     for v in [
         "sk_live_51H1234567890abcdefghijk",
         "AKIA4OZRMFJ3VREALKEY",
-        "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8",
+        "ghp_\
+A1b2C3d4E5f6G7h8I9j0K1l2M3n4Fx3dtsr8",
     ] {
         let (code, stdout) = scan_in(&[("a.env", &format!("KEY={v}\n"))], &["a.env"]);
         assert_eq!(code, 1, "{v}\n{stdout}");

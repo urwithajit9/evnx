@@ -12,7 +12,8 @@ use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 use tempfile::TempDir;
 
-const GH: &str = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
+const GH: &str = "ghp_\
+A1b2C3d4E5f6G7h8I9j0K1l2M3n4Fx3dtsr8";
 
 fn project(files: &[(&str, &str)]) -> TempDir {
     let d = TempDir::new().unwrap();

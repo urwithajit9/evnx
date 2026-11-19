@@ -1,12 +1,17 @@
 # Fixtures for `github-token` (C3). Each value is written as parts that are
 # joined at test time, so this file never holds a whole token.
+#
+# The classic positives (ghp_, gho_, ghr_, ghu_) carry a valid checksum
+# (core::secretscan::checksum), because the engine drops one that fails. A
+# rule-level near miss cannot show that, since the rule alone does not check
+# it: the failing near misses are in tests/scan_checksum.rs.
 
 expect_severity = "high"
 
 positive = [
-  ["ghp_", "r080UUTWjPBOaALo0vrQuGXc22ToCIyNaLQS"],
-  ["gho_", "B8FBr6Ln5J9K3E8JX2iuWm8fEKKpvDQoclts"],
-  ["ghr_", "NHrTpc74lJ65cCx0Yik84TaOh9IgFgzP83Wi"],
+  ["ghp_", "r080UUTWjPBOaALo0vrQuGXc22ToCI4fQk9I"],
+  ["gho_", "B8FBr6Ln5J9K3E8JX2iuWm8fEKKpvD1PXEIV"],
+  ["ghr_", "NHrTpc74lJ65cCx0Yik84TaOh9IgFg4ahlrn"],
   # The stateless installation token: ghs_<appid>_<JWT>, 523 characters.
   [
     "ghs_1234567_eyJNfiglJ5m7",
@@ -32,6 +37,8 @@ positive = [
     "R0WZWxFalQFppIaCNKBc0TGq",
     "q11C9CGDM2YBQNmpCFY",
   ],
+  # Appended after the stateless form so its corpus index (#3) stays put.
+  ["ghu_", "Zk8Qm2Xv5Lr9Tn4Wc7Hb1Jd6Fs3Ga020BV9x"],
 ]
 
 near_miss = [

@@ -1749,7 +1749,8 @@ fn b1_a_broken_file_names_the_variable_that_holds_the_secret() {
     let dir = TempDir::new().unwrap();
     fs::write(
         dir.path().join(".env"),
-        "not an assignment\nNOTE=\"see\nGITHUB_TOKEN=ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8\nabove\"\nGITHUB_TOKEN=\n",
+        "not an assignment\nNOTE=\"see\nGITHUB_TOKEN=ghp_\
+A1b2C3d4E5f6G7h8I9j0K1l2M3n4Fx3dtsr8\nabove\"\nGITHUB_TOKEN=\n",
     )
     .unwrap();
     let assert = cargo_bin_cmd!("evnx")

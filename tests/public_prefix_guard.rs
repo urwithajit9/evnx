@@ -27,9 +27,10 @@ fn rank(s: &str) -> u8 {
     }
 }
 
-/// A GitHub-token-shaped value (severity `high` on a server).
+/// A GitHub-token-shaped value (severity `high` on a server), with a valid
+/// checksum: one that fails it is not a finding.
 fn github_token() -> String {
-    ["gh", "p_", "aB3dE5gH7jK9mN1pQ3sT5vX7zA9cD1fG3hJ5"].concat()
+    ["gh", "p_", "aB3dE5gH7jK9mN1pQ3sT5vX7zA9cD12smxdQ"].concat()
 }
 
 fn scan_severity(prefix: &str) -> u8 {

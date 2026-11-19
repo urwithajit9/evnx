@@ -83,7 +83,7 @@ API_KEY	secret123	y	n	n	***	agreed real value
 API_KEY	production_api_key_2024	y	n	n	***	agreed real value
 UPSTREAM	sk_live_51H1234567890abcdefghijk	y	n	n	***	secret by value, harmless name
 UPSTREAM	sk_test_51H1234567890abcdefghijk	y	n	n	***	secret by value, harmless name
-UPSTREAM	ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8	y	n	n	***	secret by value, harmless name
+UPSTREAM	{{ghp_}}A1b2C3d4E5f6G7h8I9j0K1l2M3n4Fx3dtsr8	y	n	n	***	secret by value, harmless name
 UPSTREAM	AKIA4OZRMFJ3VREALKEY	y	n	n	***	secret by value, harmless name
 UPSTREAM	-----BEGIN PRIVATE KEY-----	y	n	n	***	secret by value, harmless name
 UPSTREAM	-----BEGIN RSA PRIVATE KEY-----	y	n	n	***	secret by value, harmless name

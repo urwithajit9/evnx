@@ -805,11 +805,19 @@ impl RuleDetector {
 
 impl From<super::patternset::PatternMatch> for Detection {
     fn from(found: super::patternset::PatternMatch) -> Self {
+        // SCAN-CRC: a classic GitHub token whose checksum passes is that shape
+        // for certain, whatever the rule that matched it says.
+        let confidence =
+            if super::checksum::verdict(&found.value) == super::checksum::Verdict::Valid {
+                found.confidence.max(super::Confidence::High)
+            } else {
+                found.confidence
+            };
         Detection {
             judged_value: true,
             rule_id: found.id,
             pattern: found.name,
-            confidence: found.confidence,
+            confidence,
             severity: found.severity,
             action_url: found.url,
             matched_value: found.value,

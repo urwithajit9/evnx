@@ -10,6 +10,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- **Classic GitHub tokens that fail their checksum are no longer findings.** A
+  value that starts `ghp_`, `gho_`, `ghu_` or `ghr_` and has 36 characters after
+  it carries a checksum in its last six. A value whose checksum does not match
+  was never issued by GitHub, so it is dropped like a placeholder, whatever the
+  variable is called. A value that matches is reported with high confidence.
+  `ghs_` tokens and other lengths are not judged. CI that gated on made-up
+  `ghp_` values in test files now passes; real tokens are unaffected.
+
 ### Added
 
 - **The SBOM is attached to each release archive** as a signed CycloneDX

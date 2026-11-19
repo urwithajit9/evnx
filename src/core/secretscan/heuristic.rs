@@ -378,6 +378,11 @@ pub fn name_suggests_secret(key: &str, value: &str) -> bool {
     if looks_like_placeholder_secret(value) {
         return false;
     }
+    // SCAN-CRC: a classic GitHub token that fails its checksum was never
+    // issued, whatever the name says.
+    if super::checksum::verdict(value.trim()) == super::checksum::Verdict::Invalid {
+        return false;
+    }
 
     let v = value.trim();
 
@@ -719,6 +724,10 @@ pub fn looks_like_key_material(value: &str) -> bool {
 
 pub fn detect_heuristic(value: &str, key: &str) -> Option<(String, Confidence, Option<String>)> {
     if is_placeholder_lenient(value) {
+        return None;
+    }
+    // SCAN-CRC: a classic GitHub token with a failing checksum is not a token.
+    if super::checksum::verdict(value.trim()) == super::checksum::Verdict::Invalid {
         return None;
     }
 
