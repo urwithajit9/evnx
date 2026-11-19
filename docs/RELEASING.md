@@ -79,8 +79,10 @@ links that are dead on the live site, and `pnpm check:links` is what catches it.
 cargo check          # updates Cargo.lock's own entry
 ```
 
-Nothing else in the repo carries the version. The packaging artefacts all derive
-it from the tag.
+Two pins in `README.md` also carry it (the `ghcr.io/urwithajit9/evnx:X.Y.Z` Docker
+example and the pre-commit `rev: vX.Y.Z`); `grep -n 'X\.Y\.Z' README.md` before the tag.
+The packaging artefacts (npm, PyPI, Homebrew, Scoop, winget) all derive the version from
+the tag.
 
 ### 4 · CHANGELOG, and say why the number
 
@@ -153,7 +155,7 @@ machine that can reach it:
 
 ```bash
 curl -fsSL https://evnx.dev/install.sh | diff - scripts/install.sh && echo same
-curl -fsSL https://dotenv.space/install.sh | diff - scripts/install.sh && echo same
+curl -fsSL https://dotenv.space/install.sh | diff - scripts/install.sh && echo same   # follows its redirect
 curl -sI https://dotenv.space/install.sh | head -3     # a redirect to evnx.dev once set up
 ```
 

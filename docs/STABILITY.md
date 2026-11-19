@@ -50,15 +50,15 @@ These do not change without a CHANGELOG "Breaking" entry, and are tested.
 2. A removed flag spelling is not silently accepted and not silently ignored: typing it exits
    `2` with `'<old>' was removed from 'evnx <command>' in <version>; use '<new>'`, and
    nothing runs. `evnx commands --json` lists each under `removed`.
-3. A deprecated spelling (for example `org accept TOKEN`, or `platform --env-name`, which
-   works with a warning until 1.0) keeps working with a warning first; the CHANGELOG
-   entry says until when.
+3. A deprecated spelling (for example `org accept TOKEN`) keeps working with a warning
+   first; the CHANGELOG entry says until when.
 
 ## Changed defaults in 0.15.0
 
 The headlines of the CHANGELOG's "Breaking" section for this release. Each entry there
 says who is hit and what to pass to get the old behaviour.
 
+- **One flag vocabulary: the old spellings are removed**
 - **`--env-name` pairs the environment with its own template.**
 - **`--env-name` takes a name, not a path.**
 - **Outside a git repository, only the working folder's `.evnx.toml` applies.**
@@ -88,6 +88,3 @@ says who is hit and what to pass to get the old behaviour.
 - **`parse --format json` is `run.schema_version` 2**
 - **`restore --output -` writes the decrypted text to stdout**
 - **The install URL is `https://evnx.dev/install.sh` everywhere**
-
-The table of removed flag spellings (WP-8) is under "Breaking: one flag vocabulary" in the
-[CHANGELOG](../CHANGELOG.md).

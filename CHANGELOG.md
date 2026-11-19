@@ -6,10 +6,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.15.0] - 2026-11-19
+
+A minor release, as in any 0.x release that changes what a shipped command does:
+flag spellings are removed, exit codes follow one table, and several defaults
+are safer. Read "Breaking" before upgrading scripts.
 
 ### Breaking
 
+- **One flag vocabulary: the old spellings are removed** (WP-8). Every command
+  now spells the same idea the same way, and the old spelling is an error, not
+  an alias. The table at the end of this section lists each one.
 - **`--env-name` pairs the environment with its own template.** With
   `--env-name prod`, commands use `.env.prod.example` (or `.sample`,
   `.template`) when it exists, instead of the shared `.env.example`. The order
@@ -25,7 +32,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names one that was skipped. Inside a repository nothing changes.
 - **`platform --env-name` is now `--target`.** Every other command's
   `--env-name` names a local env file; for `platform` it meant the Vercel
-  environment. The old spelling still works, with a warning, until 1.0.
+  environment. The old spelling is removed: it exits 2 and names `--target`
+  (see the table below).
 - **Generated contracts mark a name required only when the template gives
   it no default.** `init` and `spec init` used to mark every template name
   `required = true`. Now `PORT=8080` or `DEBUG=false` in the template makes the
@@ -159,11 +167,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `dotenv.space/install.sh`, the `raw.githubusercontent.com` link and
   `evnx.dev/install`. A pinned old address keeps working only while its redirect
   does. The CI job that compares the served script with `scripts/install.sh`
-  is in `ci.yml` but switched off until the host is confirmed.
+  runs daily and on demand (`install-url.yml`), against `main`, and follows the
+  redirect: `evnx.dev/install.sh` redirects to `www.evnx.dev/install.sh`, and
+  `dotenv.space/install.sh` redirects to `evnx.dev`.
 
-### Breaking: one flag vocabulary (WP-8)
+**Removed flag spellings (WP-8)**
 
-Every command now spells the same idea the same way. The old spellings are removed, not aliased: typing one exits 2 with `error: '<old>' was removed from 'evnx <command>' in 0.15.0; use '<new>'`, and nothing runs. `evnx commands --json` lists them under `removed`.
+Typing one of these exits 2 with `error: '<old>' was removed from 'evnx <command>' in 0.15.0; use '<new>'`, and nothing runs. `evnx commands --json` lists them under `removed`.
 
 | Command | Old | Use instead |
 |---|---|---|
@@ -208,24 +218,12 @@ Every command now spells the same idea the same way. The old spellings are remov
 | `evnx auth key-bundle` | `--format text` | `--format pretty` |
 | `evnx auth token create` | `--format text` | `--format pretty` |
 
-New in the same change:
-
-- `--json` is a visible shorthand for `--format json` on every command that has `--format`.
-- `-n` is the short form of `--dry-run` everywhere.
-- `-C/--dir` names the project folder (init, add, remove, doctor).
-- `--env <FILE>` names the env file on cloud and platform too.
-- `sync --yes` works without `--prune`, and `sync --json` works in every mode.
-- `validate --fix --yes`, and `convert --yes` / `convert --dry-run`.
-- `sync --to example|env` as another spelling of `--direction forward|reverse`.
-- `migrate --github-token` is hidden, and warns when used (it still works).
-- `platform` keeps `--to` required and `--target` as the Vercel environment.
-
 ### Changed
 
 - **`--key-file` is the name `backup` and `restore` show** (WP-15), and
   `--password-file` is a hidden alias that still works; "passphrase" in every
   message instead of "password". The earlier removal of `--key-file` (WP-8, in
-  the table below) is undone. `spec`'s help and messages say "contract".
+  the table above) is undone. `spec`'s help and messages say "contract".
 - **The first lines of `validate`, `spec check` and `sync --check` help say how
   they differ**: "`validate` checks everything; `spec check` and `sync --check`
   are fast name-only checks for hooks."
@@ -353,6 +351,17 @@ new `network` field below.
 
 ### Added
 
+- **One flag vocabulary: what is new** (WP-8). Next to the removals listed
+  under Breaking:
+  - `--json` is a visible shorthand for `--format json` on every command that has `--format`.
+  - `-n` is the short form of `--dry-run` everywhere.
+  - `-C/--dir` names the project folder (init, add, remove, doctor).
+  - `--env <FILE>` names the env file on cloud and platform too.
+  - `sync --yes` works without `--prune`, and `sync --json` works in every mode.
+  - `validate --fix --yes`, and `convert --yes` / `convert --dry-run`.
+  - `sync --to example|env` as another spelling of `--direction forward|reverse`.
+  - `migrate --github-token` is hidden, and warns when used (it still works).
+  - `platform` keeps `--to` required and `--target` as the Vercel environment.
 - **The install script says how to use `evnx` now and how to keep it** (WP-16).
   When the install folder is not on `PATH` it prints **Use it now** (a line for
   this terminal) and **Keep it** (the line for the shell's startup file:
