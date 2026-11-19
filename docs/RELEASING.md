@@ -153,7 +153,12 @@ choice for its own rewrite). Making `evnx.dev` the primary domain, so it answers
 `www` hop, is a host setting, not a change here. The `install-url`
 workflow (`.github/workflows/install-url.yml`) checks both addresses against `main`'s
 `scripts/install.sh` every day and on demand. It does not run on pull requests or pushes,
-because the site updates up to an hour after a merge. Check by hand before tagging, from a
+because the site updates up to an hour after a merge. A second workflow,
+`install-container` (`.github/workflows/install-container.yml`), runs `scripts/install.sh`
+every Monday and on demand in a fresh Ubuntu container and checks that the installed
+`evnx --version` is the latest release and that `evnx commands --json` lists the features
+the prebuilt binaries carry. Run it once from the Actions tab after the first release that
+has it. Check by hand before tagging, from a
 machine that can reach it:
 
 ```bash
