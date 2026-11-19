@@ -346,6 +346,8 @@ printf %s "$TOKEN" | evnx set API_TOKEN    # nothing in your shell history
 evnx set LOG_LEVEL=info --if-missing       # only when the name is not there yet
 evnx set PORT=8080 --dry-run               # the change, nothing written
 evnx set TLS_KEY --from-file key.pem       # a value from a file (several lines are fine); never printed
+evnx set --fill                            # ask for each empty or placeholder value (secrets with no echo, Enter skips)
+evnx set --fill --only 'DB_*' --dry-run    # which names it would ask for; needs no terminal
 
 PORT=$(evnx get PORT)                      # the value alone, no sourcing
 evnx get --exists DATABASE_URL             # prints nothing; exit 0 when set, 1 when not
@@ -359,6 +361,16 @@ replaced is confirmed first (`--yes` skips it); without a terminal and without
 result line is `old → new`, and `changed (value hidden)` for a secret; `--json`
 carries names and statuses, never a value. A value given on the command line
 works for a secret-looking name and warns that your shell history has it.
+
+`set --fill` is the step after `evnx init --yes`, in place of opening the file in an
+editor. It asks, in file order, for every name whose value is empty or a placeholder
+(`YOUR_KEY_HERE`, `changeme`: the rule `validate` uses); a secret-looking name is typed
+with no echo and Enter skips one. Nothing is written until the last answer, in one atomic
+write with one `.bak`, and Ctrl-C before that writes nothing. Afterwards it prints
+`validate`'s summary when a template exists. It needs a terminal: with none, or under
+`--yes` or `--json`, it exits **4** and names `--dry-run` and `evnx set NAME`. A name that is
+only in the template is not added here (`evnx sync --direction reverse` adds it); the run
+lists those. `--json` carries `filled`, `skipped`, `remaining` and `missing`: names only.
 
 `get` refuses a secret-looking name (or a value that looks like a credential)
 without `--reveal`, also when piped: exit **4**. A name that is not in the file

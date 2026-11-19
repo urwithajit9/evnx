@@ -570,3 +570,81 @@ fn get_exists_does_not_combine_with_reveal_or_json() {
     run(p.path(), &["get", "PORT", "--exists", "--reveal"]).assert_code(2);
     run(p.path(), &["get", "PORT", "--exists", "--json"]).assert_code(2);
 }
+
+// ── set --fill, with no terminal ─────────────────────────────────────────
+
+const FILL_ENV: &str =
+    "PORT=3000\nAPI_TOKEN=\nDATABASE_URL=YOUR_DATABASE_URL_HERE\nSECRET_KEY=changeme\n";
+
+#[test]
+fn fill_without_a_terminal_is_exit_4_and_names_the_way_out() {
+    let p = Project::new().env(FILL_ENV);
+    let out = run(p.path(), &["set", "--fill"]);
+    out.assert_code(4);
+    out.assert_contains("--dry-run");
+    out.assert_contains("evnx set API_TOKEN");
+    assert_eq!(p.read(".env"), FILL_ENV);
+    // --yes cannot answer a question about a value.
+    run(p.path(), &["set", "--fill", "--yes"]).assert_code(4);
+    run(p.path(), &["set", "--fill", "--json"]).assert_code(4);
+    assert_eq!(p.read(".env"), FILL_ENV);
+}
+
+#[test]
+fn fill_dry_run_lists_the_names_and_needs_no_terminal() {
+    let p = Project::new().env(FILL_ENV).example("PORT=\nNEW_ONE=\n");
+    let out = run(p.path(), &["set", "--fill", "--dry-run"]);
+    out.assert_code(0);
+    out.assert_contains("would ask for 3 values");
+    out.assert_contains("API_TOKEN  (typed with no echo)");
+    out.assert_contains("DATABASE_URL  (typed)");
+    out.assert_contains("NEW_ONE");
+    assert!(
+        !out.all().contains("YOUR_DATABASE_URL_HERE"),
+        "{}",
+        out.all()
+    );
+    assert_eq!(p.read(".env"), FILL_ENV);
+}
+
+#[test]
+fn fill_dry_run_json_has_names_only() {
+    let p = Project::new().env(FILL_ENV).example("PORT=\nNEW_ONE=\n");
+    let out = run(p.path(), &["set", "--fill", "--dry-run", "--json"]);
+    out.assert_code(0);
+    let v: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(v["run"]["tool"], "evnx");
+    assert_eq!(v["dry_run"], true);
+    assert_eq!(
+        v["would_ask"],
+        serde_json::json!(["API_TOKEN", "DATABASE_URL", "SECRET_KEY"])
+    );
+    assert_eq!(v["missing"], serde_json::json!(["NEW_ONE"]));
+    assert_eq!(v["filled"], serde_json::json!([]));
+    assert!(!out.stdout.contains("changeme"));
+}
+
+#[test]
+fn fill_only_narrows_and_a_clean_file_has_nothing_to_ask() {
+    let p = Project::new().env(FILL_ENV);
+    let out = run(
+        p.path(),
+        &["set", "--fill", "--dry-run", "--only", "SECRET_*"],
+    );
+    out.assert_code(0);
+    out.assert_contains("would ask for 1 value");
+    assert!(!out.all().contains("API_TOKEN"), "{}", out.all());
+
+    let clean = Project::new().env("PORT=3000\nHOST=localhost\n");
+    let out = run(clean.path(), &["set", "--fill"]);
+    out.assert_code(0);
+    out.assert_contains("no empty or placeholder value");
+}
+
+#[test]
+fn fill_conflicts_with_a_name_and_only_needs_fill() {
+    let p = Project::new().env(FILL_ENV);
+    run(p.path(), &["set", "--fill", "PORT=1"]).assert_code(2);
+    run(p.path(), &["set", "PORT=1", "--only", "A*"]).assert_code(2);
+    run(p.path(), &["set", "--fill", "--from-file", "x"]).assert_code(2);
+}

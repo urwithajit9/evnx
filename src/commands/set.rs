@@ -36,8 +36,12 @@ use crate::utils::ui;
 /// Everything `evnx set` takes.
 #[derive(Debug, Clone, Default)]
 pub struct Options {
-    /// `NAME` or `NAME=VALUE`, as typed.
-    pub assignment: String,
+    /// `NAME` or `NAME=VALUE`, as typed. `None` with `--fill`.
+    pub assignment: Option<String>,
+    /// `--fill`: ask for every empty or placeholder value ([`super::fill`]).
+    pub fill: bool,
+    /// `--only` (with `--fill`): glob patterns for the names to ask for.
+    pub only: Vec<String>,
     pub dir: String,
     pub env: Option<String>,
     pub env_name: Option<String>,
@@ -201,7 +205,16 @@ fn shown(value: &str) -> String {
 
 /// Run `evnx set`.
 pub fn run(opts: Options) -> Result<()> {
-    let (name, given) = split(&opts.assignment)?;
+    if opts.fill {
+        return super::fill::run(opts);
+    }
+    if !opts.only.is_empty() {
+        return Err(crate::core::verdict::usage(
+            "--only narrows --fill: evnx set --fill --only 'DB_*'",
+        ));
+    }
+    let assignment = opts.assignment.clone().unwrap_or_default();
+    let (name, given) = split(&assignment)?;
     if opts.from_file.is_some() && given.is_some() {
         return Err(crate::core::verdict::usage(
             "--from-file and NAME=value both give the value. Use one: \

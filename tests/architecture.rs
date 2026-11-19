@@ -620,6 +620,10 @@ const EXPOSE_ALLOW: &[(&str, &str)] = &[
         "add custom hands a --from-file value to the writer",
     ),
     (
+        "commands/fill.rs",
+        "set --fill reads a value to tell a placeholder from a real one; answers go straight into a Secret",
+    ),
+    (
         "commands/set.rs",
         "set hands a --from-file value to the in-place writer",
     ),

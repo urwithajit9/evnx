@@ -2445,15 +2445,28 @@ pub enum Commands {
     /// file: a certificate, a key, a service-account JSON. Several lines are
     /// fine; the value is never printed.
     ///
+    /// `--fill` goes through every name in the file whose value is empty or a
+    /// placeholder (`YOUR_KEY_HERE`, `changeme`) and asks for each one: a
+    /// secret-looking name with no echo, Enter to skip. Nothing is written
+    /// until the last answer, in one write with one `.bak`. It needs a
+    /// terminal (exit 4 without one); `--dry-run` lists the names it would
+    /// ask for. It sets names that are in the file; one that is only in the
+    /// template is added by `evnx sync --direction reverse`.
+    ///
     /// A value that is replaced is confirmed first, unless --yes. With no
     /// terminal and no value on stdin, the exit code is 4.
     #[command(after_help = docs::SET.after_help, arg_required_else_help = true)]
     #[command(mut_arg("dry_run", |a| a.help("Show what would change; write nothing. Needs no terminal.")))]
     #[command(mut_arg("json", |a| a.help("Print the result as JSON: names and statuses, never a value.")))]
+    #[command(mut_arg("from_file", |a| a.conflicts_with("fill")))]
     Set {
         /// The variable, as NAME or NAME=VALUE.
-        #[arg(value_name = "NAME[=VALUE]")]
-        assignment: String,
+        #[arg(
+            value_name = "NAME[=VALUE]",
+            required_unless_present = "fill",
+            conflicts_with = "fill"
+        )]
+        assignment: Option<String>,
 
         #[command(flatten)]
         env: args::EnvArgs,
@@ -2462,8 +2475,16 @@ pub enum Commands {
         dir: args::DirArgs,
 
         /// Do nothing when the name is already in the file.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "fill")]
         if_missing: bool,
+
+        /// Ask for every name whose value is empty or a placeholder.
+        #[arg(long)]
+        fill: bool,
+
+        /// With --fill: only names matching these globs (comma-separated or repeated).
+        #[arg(long, value_name = "GLOB", value_delimiter = ',', requires = "fill")]
+        only: Vec<String>,
 
         #[command(flatten)]
         file: args::FromFileArgs,

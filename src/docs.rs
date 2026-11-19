@@ -466,6 +466,8 @@ pub const SET: CommandDoc = CommandDoc {
   evnx set LOG_LEVEL=info --if-missing      only when the name is not there yet
   evnx set PORT=8080 --dry-run              show the change, write nothing
   evnx set TLS_KEY --from-file key.pem      a certificate or key from a file; never printed
+  evnx set --fill                           ask for every empty or placeholder value
+  evnx set --fill --dry-run                 list the names it would ask for; no terminal needed
 
 Full guide: https://docs.evnx.dev/cli/commands/set",
 };
