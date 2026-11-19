@@ -1,0 +1,46 @@
+name: Install URL
+
+# WP-16 (owner decision D4): the one install URL must serve exactly
+# scripts/install.sh from `main`.
+#
+# Daily and on demand only, never on a pull request or a push: the script ships
+# on merge, the site updates from `main` up to an hour after it, and a PR would
+# compare the served (old) file with the PR's new one. A run right after a merge
+# can fail once for that reason; run it again.
+#
+# How the hosts answer (checked 2026-11-18):
+#   evnx.dev/install.sh      308 -> https://www.evnx.dev/install.sh, which serves
+#                            the script as text/plain
+#   dotenv.space/install.sh  redirects to evnx.dev/install.sh (the owner is
+#                            setting that up; until then it serves the script
+#                            itself with 200). Either way the content must match.
+# `curl -fsSL` follows the redirects and fails on an HTTP error.
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install-url:
+    name: install URL serves scripts/install.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - name: evnx.dev/install.sh equals scripts/install.sh on main
+        run: |
+          set -euo pipefail
+          curl -fsSL https://evnx.dev/install.sh -o served-install.sh
+          diff -u scripts/install.sh served-install.sh \
+            || { echo "::error::https://evnx.dev/install.sh differs from scripts/install.sh on main"; exit 1; }
+      - name: dotenv.space/install.sh serves the same script
+        run: |
+          set -euo pipefail
+          curl -fsSL https://dotenv.space/install.sh -o served-dotenv-space.sh
+          diff -u scripts/install.sh served-dotenv-space.sh \
+            || { echo "::error::https://dotenv.space/install.sh differs from scripts/install.sh on main"; exit 1; }
