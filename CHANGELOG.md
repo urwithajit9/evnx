@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- **A "no" at a confirmation prompt now exits 4.** These commands printed
+  "Cancelled" and exited 0 when you answered no: `vault delete`, `vault leave`,
+  `vault revoke`, `vault rekey`, `org seats`, `org remove`, `org delete`,
+  `org leave`, `cloud push` (the shrink question and the production-file
+  question), `cloud delete-version`, `auth rotate-master-password`,
+  `auth token revoke`, `auth sessions revoke`, `auth sessions revoke-others`
+  and `auth devices disavow`. They now exit 4 after the same message, like
+  `set`, `remove` and `platform`. A script that treated a "no" as success
+  should accept 4 or pass `--yes`.
+
 - **Classic GitHub tokens that fail their checksum are no longer findings.** A
   value that starts `ghp_`, `gho_`, `ghu_` or `ghr_` and has 36 characters after
   it carries a checksum in its last six. A value whose checksum does not match
@@ -18,9 +28,39 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ghs_` tokens and other lengths are not judged. CI that gated on made-up
   `ghp_` values in test files now passes; real tokens are unaffected.
 
+- **More GitLab tokens are found.** New rules for feed tokens (`glft-`),
+  incoming email tokens (`glimt-`), agent for Kubernetes tokens (`glagent-`),
+  workspace tokens (`glwt-`, GitLab 18.2 and later), SCIM tokens (`glsoat-`),
+  feature flags client tokens (`glffct-`) and OAuth application secrets
+  (`gloas-`). The runner rule also finds `glrtr-` tokens, and the personal
+  access token rule finds the routable form that ends in `.` and nine
+  characters. CI that passed may now fail: accept what is not a secret with
+  `evnx:allow` or `--update-baseline`.
+
+- **Secrets inside encoded values are found.** A value of 16 to 4096
+  characters that is base64, hex or percent-encoded text is decoded once, and
+  the text is checked against the format rules (known prefixes, private-key
+  headers, connection strings), not against names or entropy. Binary results
+  such as images and hashes are dropped. Such a finding says "found inside a
+  base64-encoded value, decoded once" and carries `encoded` in JSON. CI that
+  passed may now fail: baseline what is not a secret.
+
+- **The confidence shown can move one level.** A finding on a line with an
+  `Authorization` or `Bearer` header, an HTTP client call or a connection
+  string is shown one level higher; one in a file under a `test`, `tests`,
+  `mock`, `spec` or `fixtures` folder one level lower (name, entropy and
+  medium findings only). Nothing is dropped, and the exit code, the
+  `--confidence` floor and the summary counts use the level before the hint.
+  Pretty, JSON and SARIF output show the moved level; JSON lists the hints in
+  `context` and the earlier level in `confidence_before_context`.
+
 - **Scan JSON is `schema_version` 3.** Findings that are allowed or in the
-  baseline carry `reason_code`, and `summary.by_reason` counts them. The
-  `run` header is unchanged. The SARIF output now lists allowed and baseline
+  baseline carry `reason_code`, and `summary.by_reason` counts them. A finding
+  may also carry `encoded` (`base64`, `hex` or `url`), `context` and
+  `confidence_before_context`, and under `--history` `commit`, `blob`,
+  `commit_time` and `git: "history"`; `effective_config` has
+  `rules_digest`. Each new field is left out when it does not apply. The `run`
+  header is unchanged. The SARIF output now lists allowed and baseline
   findings as suppressed results, with the reason as the justification.
 
 - **YAML reader replaced.** evnx reads YAML (scan of `.yml`/`.yaml`, `init`'s
@@ -37,37 +77,31 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The SBOM is attached to each release archive** as a signed CycloneDX
+  attestation: `gh attestation verify <archive> -R urwithajit9/evnx
+  --predicate-type https://cyclonedx.org/bom`.
 
-### Changed
+- **`evnx add custom NAME --from-file <path|->` and `evnx set NAME --from-file
+  <path|->`** read one value from a file or from standard input: a certificate,
+  a private key, a service-account JSON. Several lines are fine; the value is
+  written double-quoted with `\n` escapes, so `evnx get` and every dotenv
+  reader get it back exactly. At most 64 KiB; one final line break is dropped
+  (`--keep-trailing-newline` keeps it); a binary file needs `--base64`; the
+  command takes exactly one NAME and no `NAME=value`. The value is never
+  printed: a dry run says `118 bytes, 4 lines`. A source file inside a git
+  repository that is tracked or not ignored gets a warning.
 
-- The `evnx-scan-push` hook in `.pre-commit-hooks.yaml` now scans the commits
-  being pushed (`evnx scan --history`, from `PRE_COMMIT_FROM_REF` to
-  `PRE_COMMIT_TO_REF`) instead of the files on disk with SARIF output.
-
-- `evnx run --help` and `evnx cloud run --help` show `-- <COMMAND>...` in the
-  usage line again; running with no command is still a usage error.
-- The `API` line that names a non-default Vercel API address is no longer
-  printed for a loopback address (`127.0.0.1`, `::1`, `localhost`), where the
-  token does not leave the machine.
-- `doctor --help` says that `--all` validates a project that has only a
-  `[vars]` contract in `.evnx.toml` and no template.
-
-- **Every built-in scan rule declares keywords.** The scan tries a rule only on
-  text that contains one of its literal prefixes (one pass for all rules),
-  instead of running every expression everywhere. Findings do not change. A
-  test fails for a rule with no keywords unless it is listed with a reason.
-
-- Progress bars use `indicatif` 0.18, which no longer pulls in the
-  unmaintained `number_prefix` crate. Output is unchanged.
-- The unsafe C port `unsafe-libyaml` is no longer in the build: YAML parsing
-  is pure Rust. A YAML error names a line, a column and a fixed reason.
-
-### Fixed
-
-- A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own
-  environment while it is read (that needed `unsafe`); `run` still keeps every
-  `EVNX_*` variable out of the command it starts.
-
+- **`evnx set --fill`** asks, in file order, for every name in `.env` whose
+  value is empty or a placeholder (`YOUR_KEY_HERE`, `changeme`: the rule
+  `validate` uses). A secret-looking name is typed with no echo, and Enter
+  skips one; `--only <glob>` narrows the names. Nothing is written until the
+  last answer, in one atomic write with one `.bak`, and Ctrl-C before that
+  writes nothing. Afterwards it prints `validate`'s summary when a template
+  exists. It needs a terminal: with none, or under `--yes` or `--json`, it
+  exits 4 and names `--dry-run` (which lists the names it would ask for) and
+  `evnx set NAME`. A name only in the template is not added (`evnx sync
+  --direction reverse` adds it); the run lists those. `--json` carries
+  `filled`, `skipped`, `remaining` and `missing`: names only.
 
 - **`evnx add import <FILE|->`** adds many variables from one file to `.env`:
   `.env`, `.properties`, INI, JSON, YAML (flat, nested with `__`, a Kubernetes
@@ -80,6 +114,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--dry-run` and `--json` give a source-to-name mapping and never a value.
   A tracked source file with secrets gets a warning to untrack it and rotate
   them.
+
 - **`evnx add import` reads a `web.config`** (`.config`, `.xml`, or
   `--from web-config`): the `<add key value>` entries of
   `<configuration><appSettings>`, with `<clear/>` and `<remove key>` applied
@@ -88,7 +123,80 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   byte-order mark and UTF-16 files are accepted. An error names a line and a
   column, never a value.
 
+- **`evnx cloud delete-version --latest`** (admin) deletes the latest version of
+  a vault. The question names the version that becomes the latest and asks for
+  the vault's full name; `--yes` skips it for CI. A vault with one version is
+  refused, and `delete-version N` for the latest still refuses and points to
+  `--latest`. The version deleted is always the number listed, so a push in
+  between is never the one removed. This machine stops warning about the
+  version it deleted; other machines still see the "latest went down" warning,
+  which now says an admin may have deleted it.
 
+- **`evnx cloud watch --on-change -- <COMMAND>...`** runs a command once for
+  each reported change. It runs directly, not through a shell, like `evnx run`;
+  it gets `EVNX_WATCH_VAULT` and `EVNX_WATCH_VERSION` and no other `EVNX_*`
+  variable. It finishes before the next poll, so changes that arrive meanwhile
+  are one call. A failing command prints one warning and watching goes on. With
+  `--once` it runs when the vault is past the latest version this machine has
+  seen.
+
+- **`evnx config show`** prints every effective setting with its source: the
+  built-in default, a line of `.evnx.toml`, the user's `config.toml`, an
+  environment variable, a global flag, or a scan policy file. `--json` has the
+  usual `run` header, a `files` list, the `settings` and any warnings for
+  unknown keys. Credentials are shown only as `set (hidden)` or `not set`, and
+  a server URL that does not validate is refused without being quoted.
+
+- **`evnx scan --history [RANGE]`** scans the files git history added or
+  changed instead of the files on disk: `--history origin/main..HEAD`,
+  `--history v0.15.0..`, a bare `--history` for everything reachable from
+  `HEAD`, or `--history all` for every ref. Each distinct file version is read
+  once, whole, and reported against the oldest commit that has it
+  (`path@abc1234:LINE`). A secret that was added and later removed is still
+  found: rotate it, then rewrite history. Paths limit it to files under them;
+  outside a repository it exits 2.
+
+- **A bare `scan --history` builds on the last clean scan.** It reads only
+  the commits made since the last clean history scan of this clone, kept in
+  `.git/evnx/history.json` (never committed), unless the rules, the scan
+  settings or the baseline changed; `--full` reads all history again. The
+  baseline now records a hash of the rule set it was written under
+  (`rules_digest`); it stays `schema_version` 1, and an older evnx ignores the
+  field.
+
+- **`evnx scan hook install --pre-push`** installs a git `pre-push` hook that
+  scans the commits being pushed (what each ref adds beyond the remote). A push
+  is blocked for secrets in them, and when the scan cannot run.
+  `EVNX_SCAN_BYPASS="<reason>" git push` pushes anyway: the reason is required,
+  and it is logged with the time and the commits to `.git/evnx/bypass.log`.
+  `hook uninstall` and `hook status` take `--pre-push` too.
+
+### Changed
+
+- The `evnx-scan-push` hook in `.pre-commit-hooks.yaml` now scans the commits
+  being pushed (`evnx scan --history`, from `PRE_COMMIT_FROM_REF` to
+  `PRE_COMMIT_TO_REF`) instead of the files on disk with SARIF output.
+- `evnx run --help` and `evnx cloud run --help` show `-- <COMMAND>...` in the
+  usage line again; running with no command is still a usage error.
+- The `API` line that names a non-default Vercel API address is no longer
+  printed for a loopback address (`127.0.0.1`, `::1`, `localhost`), where the
+  token does not leave the machine.
+- `doctor --help` says that `--all` validates a project that has only a
+  `[vars]` contract in `.evnx.toml` and no template.
+- **Every built-in scan rule declares keywords.** The scan tries a rule only on
+  text that contains one of its literal prefixes (one pass for all rules),
+  instead of running every expression everywhere. Findings do not change. A
+  test fails for a rule with no keywords unless it is listed with a reason.
+- Progress bars use `indicatif` 0.18, which no longer pulls in the
+  unmaintained `number_prefix` crate. Output is unchanged.
+- The unsafe C port `unsafe-libyaml` is no longer in the build: YAML parsing
+  is pure Rust. A YAML error names a line, a column and a fixed reason.
+
+### Fixed
+
+- A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own
+  environment while it is read (that needed `unsafe`); `run` still keeps every
+  `EVNX_*` variable out of the command it starts.
 - **`add custom NAME=value` now writes the value to `.env` when the template
   lists NAME with another value** (such as an empty `NAME=`). It used to report
   a template conflict and write nothing.
