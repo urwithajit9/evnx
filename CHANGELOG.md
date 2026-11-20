@@ -18,6 +18,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ghs_` tokens and other lengths are not judged. CI that gated on made-up
   `ghp_` values in test files now passes; real tokens are unaffected.
 
+- **Scan JSON is `schema_version` 3.** Findings that are allowed or in the
+  baseline carry `reason_code`, and `summary.by_reason` counts them. The
+  `run` header is unchanged. The SARIF output now lists allowed and baseline
+  findings as suppressed results, with the reason as the justification.
+
 ### Added
 
 

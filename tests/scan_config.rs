@@ -286,14 +286,14 @@ fn findings(dir: &TempDir, args: &[&str]) -> serde_json::Value {
     serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}\n{out}\n{err}"))
 }
 
-/// C2: the JSON carries `schema_version: 2`, and each finding its stable
+/// C2: the JSON carries `schema_version: 3`, and each finding its stable
 /// `rule_id` and `severity` beside `confidence`.
 #[test]
 fn c2_json_carries_rule_id_and_severity() {
     let aws = format!("AKIA{}", "IOSFODNN7ABCDEFG");
     let d = project(&[(".env", &format!("AWS_ACCESS_KEY_ID={aws}\n"))]);
     let doc = findings(&d, &[]);
-    assert_eq!(doc["schema_version"], 2);
+    assert_eq!(doc["schema_version"], 3);
     let f = &doc["findings"][0];
     assert_eq!(
         (&f["rule_id"], &f["severity"], &f["confidence"]),

@@ -520,6 +520,7 @@ fn run() -> Result<Verdict, EvnxError> {
                 confidence,
                 baseline,
                 update_baseline,
+                reason,
                 rule_files,
                 output,
                 exit_zero,
@@ -681,6 +682,7 @@ fn run() -> Result<Verdict, EvnxError> {
                         ),
                         baseline,
                         update_baseline,
+                        reason,
                         rule_files,
                         project_root: config_source
                             .as_deref()

@@ -111,6 +111,8 @@ pub struct ScanRunner {
     /// `--update-baseline`: write this run's findings here instead of
     /// reporting them (C5).
     update_baseline: Option<std::path::PathBuf>,
+    /// `--update-baseline --reason <code>`: given to the entries added now.
+    baseline_reason: Option<String>,
     /// `(built-in, custom)` rule counts and every rule's name, for `-v`
     /// (I-058). The rules themselves live in the registry.
     rule_counts: (usize, usize),
@@ -178,6 +180,13 @@ impl ScanRunner {
     ) -> Self {
         self.baseline = baseline;
         self.update_baseline = update;
+        self
+    }
+
+    /// The reason code `--update-baseline` gives to the entries it adds
+    /// (`--reason`, SCAN-REASONS).
+    pub fn with_baseline_reason(mut self, reason: Option<String>) -> Self {
+        self.baseline_reason = reason;
         self
     }
 
@@ -292,6 +301,7 @@ impl ScanRunner {
             min_severity: crate::core::secretscan::Severity::Low,
             baseline: Default::default(),
             update_baseline: None,
+            baseline_reason: None,
             rule_counts,
             rule_names,
             extensions_from: "",
@@ -684,7 +694,9 @@ impl ScanRunner {
                 })
                 .collect();
             let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-            let next = self.baseline.rewrite(&current, &today);
+            let next = self
+                .baseline
+                .rewrite(&current, &today, self.baseline_reason.as_deref());
             if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
                 crate::core::safe_write::create_dirs(dir)?;
             }
@@ -706,10 +718,18 @@ impl ScanRunner {
         // C5: `-v` lists what markers and the baseline set aside.
         if self.verbose {
             for f in results.allowed.iter().chain(&results.known) {
+                let code = f
+                    .reason_code
+                    .as_deref()
+                    .map(|c| format!(" [{c}]"))
+                    .unwrap_or_default();
                 let why = match (f.status, &f.reason) {
-                    (super::models::Status::Allowed, Some(r)) => format!("allowed: {r}"),
+                    (super::models::Status::Allowed, Some(r)) => format!("allowed{code}: {r}"),
+                    (super::models::Status::Allowed, None) if !code.is_empty() => {
+                        format!("allowed{code}")
+                    }
                     (super::models::Status::Allowed, None) => "allowed, no reason given".into(),
-                    _ => "known (baseline)".into(),
+                    _ => format!("known (baseline){code}"),
                 };
                 ui::verbose_stderr(format!("{}  {}  {why}", f.location, f.rule_id));
             }
@@ -1104,7 +1124,21 @@ impl ScanRunner {
         );
         let here = display_portable(path);
         if let Some(m) = super::suppress::allowing(lines, line, &finding.rule_id) {
-            if m.reason.is_none() {
+            if let Some(code) = m
+                .reason_code
+                .as_deref()
+                .filter(|c| !super::suppress::is_known_reason(c))
+            {
+                results.log.push((
+                    true,
+                    format!(
+                        "{here}:{line}: evnx:allow {}: {}",
+                        finding.rule_id,
+                        super::suppress::unknown_reason_warning(code)
+                    ),
+                ));
+            }
+            if m.reason.is_none() && m.reason_code.is_none() {
                 results.log.push((
                     true,
                     format!(
@@ -1115,6 +1149,7 @@ impl ScanRunner {
             }
             finding.status = super::models::Status::Allowed;
             finding.reason = m.reason;
+            finding.reason_code = m.reason_code;
             results.allowed.push(finding);
             return;
         }
@@ -1142,7 +1177,8 @@ impl ScanRunner {
                 }
             }
         }
-        if self.baseline.contains(&finding.fingerprint) {
+        if let Some(entry) = self.baseline.get(&finding.fingerprint) {
+            finding.reason_code = entry.reason.clone();
             finding.status = super::models::Status::Known;
             results.known.push(finding);
             return;

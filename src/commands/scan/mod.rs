@@ -103,6 +103,9 @@ pub struct ScanOptions {
     /// `--update-baseline`: write this run's findings to the baseline and
     /// exit 0 (C5).
     pub update_baseline: bool,
+    /// `--reason <code>` with `--update-baseline`: why the entries added now
+    /// are accepted (SCAN-REASONS).
+    pub reason: Option<String>,
     /// `--rules <file>`: rule files for this run only (C6).
     pub rule_files: Vec<String>,
     /// The folder holding the `.evnx.toml` in force, else the current one:
@@ -161,6 +164,7 @@ impl Default for ScanOptions {
             confidence: "low".to_string(),
             baseline: None,
             update_baseline: false,
+            reason: None,
             rule_files: Vec::new(),
             project_root: std::path::PathBuf::from("."),
             format: OutputFormat::Pretty,
@@ -237,6 +241,17 @@ pub fn run(opts: ScanOptions) -> Result<Verdict, anyhow::Error> {
                  the baseline from an empty one and lose its entries. Run --update-baseline \
                  without --no-config."
             );
+        }
+        // SCAN-REASONS: a code outside the list is kept, and said so.
+        if let Some(code) = opts
+            .reason
+            .as_deref()
+            .filter(|c| !suppress::is_known_reason(c))
+        {
+            crate::utils::ui::warning(format!(
+                "--reason: {}",
+                suppress::unknown_reason_warning(code)
+            ));
         }
         let min_severity: crate::core::secretscan::Severity = opts.severity.parse()?;
         let min_confidence: Confidence = opts.confidence.parse()?;
@@ -331,6 +346,7 @@ pub fn run(opts: ScanOptions) -> Result<Verdict, anyhow::Error> {
             baseline,
             opts.update_baseline.then(|| baseline_path.clone()),
         )
+        .with_baseline_reason(opts.reason.clone())
         .with_disabled(disabled, &opts.disable)
         .with_follow_symlinks(opts.follow_symlinks)
         .with_include_dirs(&opts.include_dirs)
