@@ -39,13 +39,6 @@ ignore = [
     # here yet (see the TODO above).
     "RUSTSEC-2024-0320",
 
-    # number_prefix 0.4.0, through indicatif 0.17.11. Used only to format byte
-    # sizes in progress bars. indicatif 0.17.11 is the newest release available
-    # to this build; move to the release that drops it when one is.
-    # `cargo tree -e normal --all-features -i number_prefix` prints
-    # number_prefix -> indicatif -> evnx.
-    "RUSTSEC-2025-0119",
-
     # chrono 0.4: kept on purpose (25 call sites; replacing it with jiff or time
     # is a separate change). Read the advisory before each release: if evnx
     # reaches the affected code, patch instead of ignoring.

@@ -45,6 +45,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of running every expression everywhere. Findings do not change. A
   test fails for a rule with no keywords unless it is listed with a reason.
 
+- Progress bars use `indicatif` 0.18, which no longer pulls in the
+  unmaintained `number_prefix` crate. Output is unchanged.
+
 ### Fixed
 
 - A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own

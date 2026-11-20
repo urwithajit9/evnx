@@ -98,7 +98,7 @@ unicode-width = "0.2"
 
 # Progress bars — used in utils/ui.rs and migrate/destinations/github.rs;
 # always compiled so both call-sites can import without a feature gate.
-indicatif = "0.17"
+indicatif = "0.18"
 
 # Serialization
 serde      = { version = "1",   features = ["derive"] }
