@@ -2207,17 +2207,28 @@ pub enum CloudCommands {
     /// Permanent. The blob is removed from storage and the server has never
     /// held anything that could rebuild it.
     ///
-    /// The latest version cannot be deleted. `evnx cloud pull` and `evnx
-    /// cloud run` fetch it, so removing it would silently change what every
-    /// consumer of the vault receives. Push a newer version first, or delete the
-    /// whole vault.
+    /// Deleting the latest version needs `--latest`, because `evnx cloud pull`
+    /// and `evnx cloud run` fetch it: the version before it becomes the
+    /// latest, and every consumer of the vault gets that one from then on. The
+    /// prompt names the version that takes over and asks for the full vault
+    /// name; `--yes` skips it, for CI. A vault with one version cannot be
+    /// emptied this way: delete the whole vault instead.
     ///
     /// Needs admin on the vault: a developer can push new versions but not
     /// remove old ones. Use `evnx cloud history` to see what a vault holds.
     DeleteVersion {
         /// Version number to delete, as `evnx cloud history` shows it.
-        #[arg(value_name = "VERSION", value_parser = clap::value_parser!(i32).range(1..))]
-        version_num: i32,
+        #[arg(
+            value_name = "VERSION",
+            value_parser = clap::value_parser!(i32).range(1..),
+            required_unless_present = "latest",
+            conflicts_with = "latest"
+        )]
+        version_num: Option<i32>,
+
+        /// Delete the latest version instead of naming a number.
+        #[arg(long)]
+        latest: bool,
 
         /// Vault to act on. Optional in a bound directory.
         #[arg(long, value_name = "VAULT")]

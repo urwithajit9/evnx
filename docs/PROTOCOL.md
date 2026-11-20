@@ -760,14 +760,17 @@ and the secrets themselves must be rotated at their source
 
 Deleting a version makes room under the plan's version limit (6.4).
 
-The 0.14.0 CLI does not use the new case. `evnx cloud delete-version` needs a
-signed-in session and still refuses the latest version before it calls the
-server (`cli:src/cloud/sync.rs:1355-1369,1397-1404`). An admin can delete the
-latest through the API.
+`evnx cloud delete-version --latest` uses it (admin only). It names the version
+that becomes the latest, asks for the vault's full name (`--yes` skips the
+question), refuses a vault with one version before calling the server, and always
+deletes by the number it listed, so a push in between is never the version
+removed. `delete-version N` for the latest version still refuses and points to
+`--latest`. After the delete this machine's high-water mark drops to the new
+latest.
 
 A machine that had seen the deleted number will see `latest` go down. The
 high-water check (8.1) warns, and its message names an admin deleting the latest
-version as one cause (`cli:src/cloud/highwater.rs:72-86`).
+version as one cause (`cli:src/cloud/highwater.rs`).
 
 ## 8. Client-side checks
 

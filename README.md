@@ -1310,14 +1310,16 @@ evnx cloud diff                                     # what differs between two v
 evnx cloud diff --local                             # v0.11.0+: your file against the latest version, nothing written
 evnx cloud export --output ../backup --all-versions # every version to disk, decrypted
 evnx cloud delete-version 2 --vault app/production  # remove one version for good
+evnx cloud delete-version --latest                  # admin: remove the latest; the one before takes over
 ```
 
 `cloud export` writes the latest version unless `--all-versions` is given, into
 `./evnx-export/` unless `--output` (`-o`) names a directory. Inside a git work
 tree it refuses the default directory unless `--force`, and writes a
 `.gitignore` there either way: these are plaintext secrets. `cloud
-delete-version` never removes the latest version, and needs a sign-in rather than
-an API token.
+delete-version` removes the latest version only with `--latest`, which names the
+version that takes over and asks for the vault's full name; a vault with one
+version cannot be emptied this way. It needs a sign-in rather than an API token.
 
 ### Which file push and pull use
 

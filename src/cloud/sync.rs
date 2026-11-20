@@ -1514,6 +1514,42 @@ mod env_file_tests {
 
 // ─── Deleting a version ───────────────────────────────────────────────────────
 
+/// Which version `delete-version` is asked to remove.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VersionChoice {
+    /// A number, as `cloud history` shows it.
+    Number(i32),
+    /// Whatever the latest is when the list is read.
+    Latest,
+}
+
+impl VersionChoice {
+    /// From the parsed arguments. clap guarantees exactly one of them is given;
+    /// should that ever not hold, a number wins, because it is the explicit one.
+    #[must_use]
+    pub fn from_args(version_num: Option<i32>, latest: bool) -> Self {
+        match (version_num, latest) {
+            (Some(n), _) => Self::Number(n),
+            (None, _) => Self::Latest,
+        }
+    }
+}
+
+/// The second line of the question for `--latest`: what becomes the latest.
+///
+/// Pure, so the wording is tested without a server. `next` is the version that
+/// takes over, `pushed_at` the server's timestamp (only the date is shown).
+#[must_use]
+fn takeover_notice(deleted: i32, next: &VersionSummary) -> String {
+    let date = next.pushed_at.get(..10).unwrap_or(&next.pushed_at);
+    format!(
+        "Delete version {deleted}, the latest? Version {} ({} key(s), pushed {date}) \
+         becomes the latest: `evnx cloud pull` and `evnx cloud run` return it from \
+         now on.",
+        next.version_num, next.key_count
+    )
+}
+
 /// Remove one version of a vault.
 ///
 /// ⚠️ This exists because the server's version quota refuses a push with *"Delete
@@ -1522,15 +1558,29 @@ mod env_file_tests {
 /// than one admitting there is nothing to be done, because it sends people looking
 /// for a door that is not there.
 ///
-/// The latest version cannot be deleted, by the server and by the check below.
-/// `cloud pull` and `cloud run` fetch the latest, so removing it would silently
-/// change what every consumer of the vault receives — the next deploy would pick up
-/// older secrets with nobody having asked. The check here is a courtesy that saves
-/// a round trip; the server is what enforces it.
+/// The latest version needs `--latest` ([`VersionChoice::Latest`]). `cloud pull`
+/// and `cloud run` fetch the latest, so removing it silently changes what every
+/// consumer of the vault receives — the next deploy would pick up older secrets.
+/// So it is never done by number alone: the question says which version takes
+/// over, and the vault's full name has to be typed (`--yes` skips both, for CI).
+///
+/// **Server behaviour this relies on, to be verified by the owner against the
+/// server** (PROTOCOL 7.4 documents it from the server source, but no test here
+/// reaches a real server — the tests use a mock):
+///
+/// 1. `DELETE /vaults/{id}/versions/{n}` accepts the latest version when an
+///    older one exists, and answers 409 only for the vault's last remaining one.
+/// 2. After it, the previous version is the latest, and the next push is numbered
+///    `latest + 1`, so the deleted number is reused.
+/// 3. A `version_deleted` audit event is written (`version_num`, `was_latest`,
+///    `latest_after`).
+///
+/// The delete is always by number, resolved from the list this command just
+/// read: a push that lands in between is never the version removed.
 pub fn delete_version(
     server_override: Option<&str>,
     vault_target: Option<String>,
-    version_num: i32,
+    choice: VersionChoice,
     yes: bool,
     verbose: bool,
 ) -> Result<()> {
@@ -1556,6 +1606,11 @@ pub fn delete_version(
         .max()
         .ok_or_else(|| anyhow!("{} has no versions to delete.", vault_ref.label()))?;
 
+    let version_num = match choice {
+        VersionChoice::Number(n) => n,
+        VersionChoice::Latest => latest,
+    };
+
     let target = listed
         .versions
         .iter()
@@ -1569,11 +1624,29 @@ pub fn delete_version(
             )
         })?;
 
-    if version_num == latest {
+    // What takes over when the latest goes: the highest of the others.
+    let successor = listed
+        .versions
+        .iter()
+        .filter(|v| v.version_num != version_num)
+        .max_by_key(|v| v.version_num);
+
+    let deleting_latest = version_num == latest;
+    if deleting_latest && choice == VersionChoice::Number(version_num) {
         return Err(anyhow!(
             "version {version_num} is the latest version of {}, and deleting it would \
              change what `evnx cloud pull` and `evnx cloud run` return without anyone \
              asking for that.\n\
+             \x20 To delete it anyway, say so: `evnx cloud delete-version --latest --vault {}`.\n\
+             \x20 Nothing has been changed.",
+            vault_ref.label(),
+            vault_ref.label()
+        ));
+    }
+    if deleting_latest && successor.is_none() {
+        return Err(anyhow!(
+            "version {version_num} is the only version of {}, so there is nothing to fall \
+             back to.\n\
              \x20 Push a newer version first, or delete the whole vault with `evnx vault \
              delete`. Nothing has been changed.",
             vault_ref.label()
@@ -1596,13 +1669,28 @@ pub fn delete_version(
          that could rebuild it, so there is no undo."
             .dimmed()
     );
+    if let (true, Some(next)) = (deleting_latest, successor) {
+        crate::say!();
+        println!("  {}", takeover_notice(version_num, next).yellow());
+    }
     crate::say!();
 
-    if !crate::utils::prompt::confirm(
-        &format!("  Delete version {version_num}"),
-        yes,
-        &format!("evnx cloud delete-version {version_num} --vault {vault_target} --yes"),
-    )? {
+    let confirmed = if deleting_latest {
+        let label = vault_ref.label();
+        let example = format!("evnx cloud delete-version --latest --vault {label} --yes");
+        if yes {
+            true
+        } else {
+            crate::utils::prompt::confirm_typed(&label, &example)?
+        }
+    } else {
+        crate::utils::prompt::confirm(
+            &format!("  Delete version {version_num}"),
+            yes,
+            &format!("evnx cloud delete-version {version_num} --vault {vault_target} --yes"),
+        )?
+    };
+    if !confirmed {
         println!("  Nothing was deleted.");
         return Err(crate::utils::prompt::Declined.into());
     }
@@ -1617,8 +1705,24 @@ pub fn delete_version(
         .map_err(delete_version_error)?;
 
     crate::say!("  {} deleted version {version_num}", "✓".green());
+    if let (true, Some(next)) = (deleting_latest, successor) {
+        // This machine asked for it, so it must not warn about it later: the
+        // high-water mark goes down with the vault. Other machines will warn,
+        // once, until they next see a version at or above their own mark.
+        super::highwater::set(&vault_ref.id, next.version_num);
+        crate::say!(
+            "  version {} is now the latest. Other machines that had seen version {version_num} \
+             will warn that the latest went down.",
+            next.version_num
+        );
+    }
     if verbose {
-        println!("  latest is still {latest}");
+        let now = if deleting_latest {
+            successor.map_or(latest, |n| n.version_num)
+        } else {
+            latest
+        };
+        println!("  latest is now {now}");
     }
     Ok(())
 }

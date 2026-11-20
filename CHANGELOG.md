@@ -25,6 +25,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`evnx cloud delete-version --latest`** (admin) deletes the latest version of
+  a vault. The question names the version that becomes the latest and asks for
+  the vault's full name; `--yes` skips it for CI. A vault with one version is
+  refused, and `delete-version N` for the latest still refuses and points to
+  `--latest`. The version deleted is always the number listed, so a push in
+  between is never the one removed. This machine stops warning about the
+  version it deleted; other machines still see the "latest went down" warning,
+  which now says an admin may have deleted it.
 
 ### Changed
 

@@ -210,3 +210,194 @@ fn rm86_link_file_is_stored_from_the_toml_folder() {
     outside.assert_code(2);
     assert!(outside.stderr.contains("is outside"), "{}", outside.stderr);
 }
+
+// ─── `cloud delete-version --latest` ─────────────────────────────────────────
+
+fn versions_body(nums: &[i32]) -> String {
+    let rows: Vec<String> = nums
+        .iter()
+        .rev()
+        .map(|n| {
+            format!(
+                r#"{{"version_num":{n},"key_count":{n},"key_names":["A"],"blob_hash":"h{n}",
+                "blob_size_bytes":40,"pushed_by":"u-me","pushed_at":"2026-11-1{n}T09:00:00Z"}}"#
+            )
+        })
+        .collect();
+    format!(r#"{{"versions":[{}]}}"#, rows.join(","))
+}
+
+/// A server with `app/production` holding `nums`, and one mock per version
+/// deletion that is expected to happen.
+fn latest_server(nums: &[i32]) -> mockito::ServerGuard {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"production",
+            "role":"admin","version_count":{},"updated_at":"2026-11-18T00:00:00Z"}}]}}"#,
+            nums.len()
+        ))
+        .create();
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions").as_str(),
+    )
+    .with_status(200)
+    .with_body(versions_body(nums))
+    .create();
+    s
+}
+
+fn marks(p: &Project) -> serde_json::Value {
+    let text = std::fs::read_to_string(p.path().join("cfg/high-water.json")).unwrap_or_default();
+    serde_json::from_str(&text).unwrap_or(serde_json::Value::Null)
+}
+
+/// `--latest` resolves the number from the list, deletes that number, names the
+/// version that takes over, and lowers this machine's high-water mark so the
+/// machine that did it is not the one that warns.
+#[test]
+fn del_latest_with_yes_deletes_the_resolved_number_and_lowers_the_mark() {
+    let mut s = latest_server(&[1, 2, 3]);
+    let del = s
+        .mock(
+            "DELETE",
+            format!("/api/v1/vaults/{VAULT_ID}/versions/3").as_str(),
+        )
+        .with_status(200)
+        .with_body(r#"{"deleted":3,"latest":2,"was_latest":true}"#)
+        .expect(1)
+        .create();
+    let other = s
+        .mock(
+            "DELETE",
+            mockito::Matcher::Regex(r"/versions/[12]$".to_string()),
+        )
+        .expect(0)
+        .create();
+    let p = Project::new();
+    std::fs::create_dir_all(p.path().join("cfg")).unwrap();
+    std::fs::write(
+        p.path().join("cfg/high-water.json"),
+        format!(r#"{{"{VAULT_ID}": 3}}"#),
+    )
+    .unwrap();
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &[
+            "cloud",
+            "delete-version",
+            "--latest",
+            "--vault",
+            "app/production",
+            "--yes",
+        ],
+        None,
+    );
+    out.assert_code(0);
+    del.assert();
+    other.assert();
+    assert!(
+        out.stdout
+            .contains("Version 2 (2 key(s), pushed 2026-11-12) becomes the latest"),
+        "{}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("deleted version 3"), "{}", out.stdout);
+    assert_eq!(marks(&p)[VAULT_ID], 2, "the mark must follow the delete");
+}
+
+/// The vault's only version is not deletable this way: the message names the
+/// whole-vault delete and nothing is sent.
+#[test]
+fn del_latest_with_a_single_version_is_refused_and_sends_nothing() {
+    let mut s = latest_server(&[1]);
+    let any = s.mock("DELETE", mockito::Matcher::Any).expect(0).create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "cloud",
+            "delete-version",
+            "--latest",
+            "--vault",
+            "app/production",
+            "--yes",
+        ],
+        None,
+    );
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("only version") && out.stderr.contains("evnx vault delete"),
+        "{}",
+        out.stderr
+    );
+    any.assert();
+}
+
+/// A bare number for the latest version is still refused, and the message says
+/// which flag does it.
+#[test]
+fn del_latest_by_number_points_to_the_flag() {
+    let mut s = latest_server(&[1, 2]);
+    let any = s.mock("DELETE", mockito::Matcher::Any).expect(0).create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "cloud",
+            "delete-version",
+            "2",
+            "--vault",
+            "app/production",
+            "--yes",
+        ],
+        None,
+    );
+    out.assert_code(2);
+    assert!(out.stderr.contains("--latest"), "{}", out.stderr);
+    any.assert();
+}
+
+/// Without a terminal and without `--yes`: exit 4, the command with `--yes` is
+/// named, and nothing is sent.
+#[test]
+fn del_latest_without_a_terminal_exits_4() {
+    let mut s = latest_server(&[1, 2]);
+    let any = s.mock("DELETE", mockito::Matcher::Any).expect(0).create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "cloud",
+            "delete-version",
+            "--latest",
+            "--vault",
+            "app/production",
+        ],
+        None,
+    );
+    out.assert_code(4);
+    assert!(
+        out.stderr
+            .contains("evnx cloud delete-version --latest --vault app/production --yes"),
+        "{}",
+        out.stderr
+    );
+    any.assert();
+}
+
+/// `VERSION` and `--latest` are one choice, and one of them is required.
+#[test]
+fn del_latest_and_a_number_conflict_and_one_is_required() {
+    let s = mockito::Server::new();
+    for args in [
+        &["cloud", "delete-version", "2", "--latest", "--vault", "x"][..],
+        &["cloud", "delete-version", "--vault", "x"][..],
+    ] {
+        let out = signed_in(&Project::new(), &s.url(), args, None);
+        out.assert_code(2);
+    }
+}

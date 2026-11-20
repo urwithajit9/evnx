@@ -237,9 +237,16 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
         } => sync::history(server_override, vault, limit, is_json(&output), verbose),
         CloudCommands::DeleteVersion {
             version_num,
+            latest,
             vault,
             yes,
-        } => sync::delete_version(server_override, vault, version_num, yes, verbose),
+        } => sync::delete_version(
+            server_override,
+            vault,
+            sync::VersionChoice::from_args(version_num, latest),
+            yes,
+            verbose,
+        ),
         CloudCommands::Link { vault, env: file } => {
             sync::link(server_override, vault, file.as_deref(), verbose)
         }
