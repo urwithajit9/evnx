@@ -13,6 +13,7 @@
           "extensions": null,
           "ignore_placeholders": false,
           "max_file_size": null,
+          "rules_digest": "<rules-digest>",
           "secret_false": [],
           "severity_floor": "low"
         }

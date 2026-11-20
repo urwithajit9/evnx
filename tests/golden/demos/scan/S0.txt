@@ -113,6 +113,11 @@ Options:
           
           Takes any revision range: `--history origin/main..HEAD`, `--history v<version>..`. Bare `--history` is everything reachable from `HEAD`, and `--history all` every ref. Each distinct file version is read once, whole (so a name rule sees its key), and reported against the oldest commit that has it: `path@abc1234:LINE`. A secret that was added and later removed is still found: rotate it, then rewrite history. Paths limit it to files under them. Exits 2 outside a repository.
 
+      --full
+          With a bare `--history`: scan all of history again.
+          
+          A bare `--history` builds on the last clean scan of this clone (kept in `.git/evnx/history.json`, never committed) and reads only the commits made since, unless the rules or the scan settings changed. `--full` reads everything.
+
       --no-config
           Ignore the repository's `.evnx.toml` and use the built-in defaults.
           

@@ -57,6 +57,7 @@ pub mod context;
 pub mod filters;
 pub mod git_blobs;
 pub mod history;
+pub mod history_state;
 pub mod hook;
 pub mod models;
 pub mod output;
@@ -138,6 +139,9 @@ pub struct ScanOptions {
     /// `--history [RANGE]` (RM-69): scan the blobs in git history, not the
     /// files on disk.
     pub history: Option<history::Range>,
+    /// `--full` (SCAN-RESCAN): scan all of history even when the last scan
+    /// can be built on.
+    pub full: bool,
     /// `--follow-symlinks`: read a symlinked file in a walk when its target is
     /// inside the scanned folder.
     pub follow_symlinks: bool,
@@ -183,6 +187,7 @@ impl Default for ScanOptions {
             disable: Vec::new(),
             staged: false,
             history: None,
+            full: false,
             follow_symlinks: false,
             include_dirs: Vec::new(),
             no_config: false,
@@ -192,6 +197,132 @@ impl Default for ScanOptions {
             short_values: false,
         }
     }
+}
+
+/// A hash of the rule set in force (SCAN-RESCAN): the built-in version, then
+/// every rule in the order it is tried (built-ins, `[[scan.patterns]]`,
+/// `--pattern`, project, personal and pack rule files), then the disabled
+/// list. A rule changed, added or removed, or a rule pack updated, changes it.
+/// It is a hash: it holds no rule text.
+fn rules_digest(rules: &[crate::core::config::PatternRule], disabled: &[String]) -> String {
+    let mut h = blake3::Hasher::new();
+    h.update(env!("CARGO_PKG_VERSION").as_bytes());
+    h.update(&[0]);
+    for rule in rules {
+        h.update(format!("{rule:?}").as_bytes());
+        h.update(&[0]);
+    }
+    let mut disabled: Vec<String> = disabled.iter().map(|d| d.to_lowercase()).collect();
+    disabled.sort();
+    h.update(disabled.join(",").as_bytes());
+    h.finalize().to_hex().to_string()
+}
+
+/// A hash of what else decides what a history scan reports: the floors, the
+/// exclusions, the file limits and the baseline's fingerprints. A scan made
+/// under other settings cannot be built on.
+fn settings_digest(
+    opts: &ScanOptions,
+    baseline: &suppress::Baseline,
+    severity: crate::core::secretscan::Severity,
+    confidence: Confidence,
+) -> String {
+    let mut h = blake3::Hasher::new();
+    let mut part = |s: String| {
+        h.update(s.as_bytes());
+        h.update(&[0]);
+    };
+    part(format!("{:?}", opts.paths));
+    part(format!("{:?}", opts.exclude));
+    part(format!("{:?}", opts.extensions));
+    part(format!("{:?}", opts.max_file_size));
+    part(format!("{severity}/{confidence}"));
+    part(format!(
+        "{}{}{}",
+        opts.ignore_placeholders, opts.short_values, opts.no_config
+    ));
+    let mut prints: Vec<&str> = baseline
+        .findings
+        .iter()
+        .map(|e| e.fingerprint.as_str())
+        .collect();
+    prints.sort_unstable();
+    part(prints.join(","));
+    h.finalize().to_hex().to_string()
+}
+
+/// `evnx scan --history` (RM-69, SCAN-RESCAN). A bare `--history` builds on the
+/// last clean scan of this clone when the rules and settings are the same;
+/// anything else (a range, `all`, paths) is scanned as asked and remembers
+/// nothing.
+fn history_scan(
+    runner: &ScanRunner,
+    opts: &ScanOptions,
+    range: &history::Range,
+    digest: &str,
+    settings: &str,
+    format: OutputFormat,
+) -> Result<bool, anyhow::Error> {
+    let note = |line: &str| {
+        if !ui::is_quiet() {
+            eprintln!("  · {line}");
+        }
+    };
+    let tracked = *range == history::Range::Head && opts.paths.iter().all(|p| p == ".");
+    if !tracked {
+        let entries = runner.history_entries(opts.paths.clone(), range)?;
+        return runner.scan_history(entries, range, format).map(|r| r.0);
+    }
+    let cwd = std::env::current_dir()?;
+    git_blobs::toplevel(&cwd, "--history")?;
+    let state_path = history_state::path(&cwd)?;
+    let head = history::head(&cwd)?;
+    let saved = history_state::load(&state_path);
+    let (scan_range, entries) =
+        match history_state::plan(&cwd, saved.as_ref(), digest, settings, &head, opts.full) {
+            history_state::Plan::Full(why) => {
+                if let Some(why) = why {
+                    note(&why);
+                }
+                let entries = runner.history_entries(opts.paths.clone(), range)?;
+                (range.clone(), entries)
+            }
+            history_state::Plan::Since(last) => {
+                note(&format!(
+                    "scanning the commits since {} (--full scans all history)",
+                    last.chars().take(7).collect::<String>()
+                ));
+                let since = history::Range::Spec(format!("{last}..HEAD"));
+                let entries = runner.history_entries(opts.paths.clone(), &since)?;
+                (since, entries)
+            }
+            history_state::Plan::Nothing(last) => {
+                note(&format!(
+                    "no commits since the last history scan ({}); --full scans all history",
+                    last.chars().take(7).collect::<String>()
+                ));
+                (range.clone(), Vec::new())
+            }
+        };
+    let found = runner.scan_history(entries, &scan_range, format)?.0;
+    // ⚠️ Only a clean scan is remembered (see `history_state`). A failure to
+    // write is said, not fatal: the next run is simply a full one.
+    if !found {
+        let state = history_state::State {
+            schema_version: 1,
+            rules_digest: digest.to_string(),
+            settings: settings.to_string(),
+            last_commit: head,
+            scanned_at: chrono::Local::now().format("%Y-%m-%d").to_string(),
+        };
+        if let Err(e) = history_state::save(&state_path, &state) {
+            ui::warning(format!(
+                "could not record this scan in {}: {e:#}; the next one scans all history",
+                state_path.display()
+            ));
+        }
+    }
+    Ok(found)
 }
 
 /// Run the scan command (CLI entry point).
@@ -278,7 +409,7 @@ pub fn run(opts: ScanOptions) -> Result<Verdict, anyhow::Error> {
                 opts.baseline.is_some() && !opts.update_baseline,
             )?
         };
-        let effective = models::EffectiveConfig {
+        let mut effective = models::EffectiveConfig {
             disabled_rules: opts.disable.clone(),
             builtins_disabled: opts.builtins_disabled,
             severity_floor: min_severity.to_string(),
@@ -293,6 +424,7 @@ pub fn run(opts: ScanOptions) -> Result<Verdict, anyhow::Error> {
             extensions: opts.repo_settings.extensions.clone(),
             max_file_size: opts.repo_settings.max_file_size,
             secret_false: opts.repo_settings.secret_false.clone(),
+            rules_digest: String::new(),
         };
         let output_format: OutputFormat = opts.format;
         // Compiled before anything is printed, so a broken expression cannot be
@@ -330,6 +462,21 @@ pub fn run(opts: ScanOptions) -> Result<Verdict, anyhow::Error> {
         let mut all = opts.patterns.clone();
         all.extend(loaded.rules.into_iter().map(|s| s.rule));
         let compiled = PatternSet::compile(&all)?;
+        let digest = rules_digest(&all, &opts.disable);
+        effective.rules_digest = digest.clone();
+        if opts.verbose {
+            ui::verbose_stderr(format!("rule set {digest}"));
+            if let Some(old) = baseline
+                .rules_digest
+                .as_deref()
+                .filter(|old| *old != digest.as_str())
+            {
+                ui::verbose_stderr(format!(
+                    "the baseline was written under rule set {old}; --update-baseline records this one"
+                ));
+            }
+        }
+        let settings = settings_digest(&opts, &baseline, min_severity, min_confidence);
         let off: Vec<String> = opts.disable.iter().map(|n| n.to_lowercase()).collect();
         let disabled = PatternSet::compile(
             &crate::core::secretscan::rules::builtin_rules()
@@ -362,7 +509,7 @@ pub fn run(opts: ScanOptions) -> Result<Verdict, anyhow::Error> {
         if opts.staged {
             runner.run_staged(opts.paths.clone(), output_format)
         } else if let Some(range) = &opts.history {
-            runner.run_history(opts.paths.clone(), range, output_format)
+            history_scan(&runner, &opts, range, &digest, &settings, output_format)
         } else {
             runner.run(opts.paths.clone(), output_format)
         }

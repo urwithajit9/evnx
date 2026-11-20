@@ -627,21 +627,6 @@ impl ScanRunner {
         self.finish(results, format, &read)
     }
 
-    /// `evnx scan --history [RANGE]` (RM-69): the blobs the commits in `range`
-    /// introduced, each scanned once and attributed to the oldest commit that
-    /// has it. `paths` are pathspecs. Returns whether anything counted, as
-    /// [`ScanRunner::run`] does.
-    pub fn run_history(
-        &self,
-        paths: Vec<String>,
-        range: &super::history::Range,
-        format: OutputFormat,
-    ) -> Result<bool> {
-        let entries = self.history_entries(paths, range)?;
-        self.scan_history(entries, range, format)
-            .map(|(found, _)| found)
-    }
-
     /// The blobs `--history` would read: the range's, less what `--exclude` and
     /// `--extensions` leave out.
     pub fn history_entries(
@@ -818,9 +803,12 @@ impl ScanRunner {
                 })
                 .collect();
             let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-            let next = self
-                .baseline
-                .rewrite(&current, &today, self.baseline_reason.as_deref());
+            let next = self.baseline.rewrite(
+                &current,
+                &today,
+                self.baseline_reason.as_deref(),
+                Some(self.effective_config.rules_digest.as_str()).filter(|d| !d.is_empty()),
+            );
             if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
                 crate::core::safe_write::create_dirs(dir)?;
             }

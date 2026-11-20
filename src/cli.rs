@@ -3729,6 +3729,15 @@ pub struct ScanArgs {
     #[arg(long, value_name = "RANGE", num_args = 0..=1, default_missing_value = "")]
     pub history: Option<String>,
 
+    /// With a bare `--history`: scan all of history again.
+    ///
+    /// A bare `--history` builds on the last clean scan of this clone (kept in
+    /// `.git/evnx/history.json`, never committed) and reads only the commits
+    /// made since, unless the rules or the scan settings changed. `--full`
+    /// reads everything.
+    #[arg(long, requires = "history")]
+    pub full: bool,
+
     /// Ignore the repository's `.evnx.toml` and use the built-in defaults.
     ///
     /// For a CI gate that must not depend on settings the scanned change

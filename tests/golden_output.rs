@@ -81,7 +81,17 @@ fn normalise(raw: &str) -> String {
             in_features = !line.trim_end().ends_with(']') && !line.trim_end().ends_with("],");
             continue;
         }
-        let line = if line.trim_start().starts_with("\"timestamp\"") {
+        let line = if line.trim_start().starts_with("\"rules_digest\"") {
+            // A hash of the rule set and the crate version: it moves with
+            // every rule and every release.
+            let indent = &line[..line.len() - line.trim_start().len()];
+            let comma = if line.trim_end().ends_with(',') {
+                ","
+            } else {
+                ""
+            };
+            format!("{indent}\"rules_digest\": \"<rules-digest>\"{comma}")
+        } else if line.trim_start().starts_with("\"timestamp\"") {
             // RFC3339 with nanoseconds — different every run.
             let indent = &line[..line.len() - line.trim_start().len()];
             format!("{indent}\"timestamp\": \"<normalised>\"")

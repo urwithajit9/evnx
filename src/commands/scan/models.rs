@@ -477,6 +477,10 @@ pub struct EffectiveConfig {
     /// Variables marked `secret = false` in `[vars]`.
     #[serde(default)]
     pub secret_false: Vec<String>,
+    /// A hash of the rule set in force (SCAN-RESCAN): the built-in version,
+    /// project rules, packs, patterns and the disabled list. Never a rule.
+    #[serde(default)]
+    pub rules_digest: String,
 }
 
 /// The repository settings, beyond rules and floors, that hide findings:
