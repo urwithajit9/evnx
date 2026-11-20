@@ -53,6 +53,13 @@ These do not change without a CHANGELOG "Breaking" entry, and are tested.
 3. A deprecated spelling (for example `org accept TOKEN`) keeps working with a warning
    first; the CHANGELOG entry says until when.
 
+## Changed defaults in 0.16.0
+
+The headlines of the CHANGELOG's "Breaking" section for the 0.16.0 release (others are
+added there as they land).
+
+- **A "no" at a confirmation prompt now exits 4.**
+
 ## Changed defaults in 0.15.0
 
 The headlines of the CHANGELOG's "Breaking" section for this release. Each entry there

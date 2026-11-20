@@ -311,10 +311,72 @@ jobs:
           path: dist/*
           retention-days: 5
 
+  # ── SBOM attached to each archive ──────────────────────────────────────────
+  #
+  # The SBOM above is one file per release. This job also binds it to every
+  # archive as a signed CycloneDX attestation, so `gh attestation verify
+  # <archive> --predicate-type https://cyclonedx.org/bom` answers "what is in
+  # this archive" without fetching a second file. Runs after the builds and
+  # the SBOM job; the build matrix is not changed. Same one-retry pattern as the
+  # provenance steps, for the same Rekor timeouts.
+  attest-sbom:
+    name: Attach SBOM to archives
+    needs: [build, sbom]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: artifacts
+
+      - name: Gather archives and the SBOM
+        id: gather
+        run: |
+          set -euo pipefail
+          mkdir dist
+          find artifacts \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.cdx.json" \) -exec cp {} dist/ \;
+          ls -l dist/
+          test "$(ls dist/*.cdx.json | wc -l)" -eq 1
+          echo "SBOM=dist/evnx-${GITHUB_REF_NAME#v}.cdx.json" >> "$GITHUB_OUTPUT"
+          test -f "dist/evnx-${GITHUB_REF_NAME#v}.cdx.json"
+
+      - name: Attest the SBOM for each archive
+        id: attest
+        continue-on-error: true
+        # TODO(owner): pin this action by full commit SHA, in the style of the
+        # other actions in this file (the SHA could not be looked up offline).
+        uses: actions/attest-sbom@v4 # TODO(owner): pin SHA for v4
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+          sbom-path: ${{ steps.gather.outputs.SBOM }}
+
+      - name: Wait before retrying the attestation
+        if: steps.attest.outcome == 'failure'
+        run: |
+          echo "::warning::SBOM attestation failed once; retrying in 60s"
+          sleep 60
+
+      - name: Attest the SBOM for each archive (retry)
+        if: steps.attest.outcome == 'failure'
+        # TODO(owner): pin this action by full commit SHA (same as above).
+        uses: actions/attest-sbom@v4 # TODO(owner): pin SHA for v4
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+          sbom-path: ${{ steps.gather.outputs.SBOM }}
+
   # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
     name: Create Release
-    needs: [build, sbom]
+    needs: [build, sbom, attest-sbom]
     runs-on: ubuntu-latest
     # Attestation happens in the build jobs (RM-81). A failed attest fails its
     # build, and this job `needs:` every build, so nothing is published unsigned.
@@ -502,6 +564,18 @@ jobs:
             fi
           done
           echo "${#files[@]} archives checked"
+          # The SBOM attestation (CycloneDX predicate) on one archive: the same
+          # signer and tag, a different predicate type.
+          if gh attestation verify "${files[0]}" -R "$GITHUB_REPOSITORY" \
+              --predicate-type https://cyclonedx.org/bom \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "$GITHUB_REF" \
+              --deny-self-hosted-runners >/dev/null; then
+            echo "✓ $(basename "${files[0]}"): SBOM attestation"
+          else
+            echo "::error::$(basename "${files[0]}"): SBOM attestation does not verify"
+            failed=1
+          fi
           exit "$failed"
 
   # ── Container image ────────────────────────────────────────────────────────

@@ -479,3 +479,47 @@ fn wp14_convert_help_says_file_versus_provider() {
         .assert_code(0)
         .assert_contains("convert writes a file; migrate talks to a provider");
 }
+
+/// `--kind split` puts each name on exactly one side: a secret by its name, by a
+/// URL's password or by a provider key's shape is in the Secret only, and the
+/// rest is in the ConfigMap only.
+#[test]
+fn kind_split_never_puts_a_name_on_both_sides() {
+    let env = "APP_NAME=shop\nPORT=8080\nDB_PASSWORD=hunter22hunter\n\
+DATABASE_URL=postgres://u:pw@h/db\nSTRIPE_KEY=sk_live_51H8xQ2eZvKYlo2CpR4mN7bV9\n";
+    let p = Project::new().env(env);
+    let out = convert(
+        &p,
+        &["--to", "kubernetes", "--name", "app", "--kind", "split"],
+    );
+    out.assert_code(0);
+    let docs: Vec<&str> = out.stdout.split("---\n").collect();
+    assert_eq!(docs.len(), 2, "{}", out.stdout);
+    let names = [
+        "APP_NAME",
+        "PORT",
+        "DB_PASSWORD",
+        "DATABASE_URL",
+        "STRIPE_KEY",
+    ];
+    let mut sides = Vec::new();
+    for name in names {
+        let on: Vec<bool> = docs
+            .iter()
+            .map(|d| d.contains(&format!("  {name}:")))
+            .collect();
+        assert_eq!(
+            on.iter().filter(|b| **b).count(),
+            1,
+            "{name} must be on exactly one side:\n{}",
+            out.stdout
+        );
+        sides.push((name, on[0]));
+    }
+    // The first document is the Secret.
+    assert!(docs[0].contains("kind: Secret"), "{}", docs[0]);
+    for (name, in_secret) in sides {
+        let secretish = ["DB_PASSWORD", "DATABASE_URL", "STRIPE_KEY"].contains(&name);
+        assert_eq!(in_secret, secretish, "{name}:\n{}", out.stdout);
+    }
+}

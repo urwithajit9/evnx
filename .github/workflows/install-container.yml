@@ -1,0 +1,76 @@
+name: Install in a fresh container
+
+# Weekly: scripts/install.sh, in a clean Ubuntu container with nothing on it but
+# what the script needs, against the latest published release. It checks that
+# the installed program starts, reports the version of that release, and was
+# built with the features the prebuilt binaries carry (`evnx commands --json`).
+# It catches a release asset, a checksum, or an installer assumption that broke
+# after the release was tagged, which no build-time test can see.
+#
+# No secrets and no write permission: it only reads the public release. On
+# demand through workflow_dispatch.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: install.sh on a fresh Ubuntu
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: The latest release tag
+        id: latest
+        run: |
+          set -euo pipefail
+          tag=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "latest release: $tag"
+
+      - name: Install in a fresh container
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          docker run --rm \
+            -v "$PWD/scripts/install.sh:/install.sh:ro" \
+            -v "$PWD/out:/out" \
+            ubuntu:24.04 bash -euo pipefail -c '
+              apt-get update -qq
+              apt-get install -y -qq curl ca-certificates tar gzip >/dev/null
+              bash /install.sh
+              evnx --version | tee /out/version.txt
+              evnx commands --json > /out/commands.json
+            '
+
+      - name: Check the version and the features
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          set -euo pipefail
+          want="${TAG#v}"
+          got=$(awk '{print $NF}' out/version.txt | head -n1)
+          if [ "$got" != "$want" ]; then
+            echo "::error::installed evnx $got, but the latest release is $want"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          d = json.load(open("out/commands.json"))
+          have = set(d["features"])
+          need = {"backup", "cloud", "migrate", "net"}
+          missing = need - have
+          if missing:
+              raise SystemExit("::error::the installed build lacks features: " + ", ".join(sorted(missing)))
+          if not d["commands"]:
+              raise SystemExit("::error::evnx commands --json listed no commands")
+          print("features:", ", ".join(sorted(have)), "-", len(d["commands"]), "top-level commands")
+          PY

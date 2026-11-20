@@ -669,6 +669,19 @@ fn invalid_token(body: &str) -> bool {
         == Some(true)
 }
 
+/// True when the URL's host is `localhost`, `127.0.0.1` or `::1` (any loopback
+/// address).
+pub fn is_loopback(url: &Url) -> bool {
+    let host = url.host_str().unwrap_or("").trim_matches(['[', ']']);
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::Ipv4Addr>()
+            .is_ok_and(|a| a.is_loopback())
+        || host
+            .parse::<std::net::Ipv6Addr>()
+            .is_ok_and(|a| a.is_loopback())
+}
+
 /// Validate and normalise the API base. Plain `http://` is allowed only for a
 /// loopback address (the tests, a local proxy): the token travels in a header.
 pub fn parse_base(raw: &str) -> Result<Url> {
@@ -683,15 +696,7 @@ pub fn parse_base(raw: &str) -> Result<Url> {
     match url.scheme() {
         "https" => {}
         "http" => {
-            let host = url.host_str().unwrap_or("").trim_matches(['[', ']']);
-            let loopback = host.eq_ignore_ascii_case("localhost")
-                || host
-                    .parse::<std::net::Ipv4Addr>()
-                    .is_ok_and(|a| a.is_loopback())
-                || host
-                    .parse::<std::net::Ipv6Addr>()
-                    .is_ok_and(|a| a.is_loopback());
-            if !loopback {
+            if !is_loopback(&url) {
                 anyhow::bail!(
                     "refusing plain http:// to {}: the Vercel token travels in a request header. \
                      Use https://, or a loopback address for local testing.",

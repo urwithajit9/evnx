@@ -14,7 +14,7 @@ Once the command has started, evnx exits with the command's own exit code. The c
 
 `--version` here means the vault version, so clap's auto-generated `--version` is disabled on this subcommand, as it is on `pull`. Use `evnx --version` for the program version.
 
-Usage: evnx cloud run [OPTIONS] [-- <COMMAND>...]
+Usage: evnx cloud run [OPTIONS] -- <COMMAND>...
 
 Arguments:
   [COMMAND]...

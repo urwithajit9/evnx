@@ -231,34 +231,14 @@ fn from_key_file(kf: &str, purpose: Purpose, verbose: bool) -> Result<Zeroizing<
         ui::warning(format!(
             "{ENV_VAR} is set as well; the key file wins, so {ENV_VAR} was not used"
         ));
-        forget_password_variable();
     }
     Ok(pw)
 }
 
-/// Remove [`ENV_VAR`] from this process's environment: best effort, so a child
-/// started later does not inherit the passphrase.
-///
-/// The one place evnx writes its own environment. From edition 2024 that is
-/// `unsafe`, because a concurrent read of the environment from another thread
-/// is a data race in the C library.
-fn forget_password_variable() {
-    // SAFETY: called while a passphrase is being resolved, at the start of a
-    // command (`backup`, `restore`, `cloud`), on the thread that runs it. The
-    // only other thread then is `main`'s, blocked in `join`; evnx's own helper
-    // threads (the scan pool, the stdin writers for `git`) belong to other
-    // commands or start later, and nothing here keeps another thread reading the
-    // environment. If that ever changes, delete the call: `run` already strips
-    // every `EVNX_` variable from its child, and this only narrows the window for
-    // the others.
-    unsafe { std::env::remove_var(ENV_VAR) };
-}
-
 fn from_env(pw: Zeroizing<String>, purpose: Purpose, verbose: bool) -> Result<Zeroizing<String>> {
-    // Best-effort removal, empty or not: it shortens the window in which a
-    // child process inherits the value. It cannot unsee what the shell, a
-    // process monitor or a CI log already captured.
-    forget_password_variable();
+    // The variable is left in place: `run` strips every `EVNX_*` name from its
+    // child, and evnx starts no other child that would pass it on. Nothing here
+    // can unsee what the shell, a process monitor or a CI log captured.
     if pw.is_empty() {
         let why = match purpose {
             Purpose::Encrypt => {

@@ -365,7 +365,7 @@ pub fn push(
         && !confirm_production_push(&client, &vault_ref, &file, &vault_target)?
     {
         println!("  Nothing was pushed.");
-        return Ok(());
+        return Err(crate::utils::prompt::Declined.into());
     }
 
     // Still read before the password prompt: a missing file should fail
@@ -396,7 +396,7 @@ pub fn push(
             Shrink::Proceed => {}
             Shrink::Declined => {
                 println!("  Nothing was pushed.");
-                return Ok(());
+                return Err(crate::utils::prompt::Declined.into());
             }
             Shrink::Confirmed => {
                 // Someone may have pushed while the question was open.
@@ -1604,7 +1604,7 @@ pub fn delete_version(
         &format!("evnx cloud delete-version {version_num} --vault {vault_target} --yes"),
     )? {
         println!("  Nothing was deleted.");
-        return Ok(());
+        return Err(crate::utils::prompt::Declined.into());
     }
 
     client

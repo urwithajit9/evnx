@@ -6,6 +6,44 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Breaking
+
+- **A "no" at a confirmation prompt now exits 4.** These commands printed
+  "Cancelled" and exited 0 when you answered no: `vault delete`, `vault leave`,
+  `vault revoke`, `vault rekey`, `org seats`, `org remove`, `org delete`,
+  `org leave`, `cloud push` (the shrink question and the production-file
+  question), `cloud delete-version`, `auth rotate-master-password`,
+  `auth token revoke`, `auth sessions revoke`, `auth sessions revoke-others`
+  and `auth devices disavow`. They now exit 4 after the same message, like
+  `set`, `remove` and `platform`. A script that treated a "no" as success
+  should accept 4 or pass `--yes`.
+
+### Added
+
+- **The SBOM is attached to each release archive** as a signed CycloneDX
+  attestation: `gh attestation verify <archive> -R urwithajit9/evnx
+  --predicate-type https://cyclonedx.org/bom`.
+
+### Changed
+
+- `evnx run --help` and `evnx cloud run --help` show `-- <COMMAND>...` in the
+  usage line again; running with no command is still a usage error.
+- The `API` line that names a non-default Vercel API address is no longer
+  printed for a loopback address (`127.0.0.1`, `::1`, `localhost`), where the
+  token does not leave the machine.
+- `doctor --help` says that `--all` validates a project that has only a
+  `[vars]` contract in `.evnx.toml` and no template.
+
+### Fixed
+
+- A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own
+  environment while it is read (that needed `unsafe`); `run` still keeps every
+  `EVNX_*` variable out of the command it starts.
+
+---
+
 ## [0.15.0] - 2026-11-19
 
 A minor release, as in any 0.x release that changes what a shipped command does:

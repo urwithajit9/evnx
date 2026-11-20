@@ -362,7 +362,7 @@ mod delete_prompt {
     fn wp12_delete_wrong_typed_name_cancels() {
         for typed in ["app", "y", "app/staging"] {
             let (rest, code, deleted) = run_delete(typed);
-            assert_eq!(code, 0, "{typed}: {rest}");
+            assert_eq!(code, 4, "{typed}: {rest}");
             assert!(!deleted, "{typed}: {rest}");
             assert!(rest.contains("Cancelled; nothing was deleted"), "{rest}");
         }
@@ -506,7 +506,7 @@ fn wp12_seats_cancel_at_the_prompt_sends_nothing() {
     run.wait_for("Change the seat count of acme?");
     run.type_line("n");
     let (rest, code) = run.finish();
-    assert_eq!(code, 0, "{rest}");
+    assert_eq!(code, 4, "{rest}");
     assert!(rest.contains("Cancelled"), "{rest}");
     put.assert();
 }
@@ -801,7 +801,7 @@ mod push_prompt {
     #[test]
     fn wp12_push_shrink_over_half_asks() {
         let (rest, code) = run("n");
-        assert_eq!(code, 0, "{rest}");
+        assert_eq!(code, 4, "{rest}");
         assert!(rest.contains("Nothing was pushed"), "{rest}");
         assert!(!rest.contains(SECRET), "{rest}");
         let (rest, code) = run("y");

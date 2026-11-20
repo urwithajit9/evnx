@@ -301,3 +301,82 @@ fn cloud_push_reads_the_typed_master_password() {
     assert_eq!(code, 0, "{rest}");
     push.assert();
 }
+
+// ─── A "no" at a confirmation exits 4 ────────────────────────────────────────
+
+/// A mock with just enough for each `auth` and `cloud delete-version`
+/// confirmation to be reached; any change request fails the test.
+fn decline_server() -> (mockito::ServerGuard, Vec<mockito::Mock>) {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"development",
+            "role":"owner","version_count":2,"updated_at":"2026-10-20T09:00:00Z"}}]}}"#
+        ))
+        .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/versions").as_str())
+        .with_status(200)
+        .with_body(
+            r#"{"versions":[
+            {"version_num":2,"key_count":1,"key_names":["A"],"blob_hash":"h2","blob_size_bytes":40,"pushed_by":"u-me","pushed_at":"2026-10-21T09:00:00Z"},
+            {"version_num":1,"key_count":1,"key_names":["A"],"blob_hash":"h1","blob_size_bytes":40,"pushed_by":"u-me","pushed_at":"2026-10-20T09:00:00Z"}]}"#,
+        )
+        .create();
+    s.mock("GET", "/api/v1/auth/sessions")
+        .with_status(200)
+        .with_body(
+            r#"{"sessions":[
+            {"session_id":"aaaaaaaa-1111-2222-3333-444444444444","created_at":"2026-10-20T09:00:00Z","last_used_at":"2026-10-20T09:00:00Z","expires_at":"2026-11-20T09:00:00Z","current":true},
+            {"session_id":"bbbbbbbb-1111-2222-3333-444444444444","created_at":"2026-10-20T09:00:00Z","last_used_at":"2026-10-20T09:00:00Z","expires_at":"2026-11-20T09:00:00Z","current":false}]}"#,
+        )
+        .create();
+    s.mock("GET", "/api/v1/auth/tokens")
+        .with_status(200)
+        .with_body(
+            r#"{"tokens":[{"id":"t-1","name":"ci","scope":"read","vault_id":null,
+            "expires_at":null,"created_at":"2026-10-20T09:00:00Z","last_used_at":null}]}"#,
+        )
+        .create();
+    let changes = ["POST", "DELETE", "PATCH", "PUT"]
+        .iter()
+        .map(|m| s.mock(m, mockito::Matcher::Any).expect(0).create())
+        .collect();
+    (s, changes)
+}
+
+/// Answering "n" to the auth and version-delete confirmations exits 4 and sends
+/// nothing. (`vault delete`, `org seats` and the `cloud push` shrink question
+/// have the same check in `tests/cloud_defaults.rs`.)
+#[test]
+fn a_no_at_an_auth_or_version_confirmation_exits_4() {
+    for (args, prompt) in [
+        (&["auth", "token", "revoke", "ci"][..], "Revoke ci?"),
+        (&["auth", "sessions", "revoke-others"][..], "Continue?"),
+        (
+            &["cloud", "delete-version", "1", "--vault", "app"][..],
+            "Delete version 1",
+        ),
+    ] {
+        let (server, changes) = decline_server();
+        let url = server.url();
+        let p = Project::new();
+        let cfg = p.path().join("cfg");
+        support::cloud::login(&cfg, &url);
+        let mut run = Pty::spawn_with(
+            p.path(),
+            args,
+            &[
+                ("EVNX_SERVER", url.as_str()),
+                ("EVNX_CONFIG_DIR", cfg.to_str().unwrap()),
+            ],
+        );
+        run.wait_for(prompt);
+        run.type_line("n");
+        let (rest, code) = run.finish();
+        assert_eq!(code, 4, "{args:?}: {rest}");
+        for m in changes {
+            m.assert();
+        }
+    }
+}

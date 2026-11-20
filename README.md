@@ -235,6 +235,14 @@ gh attestation verify evnx-<version>.cdx.json -R urwithajit9/evnx \
 grype sbom:evnx-<version>.cdx.json      # or: trivy sbom …, osv-scanner scan source -L …
 ```
 
+The SBOM is also attached to each archive as a signed CycloneDX attestation, so one
+archive is enough to see what is inside it:
+
+```bash
+gh attestation verify <archive> -R urwithajit9/evnx \
+  --predicate-type https://cyclonedx.org/bom
+```
+
 How it is built and every check, with the 0.15.0 results:
 [SBOM: what it is and how evnx ships one](https://www.evnx.dev/blog/sbom-what-it-is-and-how-evnx-ships-one).
 
@@ -1796,6 +1804,13 @@ one (a shell script, GitHub Actions, Vercel, …) refuses it by name.
 **`${VAR}` expands top to bottom**, as Docker Compose and python-dotenv do: with
 `B=1`, `A=${B}`, `B=2`, evnx gives `A=1`, and a reference to a variable assigned only
 below it is an error that names the line to move.
+
+**An unset `$name` stays as written.** With `cd` unset, `PASS=ab$cd` reads as
+`ab$cd` in evnx; Docker Compose reads it as `ab`. evnx keeps the text so that a
+password containing `$` is never shortened without a word. `${cd}` with `cd` unset is
+an error in evnx. To get the Compose result in a file both tools read, write
+`ab${cd:-}`, which is the variable's value or nothing, and means the same to both. To
+keep a `$` literal, put the value in single quotes: `'ab$cd'`.
 
 **`convert --from` reads `dotenv` and `json` only.** YAML, Kubernetes Secrets and
 `.properties` input wait for `add import`.

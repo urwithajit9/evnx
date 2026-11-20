@@ -232,12 +232,10 @@ pub fn run(
 mod tests {
     use super::*;
     use crate::cloud::creds::{SecretString, Session};
-    use serial_test::serial;
 
     use crate::cloud::testutil::ConfigDirGuard;
 
     #[test]
-    #[serial]
     fn status_works_with_no_config_at_all() {
         let _g = ConfigDirGuard::new();
         run(None, false, false, false, false).unwrap();
@@ -245,7 +243,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn status_reads_the_session_for_the_selected_server_only() {
         let _g = ConfigDirGuard::new();
         let mut store = Store::default();
@@ -266,7 +263,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn an_unusable_server_url_is_an_error_not_a_silent_default() {
         let _g = ConfigDirGuard::new();
         assert!(run(Some("http://api.evnx.dev"), false, false, false, false).is_err());
@@ -274,7 +270,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn ping_succeeds_against_a_healthy_server() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -289,7 +284,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn ping_exits_non_zero_when_the_server_is_down() {
         // The whole point of --ping: a script can rely on the exit code.
         let _g = ConfigDirGuard::new();
@@ -301,7 +295,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn without_ping_a_dead_server_is_not_an_error() {
         // Local state must still be answerable when the server is unreachable.
         let _g = ConfigDirGuard::new();

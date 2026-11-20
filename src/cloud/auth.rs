@@ -1781,7 +1781,6 @@ mod tests {
 
     use super::*;
     use crate::cloud::testutil::ConfigDirGuard;
-    use serial_test::serial;
 
     #[test]
     fn i330_the_hint_is_the_command_as_typed_with_the_flag_added() {
@@ -1816,7 +1815,6 @@ mod tests {
     /// The F1 backfill needs a user session; under an API token it must not
     /// call `/auth/me` at all.
     #[test]
-    #[serial]
     fn the_backfill_is_skipped_under_an_api_token() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -2269,7 +2267,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_real_srp_exchange_signs_in_and_stores_the_session() {
         // The happy path, against the genuine SRP server half — so CI covers it,
         // not only the live box.
@@ -2287,7 +2284,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_wrong_password_fails_the_exchange_and_stores_nothing() {
         let _g = ConfigDirGuard::new();
         let (server, _mocks) = mock_srp_server("a@example.com", "the real passphrase", false);
@@ -2322,7 +2318,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_tampered_server_proof_is_rejected_and_nothing_is_stored() {
         // The single most important test in this module. SRP authenticates both
         // directions; if M2 is not checked, an impostor server that never held
@@ -2345,7 +2340,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn requires_totp_without_a_pending_token_is_a_clear_error() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -2372,7 +2366,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_malformed_srp_salt_from_the_server_is_reported_not_panicked_on() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -2401,7 +2394,6 @@ mod tests {
     // ─── logout ─────────────────────────────────────────────────────────────
 
     #[test]
-    #[serial]
     fn logout_without_a_session_makes_no_request() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -2414,7 +2406,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn logout_clears_local_credentials_even_when_the_server_is_unreachable() {
         // Someone typing `logout` on a borrowed machine wants the tokens off that
         // disk. Refusing because the network is down would leave a usable
@@ -2444,7 +2435,6 @@ mod tests {
     // ─── status ─────────────────────────────────────────────────────────────
 
     #[test]
-    #[serial]
     fn status_without_a_session_says_so_without_a_request() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -2454,7 +2444,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn status_reports_the_account_the_server_describes() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -2485,7 +2474,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_successful_registration_posts_the_derived_body() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -2512,7 +2500,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_duplicate_email_surfaces_the_servers_conflict() {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
@@ -2537,7 +2524,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_weak_password_never_reaches_the_network() {
         // The strength check must run before the request, so a mock that would
         // fail the test if called proves it.
@@ -2556,7 +2542,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn an_unusable_server_url_fails_before_anything_is_derived() {
         let _g = ConfigDirGuard::new();
         let err = register(

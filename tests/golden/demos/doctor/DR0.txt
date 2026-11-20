@@ -27,7 +27,7 @@ Options:
       --all
           Also run `validate`, `sync --check` and `scan`, in one report.
           
-          Each part is the command of that name with its defaults, read from this project's `.evnx.toml`. `sync --check` looks both ways and is skipped, with a note, when there is no template. The verdict is the worst of the parts: 1 if any found something, 2 if any could not run. With `--format json`, the document has a `sections` object with `doctor`, `validate`, `sync` and `scan` (`run.schema_version` 2).
+          Each part is the command of that name with its defaults, read from this project's `.evnx.toml`. `validate` runs when there is an env file and either a template or a `[vars]` contract in `.evnx.toml` (a project with only the contract is still validated). `sync --check` looks both ways and is skipped, with a note, when there is no template. The verdict is the worst of the parts: 1 if any found something, 2 if any could not run. With `--format json`, the document has a `sections` object with `doctor`, `validate`, `sync` and `scan` (`run.schema_version` 2).
 
       --strict
           Count warnings as problems, so they affect the exit code.

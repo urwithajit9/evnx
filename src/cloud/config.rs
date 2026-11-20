@@ -328,7 +328,6 @@ fn is_loopback(host: &str) -> bool {
 mod tests {
     use super::*;
     use crate::cloud::testutil::ConfigDirGuard;
-    use serial_test::serial;
 
     /// ⛔ **The bypass this function was rewritten for.**
     ///
@@ -463,7 +462,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_missing_config_file_yields_defaults() {
         let _g = ConfigDirGuard::new();
         assert_eq!(CloudConfig::load().unwrap(), CloudConfig::default());
@@ -474,7 +472,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn a_malformed_config_file_is_an_error_not_a_silent_default() {
         let g = ConfigDirGuard::new();
         std::fs::write(g.path().join("config.toml"), "server = [1, 2]").unwrap();
@@ -482,7 +479,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn server_precedence_is_flag_then_env_then_file_then_default() {
         let g = ConfigDirGuard::new();
         std::fs::write(
@@ -511,7 +507,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn config_round_trips_through_disk() {
         let _g = ConfigDirGuard::new();
         let cfg = CloudConfig {
@@ -523,7 +518,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    #[serial]
     fn the_config_directory_is_created_owner_only() {
         use std::os::unix::fs::PermissionsExt;
         let d = tempfile::tempdir().unwrap();
@@ -535,7 +529,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    #[serial]
     fn a_world_readable_config_directory_is_tightened() {
         use std::os::unix::fs::PermissionsExt;
         let d = tempfile::tempdir().unwrap();
