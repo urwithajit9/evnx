@@ -526,6 +526,8 @@ fn run() -> Result<Verdict, EvnxError> {
                 exit_zero,
                 include_ignored,
                 staged,
+                history,
+                full,
                 no_config,
                 follow_symlinks,
                 include_dir,
@@ -589,11 +591,21 @@ fn run() -> Result<Verdict, EvnxError> {
                 Some(evnx::cli::ScanAction::Hook { command }) => {
                     use evnx::cli::HookCommand;
                     match command {
-                        HookCommand::Install => {
-                            commands::scan::hook::install(&here).map(|_| Verdict::Clean)
-                        }
-                        HookCommand::Uninstall => commands::scan::hook::uninstall(&here).map(clean),
-                        HookCommand::Status => commands::scan::hook::status(&here).map(clean),
+                        HookCommand::Install { pre_push } => commands::scan::hook::install(
+                            &here,
+                            commands::scan::hook::Kind::from_flag(pre_push),
+                        )
+                        .map(|_| Verdict::Clean),
+                        HookCommand::Uninstall { pre_push } => commands::scan::hook::uninstall(
+                            &here,
+                            commands::scan::hook::Kind::from_flag(pre_push),
+                        )
+                        .map(clean),
+                        HookCommand::Status { pre_push } => commands::scan::hook::status(
+                            &here,
+                            commands::scan::hook::Kind::from_flag(pre_push),
+                        )
+                        .map(clean),
                     }
                 }
 
@@ -713,6 +725,12 @@ fn run() -> Result<Verdict, EvnxError> {
                         }),
                         include_ignored,
                         staged,
+                        history: history
+                            .as_deref()
+                            .map(commands::scan::history::Range::parse)
+                            .transpose()
+                            .map_err(EvnxError::Config)?,
+                        full,
                         follow_symlinks,
                         include_dirs: include_dir,
                         no_config,

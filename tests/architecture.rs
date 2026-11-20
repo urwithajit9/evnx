@@ -489,6 +489,7 @@ fn t_wp9b_json_on_stdout_goes_through_core_json() {
         ("cloud/auth.rs", "account export file"),
         ("core/backups.rs", "backup registry file"),
         ("commands/scan/runner.rs", "baseline file"),
+        ("commands/scan/history_state.rs", "state file in .git"),
         ("commands/template.rs", "rendered value, not an envelope"),
         ("commands/backup/core.rs", "backup file"),
         ("commands/migrate/destinations/", "request bodies"),

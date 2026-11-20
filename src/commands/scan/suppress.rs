@@ -121,6 +121,11 @@ pub fn allowing(lines: &[&str], line: usize, rule_id: &str) -> Option<Marker> {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Baseline {
     pub schema_version: u32,
+    /// The rule set the baseline was written under (SCAN-RESCAN, D7): a hash,
+    /// never a rule. Absent in a baseline written before, and an older evnx
+    /// ignores it, so the file stays `schema_version` 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules_digest: Option<String>,
     pub findings: Vec<Entry>,
 }
 
@@ -176,13 +181,15 @@ impl Baseline {
 
     /// The baseline for `current` (fingerprint, rule, file) findings, keeping
     /// the `added` date and the reason of each one already accepted; `reason`
-    /// is given only to the entries added now. Sorted, so the file diffs
+    /// is given only to the entries added now. `rules_digest` is the rule set
+    /// this run used. Sorted, so the file diffs
     /// cleanly.
     pub fn rewrite(
         &self,
         current: &[(String, String, String)],
         today: &str,
         reason: Option<&str>,
+        rules_digest: Option<&str>,
     ) -> Baseline {
         let before: HashMap<&str, &Entry> = self
             .findings
@@ -211,6 +218,7 @@ impl Baseline {
         findings.dedup_by(|a, b| a.fingerprint == b.fingerprint);
         Baseline {
             schema_version: 1,
+            rules_digest: rules_digest.map(str::to_string),
             findings,
         }
     }
@@ -274,6 +282,7 @@ mod tests {
     fn rewriting_keeps_the_date_a_finding_was_first_accepted() {
         let old = Baseline {
             schema_version: 1,
+            rules_digest: None,
             findings: vec![Entry {
                 fingerprint: "f1".into(),
                 rule: "jwt".into(),
@@ -288,6 +297,7 @@ mod tests {
                 ("f2".into(), "jwt".into(), "./a.env".into()),
             ],
             "2026-11-07",
+            None,
             None,
         );
         assert_eq!(new.findings[0].added, "2026-01-01");
@@ -328,6 +338,7 @@ mod tests {
     fn a_reason_goes_to_new_entries_and_old_ones_keep_theirs() {
         let old = Baseline {
             schema_version: 1,
+            rules_digest: None,
             findings: vec![
                 Entry {
                     fingerprint: "f1".into(),
@@ -350,19 +361,35 @@ mod tests {
             ("f2".to_string(), "jwt".to_string(), ".env".to_string()),
             ("f3".to_string(), "jwt".to_string(), "b.env".to_string()),
         ];
-        let new = old.rewrite(&cur, "2026-11-19", Some("used-in-tests"));
+        let new = old.rewrite(&cur, "2026-11-19", Some("used-in-tests"), None);
         let by = |fp: &str| new.get(fp).unwrap().reason.clone();
         assert_eq!(by("f1").as_deref(), Some("false-positive"));
         assert_eq!(by("f2"), None);
         assert_eq!(by("f3").as_deref(), Some("used-in-tests"));
         assert_eq!(new.schema_version, 1);
 
-        let text = serde_json::to_string(&old.rewrite(&cur, "d", None)).unwrap();
+        let text = serde_json::to_string(&old.rewrite(&cur, "d", None, None)).unwrap();
         assert!(!text.contains("reason\":null"), "{text}");
         let back: Baseline = serde_json::from_str(
             r#"{"schema_version":1,"findings":[{"fingerprint":"a","rule":"r","file":"f","added":"d"}]}"#,
         )
         .unwrap();
         assert_eq!(back.findings[0].reason, None);
+    }
+
+    /// SCAN-RESCAN, D7: the digest is an optional field, so the file is still
+    /// schema 1, an older baseline reads, and one without a digest writes none.
+    #[test]
+    fn the_rules_digest_is_optional_and_the_schema_stays_1() {
+        let old: Baseline = serde_json::from_str(r#"{"schema_version":1,"findings":[]}"#).unwrap();
+        assert_eq!(old.rules_digest, None);
+        let plain = serde_json::to_string(&old.rewrite(&[], "d", None, None)).unwrap();
+        assert!(!plain.contains("rules_digest"), "{plain}");
+        let new = old.rewrite(&[], "d", None, Some("abc"));
+        assert_eq!(new.schema_version, 1);
+        let text = serde_json::to_string(&new).unwrap();
+        assert!(text.contains(r#""rules_digest":"abc""#), "{text}");
+        let back: Baseline = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.rules_digest.as_deref(), Some("abc"));
     }
 }

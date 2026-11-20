@@ -715,6 +715,12 @@ impl FileFilter {
         stem.ends_with(".backup")
     }
 
+    /// Whether `--history` reads a blob at `path`: what a walk would, so
+    /// `--exclude` and `--extensions` mean the same in both.
+    pub fn selects_in_history(&self, path: &Path) -> bool {
+        !self.should_exclude(path) && self.walk_selects(path)
+    }
+
     /// Whether a folder walk reads `path`: with an extension list, the list
     /// (plus `.env*`, `Dockerfile`, `Makefile`); without one, every file but an
     /// editor's binary swap file.

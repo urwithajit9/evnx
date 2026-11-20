@@ -126,14 +126,19 @@
   stages: [pre-commit]
   files: (^|/)\.evnx\.toml$|(^|/)\.env(\.\w+)*$
 
-# Pre-push variant (heavier checks)
-# ⚠️ Same change, same reason. At pre-push the question is what is about to be
-# published, not what happens to be on disk — and the working tree still holds
-# the gitignored `.env` that blocked every commit above.
+# SCAN-PREPUSH: at pre-push the question is what is about to be published: the
+# commits the remote lacks, not the working tree (which still holds the
+# gitignored `.env`). pre-commit gives a pre-push hook the two ends of the push
+# as PRE_COMMIT_FROM_REF and PRE_COMMIT_TO_REF; with no FROM_REF (a new branch)
+# it scans what no remote has. The scan reads whole file versions, so a name
+# rule sees its key. This replaces the earlier SARIF-on-filenames entry, which
+# scanned the files as they are on disk.
+# `EVNX_SCAN_BYPASS` is for the hook `evnx scan hook install --pre-push`
+# writes; here, skip a hook with `SKIP=evnx-scan-push git push`.
 - id: evnx-scan-push
-  name: evnx — Strict Secret Scanner (pre-push)
-  description: Strict secret scan with SARIF output before push
-  entry: evnx scan --format sarif
+  name: evnx — Secret Scanner (pre-push)
+  description: Scan the commits being pushed for secrets, in every file version they add
+  entry: sh -c 'if [ -n "$PRE_COMMIT_FROM_REF" ] && [ -n "$PRE_COMMIT_TO_REF" ]; then evnx scan --history "$PRE_COMMIT_FROM_REF..$PRE_COMMIT_TO_REF"; else evnx scan --history "HEAD --not --remotes"; fi'
   language: rust
-  pass_filenames: true
+  pass_filenames: false
   stages: [pre-push]

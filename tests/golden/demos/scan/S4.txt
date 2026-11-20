@@ -89,7 +89,8 @@ $ evnx scan . --format json
     "ignore_placeholders": false,
     "extensions": null,
     "max_file_size": null,
-    "secret_false": []
+    "secret_false": [],
+    "rules_digest": "<random-hex64>"
   },
   "summary": {
     "total": 4,
@@ -134,6 +135,7 @@ $ evnx scan . --format sarif --exit-zero
           "extensions": null,
           "ignore_placeholders": false,
           "max_file_size": null,
+          "rules_digest": "<random-hex64>",
           "secret_false": [],
           "severity_floor": "low"
         }

@@ -64,6 +64,7 @@ $ evnx scan . --no-color -q
 FIXED I-049 (0.10.3 + R-scan): -q drops the banner and the next steps; findings only
 
 $ evnx scan . -v
+⋯ rule set <random-hex64>
 
   evnx scan  Checking for exposed secrets
 

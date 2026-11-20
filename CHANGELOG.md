@@ -25,31 +25,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **`evnx cloud delete-version --latest`** (admin) deletes the latest version of
-  a vault. The question names the version that becomes the latest and asks for
-  the vault's full name; `--yes` skips it for CI. A vault with one version is
-  refused, and `delete-version N` for the latest still refuses and points to
-  `--latest`. The version deleted is always the number listed, so a push in
-  between is never the one removed. This machine stops warning about the
-  version it deleted; other machines still see the "latest went down" warning,
-  which now says an admin may have deleted it.
-
-- **`evnx cloud watch --on-change -- <COMMAND>...`** runs a command once for
-  each reported change. It runs directly, not through a shell, like `evnx run`;
-  it gets `EVNX_WATCH_VAULT` and `EVNX_WATCH_VERSION` and no other `EVNX_*`
-  variable. It finishes before the next poll, so changes that arrive meanwhile
-  are one call. A failing command prints one warning and watching goes on. With
-  `--once` it runs when the vault is past the latest version this machine has
-  seen.
-
-- **`evnx config show`** prints every effective setting with its source: the
-  built-in default, a line of `.evnx.toml`, the user's `config.toml`, an
-  environment variable, a global flag, or a scan policy file. `--json` has the
-  usual `run` header, a `files` list, the `settings` and any warnings for
-  unknown keys. Credentials are shown only as `set (hidden)` or `not set`, and
-  a server URL that does not validate is refused without being quoted.
 
 ### Changed
+
+- The `evnx-scan-push` hook in `.pre-commit-hooks.yaml` now scans the commits
+  being pushed (`evnx scan --history`, from `PRE_COMMIT_FROM_REF` to
+  `PRE_COMMIT_TO_REF`) instead of the files on disk with SARIF output.
 
 - `evnx run --help` and `evnx cloud run --help` show `-- <COMMAND>...` in the
   usage line again; running with no command is still a usage error.

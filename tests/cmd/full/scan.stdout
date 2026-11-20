@@ -7,7 +7,7 @@ Usage: evnx scan [OPTIONS] [PATH]...
 
 Commands:
   rules  Your own scan rules: list, create and test them
-  hook   A git `pre-commit` hook that runs `evnx scan --staged`
+  hook   A git `pre-commit` hook that runs `evnx scan --staged`, or a `pre-push` hook that scans the commits being pushed
   help   Print this message or the help of the given subcommand(s)
 
 Arguments:
@@ -99,6 +99,16 @@ Options:
           Scan what is staged for the next commit, read from the git index.
           
           A file staged and then edited on disk is scanned as staged, because that is what the commit records. Paths limit it to staged files under them. Nothing staged exits 0. `evnx scan hook install` runs this before every commit.
+
+      --history [<RANGE>]
+          Scan the files git history added or changed, not the files on disk.
+          
+          Takes any revision range: `--history origin/main..HEAD`, `--history v0.15.0..`. Bare `--history` is everything reachable from `HEAD`, and `--history all` every ref. Each distinct file version is read once, whole (so a name rule sees its key), and reported against the oldest commit that has it: `path@abc1234:LINE`. A secret that was added and later removed is still found: rotate it, then rewrite history. Paths limit it to files under them. Exits 2 outside a repository.
+
+      --full
+          With a bare `--history`: scan all of history again.
+          
+          A bare `--history` builds on the last clean scan of this clone (kept in `.git/evnx/history.json`, never committed) and reads only the commits made since, unless the rules or the scan settings changed. `--full` reads everything.
 
       --no-config
           Ignore the repository's `.evnx.toml` and use the built-in defaults.

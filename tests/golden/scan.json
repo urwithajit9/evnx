@@ -46,7 +46,8 @@
     "ignore_placeholders": false,
     "extensions": null,
     "max_file_size": null,
-    "secret_false": []
+    "secret_false": [],
+    "rules_digest": "<rules-digest>"
   },
   "summary": {
     "total": 1,

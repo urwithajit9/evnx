@@ -1716,7 +1716,7 @@ repos:
       - id: evnx-diff        # blocks commit if .env lacks a key .env.example declares (skips with no .env)
       - id: evnx-sync        # blocks commit if .env.example lacks a variable from .env (skips with no .env)
       - id: evnx-doctor      # blocks commit on doctor errors; warnings pass (skips with no .env)
-      - id: evnx-scan-push   # strict scan on push
+      - id: evnx-scan-push   # blocks push if secrets are in the commits being pushed
 ```
 
 Then install:
