@@ -23,6 +23,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `run` header is unchanged. The SARIF output now lists allowed and baseline
   findings as suppressed results, with the reason as the justification.
 
+- **YAML reader replaced.** evnx reads YAML (scan of `.yml`/`.yaml`, `init`'s
+  compose detection, `add import`) with `yaml-rust2` instead of the deprecated
+  `serde_yaml`. The rules are the same: YAML 1.2, so `yes`, `no`, `on` and
+  `off` are text and are scanned; `true`, `false`, `null` and numbers are not;
+  anchors are resolved; the merge key `<<` is not applied; every `---`
+  document is read; a key given twice makes scan read the file as text. What
+  differs, for edge files only: a tab right after `key:` is now a syntax error,
+  so scan reads that file as text and `add import` refuses it; a key that is a
+  list or a mapping is refused the same way; an integer too large for 128 bits
+  no longer sends the file to the text scan; a numeric or `~` key is named as
+  written in a finding's location (`1.10`, `~`, not `1.1`, `null`).
+
 ### Added
 
 
@@ -47,6 +59,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Progress bars use `indicatif` 0.18, which no longer pulls in the
   unmaintained `number_prefix` crate. Output is unchanged.
+- The unsafe C port `unsafe-libyaml` is no longer in the build: YAML parsing
+  is pure Rust. A YAML error names a line, a column and a fixed reason.
 
 ### Fixed
 
@@ -58,7 +72,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`evnx add import <FILE|->`** adds many variables from one file to `.env`:
   `.env`, `.properties`, INI, JSON, YAML (flat, nested with `__`, a Kubernetes
   Secret with base64 `data`, a docker-compose `environment:`, a GitHub Actions
-  `env:`) and CSV. Names become UPPER_SNAKE; `--from` names the format,
+  `env:`) and CSV. A YAML number is written as the file has it (`1.10`, not
+  `1.1`). Names become UPPER_SNAKE; `--from` names the format,
   `--section`, `--only` and `--exclude` narrow it. Collisions, arrays, `null`,
   binary values and invalid names are refused (exit 2, nothing written); names
   `.env` already has are kept and reported; `.env.example` gets placeholders.

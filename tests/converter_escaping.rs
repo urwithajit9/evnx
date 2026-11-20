@@ -22,6 +22,7 @@
 mod support;
 
 use assert_cmd::cargo::cargo_bin_cmd;
+use evnx::core::yaml;
 use std::fs;
 use tempfile::TempDir;
 
@@ -106,42 +107,34 @@ fn shell_output_parses_runs_nothing_and_keeps_every_value() {
 #[test]
 fn kubernetes_output_is_valid_yaml_with_only_string_values() {
     let d = fixture();
-    let doc: serde_yaml::Value =
-        serde_yaml::from_str(&convert(&d, "kubernetes --name app-secrets"))
-            .expect("kubernetes output is not valid YAML");
-    let sd = doc
-        .get("stringData")
-        .and_then(|v| v.as_mapping())
-        .expect("stringData mapping");
+    let doc = yaml::document(
+        &convert(&d, "kubernetes --name app-secrets"),
+        yaml::Duplicates::Refuse,
+    )
+    .expect("kubernetes output is not valid YAML");
+    let sd = doc.get("stringData").expect("stringData mapping");
+    let map = sd.as_map().expect("stringData mapping");
 
-    assert!(!sd.is_empty());
-    for (k, v) in sd {
+    assert!(!map.is_empty());
+    for (k, v) in map {
         assert!(
-            v.is_string(),
+            v.as_str().is_some(),
             "{k:?} came back as {v:?}, which kubectl rejects under stringData"
         );
     }
-    assert_eq!(
-        sd.get(serde_yaml::Value::String("PORT".into()))
-            .and_then(|v| v.as_str()),
-        Some("8080")
-    );
-    assert_eq!(
-        sd.get(serde_yaml::Value::String("COLON".into()))
-            .and_then(|v| v.as_str()),
-        Some("key: value")
-    );
+    assert_eq!(sd.get("PORT").and_then(|v| v.as_str()), Some("8080"));
+    assert_eq!(sd.get("COLON").and_then(|v| v.as_str()), Some("key: value"));
 }
 
 /// Compose reads `environment:` items as YAML and then interpolates `$`.
 #[test]
 fn compose_output_is_valid_yaml_and_escapes_interpolation() {
     let d = fixture();
-    let doc: serde_yaml::Value =
-        serde_yaml::from_str(&convert(&d, "docker")).expect("compose output is not valid YAML");
+    let doc = yaml::document(&convert(&d, "docker"), yaml::Duplicates::Refuse)
+        .expect("compose output is not valid YAML");
     let items = doc
         .get("environment")
-        .and_then(|v| v.as_sequence())
+        .and_then(|v| v.as_seq())
         .expect("environment sequence");
 
     for item in items {

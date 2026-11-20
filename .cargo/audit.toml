@@ -23,21 +23,13 @@ ignore = [
 
     # ── Accepted "unmaintained" notices (checked 2026-11-19, offline) ─────────
     #
+    # Gone since 0.16.0, so not listed: serde_yaml / unsafe-libyaml (YAML is
+    # read with yaml-rust2, pure Rust) and number_prefix (indicatif 0.18).
+    # `grep -c 'serde_yaml\|unsafe-libyaml\|number_prefix' Cargo.lock` is 0.
+    #
     # ⚠️ TODO(owner): the IDs below were written without access to the advisory
     # database. Run `cargo audit` once and make each ID match its crate; an ID
     # that matches nothing is harmless, a missing one fails the audit job.
-
-    # serde_yaml 0.9.34+deprecated (and its unsafe-libyaml port).
-    #
-    # Accepted, not replaced. evnx only reads YAML (the scan engine's structured
-    # leaves and `init` detection; every YAML writer is hand-written), so there
-    # is no untrusted-input write path and the notice is about maintenance, not
-    # a vulnerability. A pure-Rust reader (yaml-rust2, saphyr, serde_norway)
-    # was not available when this was decided, so the swap waits for one.
-    # `cargo tree -e normal --all-features -i unsafe-libyaml` prints
-    # unsafe-libyaml -> serde_yaml -> evnx. Its own advisory ID is not recorded
-    # here yet (see the TODO above).
-    "RUSTSEC-2024-0320",
 
     # chrono 0.4: kept on purpose (25 call sites; replacing it with jiff or time
     # is a separate change). Read the advisory before each release: if evnx

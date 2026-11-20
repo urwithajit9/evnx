@@ -111,12 +111,13 @@ fn hook_args(id: &str) -> Vec<String> {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".pre-commit-hooks.yaml"),
     )
     .unwrap();
-    let hooks: Vec<serde_yaml::Value> = serde_yaml::from_str(&text).unwrap();
+    let doc = evnx::core::yaml::document(&text, evnx::core::yaml::Duplicates::Refuse).unwrap();
+    let hooks = doc.as_seq().unwrap();
     let hook = hooks
         .iter()
-        .find(|h| h["id"] == id)
+        .find(|h| h.get("id").and_then(|v| v.as_str()) == Some(id))
         .unwrap_or_else(|| panic!("no hook {id}"));
-    let entry = hook["entry"].as_str().unwrap();
+    let entry = hook.get("entry").and_then(|v| v.as_str()).unwrap();
     let mut words = entry.split_whitespace();
     assert_eq!(words.next(), Some("evnx"), "{entry}");
     words.map(String::from).collect()

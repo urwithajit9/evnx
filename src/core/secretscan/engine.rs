@@ -701,7 +701,6 @@ fn ssh_public_blob(t: &str) -> Option<&str> {
 /// parse — a template, a Helm chart with `{{ }}` — which the caller reads as
 /// text instead. Numbers, booleans and nulls are not values a secret is in.
 pub fn leaves(text: &str, format: Format) -> Option<Vec<Leaf>> {
-    use serde::Deserialize;
     let mut out = Vec::new();
     match format {
         Format::Json => walk_json(&serde_json::from_str(text).ok()?, "", "", &mut out),
@@ -710,9 +709,12 @@ pub fn leaves(text: &str, format: Format) -> Option<Vec<Leaf>> {
             walk_toml(&toml::Value::Table(table), "", "", &mut out)
         }
         Format::Yaml => {
-            // Every document in a `---`-separated stream.
-            for doc in serde_yaml::Deserializer::from_str(text) {
-                walk_yaml(&serde_yaml::Value::deserialize(doc).ok()?, "", "", &mut out);
+            // Every document in a `---`-separated stream. A key given twice
+            // makes the file unreadable here, so it is scanned as text and
+            // both values are seen.
+            let docs = crate::core::yaml::documents(text, crate::core::yaml::Duplicates::Refuse);
+            for doc in &docs.ok()? {
+                walk_yaml(doc, "", "", &mut out);
             }
         }
     }
@@ -846,29 +848,21 @@ fn walk_toml(v: &toml::Value, path: &str, key: &str, out: &mut Vec<Leaf>) {
     }
 }
 
-fn walk_yaml(v: &serde_yaml::Value, path: &str, key: &str, out: &mut Vec<Leaf>) {
-    use serde_yaml::Value;
+fn walk_yaml(v: &crate::core::yaml::Value, path: &str, key: &str, out: &mut Vec<Leaf>) {
+    use crate::core::yaml::Value;
     match v {
         Value::String(s) => push(path, key, s, out),
-        Value::Sequence(items) => {
+        Value::Seq(items) => {
             for (i, item) in items.iter().enumerate() {
                 walk_yaml(item, &format!("{path}[{i}]"), key, out);
             }
         }
-        Value::Mapping(map) => {
+        // A key is named as written, a number or a bool too.
+        Value::Map(map) => {
             for (k, item) in map {
-                // A key is usually a string; a number or a bool is named as written.
-                let k = match k {
-                    Value::String(s) => s.clone(),
-                    other => serde_yaml::to_string(other)
-                        .unwrap_or_default()
-                        .trim()
-                        .to_string(),
-                };
-                walk_yaml(item, &child(path, &k), &k, out);
+                walk_yaml(item, &child(path, k), k, out);
             }
         }
-        Value::Tagged(t) => walk_yaml(&t.value, path, key, out),
         _ => {}
     }
 }

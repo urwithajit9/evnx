@@ -180,12 +180,12 @@ mod tests {
         for (i, v) in HOSTILE.iter().enumerate() {
             doc.push_str(&format!("  k{i}: {}\n", yaml_scalar(v)));
         }
-        let parsed: serde_yaml::Value = serde_yaml::from_str(&doc)
+        let parsed = crate::core::yaml::document(&doc, crate::core::yaml::Duplicates::Refuse)
             .unwrap_or_else(|e| panic!("emitted YAML does not parse: {e}\n{doc}"));
-        let map = parsed.as_mapping().expect("a mapping");
+        assert!(parsed.as_map().is_some(), "a mapping");
         for (i, v) in HOSTILE.iter().enumerate() {
-            let got = map
-                .get(serde_yaml::Value::String(format!("k{i}")))
+            let got = parsed
+                .get(&format!("k{i}"))
                 .unwrap_or_else(|| panic!("k{i} missing"));
             assert_eq!(
                 got.as_str(),

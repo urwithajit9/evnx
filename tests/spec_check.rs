@@ -85,13 +85,20 @@ fn rm41_the_shipped_hook_is_spec_check() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".pre-commit-hooks.yaml"),
     )
     .unwrap();
-    let hooks: Vec<serde_yaml::Value> = serde_yaml::from_str(&text).unwrap();
+    let doc = evnx::core::yaml::document(&text, evnx::core::yaml::Duplicates::Refuse).unwrap();
+    let hooks = doc.as_seq().unwrap();
     let hook = hooks
         .iter()
-        .find(|h| h["id"] == "evnx-spec-check")
+        .find(|h| h.get("id").and_then(|v| v.as_str()) == Some("evnx-spec-check"))
         .expect("no evnx-spec-check hook");
-    assert_eq!(hook["entry"].as_str(), Some("evnx spec check"));
-    assert_eq!(hook["pass_filenames"].as_bool(), Some(false));
+    assert_eq!(
+        hook.get("entry").and_then(|v| v.as_str()),
+        Some("evnx spec check")
+    );
+    assert_eq!(
+        hook.get("pass_filenames").and_then(|v| v.as_bool()),
+        Some(false)
+    );
 }
 
 /// `-q`: findings only, so a passing check prints nothing.

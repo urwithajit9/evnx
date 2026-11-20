@@ -103,8 +103,13 @@ indicatif = "0.18"
 # Serialization
 serde      = { version = "1",   features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
 toml       = "0.8"
+# YAML is only read (scan, `init` detection, `add import`); every YAML writer
+# is hand-written. Pure Rust, no C port: it replaced serde_yaml, which is
+# deprecated and pulled in unsafe-libyaml. Called from core/yaml.rs only.
+# No default features: its `encoding` feature decodes byte input, and evnx
+# hands it text.
+yaml-rust2 = { version = "0.13.1", default-features = false }
 
 # Base64 — used in core/converter.rs (convert command) and github.rs (encryption);
 # always compiled for the same reason as indicatif above.

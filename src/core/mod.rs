@@ -43,6 +43,7 @@ pub mod spec;
 pub mod value;
 pub mod value_file;
 pub mod verdict;
+pub mod yaml;
 
 // Re-export commonly used types
 pub use config::Config;

@@ -11,12 +11,14 @@
 //! `--section` picks a top-level key (generic), a service (compose) or a job
 //! (GitHub Actions); its name is not part of the variable names.
 //!
-//! A parse error names a line and column and nothing else: a serde message can
-//! quote the text it choked on.
+//! A parse error names a line and column and nothing else: a parser message
+//! can quote the text it choked on.
 //!
 //! Both formats are read into [`V`], a small value type that keeps the order
 //! of a file's keys (`serde_json::Value` sorts them), so variables are listed
-//! and written in the order the file has them.
+//! and written in the order the file has them. YAML comes from `core::yaml`
+//! (its rules: `yes`/`on` are text, numbers keep the text they were written
+//! as, the merge key `<<` is not applied).
 
 use anyhow::{Result, bail};
 use base64::Engine;
@@ -70,6 +72,21 @@ fn keys(map: &[(String, V)]) -> String {
         .map(|(k, _)| k.as_str())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+impl V {
+    /// A YAML value; a number keeps the text it was written as (`1.10`).
+    fn from_yaml(y: crate::core::yaml::Value) -> V {
+        use crate::core::yaml::Value as Y;
+        match y {
+            Y::Null => V::Null,
+            Y::Bool(b) => V::Bool(b),
+            Y::Number(n) => V::Num(n),
+            Y::String(s) => V::Str(s),
+            Y::Seq(items) => V::Arr(items.into_iter().map(V::from_yaml).collect()),
+            Y::Map(m) => V::Obj(m.into_iter().map(|(k, v)| (k, V::from_yaml(v))).collect()),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for V {
@@ -138,20 +155,15 @@ pub fn json(text: &str, section: Option<&str>) -> Result<Vec<Found>> {
     document(&value, section)
 }
 
-/// The one place the YAML crate is called. Every document of a multi-document
-/// file; a parse error is a position only.
+/// Every document of a multi-document file, through `core::yaml`. A key
+/// given twice counts last, as in JSON; a parse error is a position only.
 fn yaml_documents(text: &str) -> Result<Vec<V>> {
-    let mut docs = Vec::new();
-    for de in serde_yaml::Deserializer::from_str(text) {
-        let doc = V::deserialize(de).map_err(|e| match e.location() {
-            Some(l) => anyhow::anyhow!("not valid YAML (line {}, column {})", l.line(), l.column()),
-            None => anyhow::anyhow!("not valid YAML"),
-        })?;
-        if !matches!(doc, V::Null) {
-            docs.push(doc);
-        }
-    }
-    Ok(docs)
+    let docs = crate::core::yaml::documents(text, crate::core::yaml::Duplicates::LastWins)?;
+    Ok(docs
+        .into_iter()
+        .filter(|d| !d.is_null())
+        .map(V::from_yaml)
+        .collect())
 }
 
 pub fn yaml(text: &str, section: Option<&str>) -> Result<Vec<Found>> {

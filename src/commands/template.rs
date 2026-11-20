@@ -1419,8 +1419,12 @@ mod tests {
         assert_eq!(render("{{V|toml}}", v), r#""a\"b\\c\nd'e\u0007""#);
         assert_eq!(render("{{V|sh}}", v), "'a\"b\\c\nd'\\''e\u{7}'");
         // What the YAML and TOML readers make of it is the value again.
-        let yaml: String = serde_yaml::from_str(&render("{{V|yaml}}", v)).unwrap();
-        assert_eq!(yaml, v[0].1);
+        let yaml = crate::core::yaml::document(
+            &render("{{V|yaml}}", v),
+            crate::core::yaml::Duplicates::Refuse,
+        )
+        .unwrap();
+        assert_eq!(yaml.as_str(), Some(v[0].1));
         let toml: toml::Table = render("k = {{V|toml}}", v).parse().unwrap();
         assert_eq!(toml["k"].as_str(), Some(v[0].1));
     }
