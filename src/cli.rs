@@ -4412,7 +4412,8 @@ pub enum ScanAction {
         #[command(subcommand)]
         command: RulesCommand,
     },
-    /// A git `pre-commit` hook that runs `evnx scan --staged`.
+    /// A git `pre-commit` hook that runs `evnx scan --staged`, or a `pre-push`
+    /// hook that scans the commits being pushed.
     Hook {
         #[command(subcommand)]
         command: HookCommand,
@@ -4431,11 +4432,30 @@ pub enum HookCommand {
     /// A commit is blocked when secrets are staged, when the scan cannot
     /// run, and when evnx is not on `PATH`. `git config hooks.evnx-scan
     /// false` turns it off; `git commit --no-verify` skips it once.
-    Install,
+    ///
+    /// With `--pre-push` the block goes into the `pre-push` hook instead and
+    /// scans the commits being pushed (`evnx scan --history`, over what each
+    /// ref adds beyond the remote). A push is blocked for secrets in them, and
+    /// when the scan cannot run. `EVNX_SCAN_BYPASS="<reason>" git push` pushes
+    /// anyway: a reason is required, and it is logged with the time and the
+    /// commits to `.git/evnx/bypass.log`.
+    Install {
+        /// Install in the `pre-push` hook, not `pre-commit`.
+        #[arg(long)]
+        pre_push: bool,
+    },
     /// Remove the evnx block, and nothing else, from the `pre-commit` hook.
-    Uninstall,
+    Uninstall {
+        /// Remove it from the `pre-push` hook instead.
+        #[arg(long)]
+        pre_push: bool,
+    },
     /// Whether the hook is installed here, and whether it is turned off.
-    Status,
+    Status {
+        /// Report on the `pre-push` hook instead.
+        #[arg(long)]
+        pre_push: bool,
+    },
 }
 
 /// The lowest severity `evnx scan --severity` reports.

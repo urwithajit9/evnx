@@ -35,8 +35,13 @@ impl Range {
         if arg == "all" {
             return Ok(Range::All);
         }
-        if arg.starts_with('-') {
-            bail!("--history: {arg:?} is not a revision range");
+        // Revisions, with `--not` and `--remotes` allowed between them: what a
+        // new branch needs ("everything no remote has"). Nothing else that
+        // looks like an option is passed to git.
+        for token in arg.split_whitespace() {
+            if token.starts_with('-') && !matches!(token, "--not" | "--remotes") {
+                bail!("--history: {arg:?} is not a revision range");
+            }
         }
         Ok(Range::Spec(arg.to_string()))
     }
@@ -81,7 +86,7 @@ pub fn blobs(cwd: &Path, range: &Range, pathspecs: &[String]) -> Result<Vec<Entr
     match range {
         Range::Head => log.arg("HEAD"),
         Range::All => log.arg("--all"),
-        Range::Spec(s) => log.arg(s),
+        Range::Spec(s) => log.args(s.split_whitespace()),
     };
     log.arg("--")
         .args(pathspecs.iter().filter(|p| p.as_str() != "."))
@@ -162,6 +167,11 @@ mod tests {
             Range::Spec("v1..".to_string())
         );
         assert!(Range::parse("--output=x").is_err());
+        assert!(Range::parse("HEAD --output=x").is_err());
+        assert_eq!(
+            Range::parse("abc123 --not --remotes").unwrap(),
+            Range::Spec("abc123 --not --remotes".to_string())
+        );
     }
 
     #[test]

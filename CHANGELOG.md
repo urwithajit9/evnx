@@ -28,6 +28,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The `evnx-scan-push` hook in `.pre-commit-hooks.yaml` now scans the commits
+  being pushed (`evnx scan --history`, from `PRE_COMMIT_FROM_REF` to
+  `PRE_COMMIT_TO_REF`) instead of the files on disk with SARIF output.
+
 - `evnx run --help` and `evnx cloud run --help` show `-- <COMMAND>...` in the
   usage line again; running with no command is still a usage error.
 - The `API` line that names a non-default Vercel API address is no longer
