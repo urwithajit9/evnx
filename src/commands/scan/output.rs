@@ -287,6 +287,14 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
                 .unwrap_or("matches a live key format, not a placeholder");
             println!("     {}  {}", glyph::WARN.yellow(), why.dimmed());
         }
+        // RM-71: the value as written is encoded; what matched is inside it.
+        if let Some(enc) = &finding.encoded {
+            println!(
+                "     {}  {}",
+                glyph::INFO.dimmed(),
+                format!("found inside a {enc}-encoded value, decoded once").dimmed()
+            );
+        }
         // ⚠️ Printed before the revoke link on purpose. For a variable the
         // bundler publishes, revoking is not the first thing to do and is not
         // sufficient on its own — the value is already in every build that has

@@ -822,7 +822,17 @@ impl ScanRunner {
             matched_value: PKCS12_ID.to_string(),
             ..Default::default()
         };
-        self.add_finding(results, path, 1, None, detection, &[]);
+        self.add_finding(
+            results,
+            path,
+            crate::core::secretscan::engine::Found {
+                line: 1,
+                variable: None,
+                detection,
+                encoded: None,
+            },
+            &[],
+        );
     }
 
     /// Scan `path`, reading its content from `source`: the same file, except
@@ -953,7 +963,7 @@ impl ScanRunner {
         // Detection is the engine's; what a detection becomes is the report's.
         let lines: Vec<&str> = content.lines().collect();
         for f in engine::scan_text(content, &ctx) {
-            self.add_finding(results, path, f.line, f.variable, f.detection, &lines);
+            self.add_finding(results, path, f, &lines);
         }
 
         Ok(())
@@ -990,9 +1000,10 @@ impl ScanRunner {
                 self.add_finding(
                     results,
                     path,
-                    f.line,
-                    Some(chunk.path.clone()),
-                    f.detection,
+                    crate::core::secretscan::engine::Found {
+                        variable: Some(chunk.path.clone()),
+                        ..f
+                    },
                     &lines,
                 );
             }
@@ -1013,11 +1024,15 @@ impl ScanRunner {
         &self,
         results: &mut ScanResults,
         path: &Path,
-        line: usize,
-        variable: Option<String>,
-        detection: super::detector::Detection,
+        found: crate::core::secretscan::engine::Found,
         lines: &[&str],
     ) {
+        let crate::core::secretscan::engine::Found {
+            line,
+            variable,
+            detection,
+            encoded,
+        } = found;
         // Skip placeholders if configured.
         //
         // ⚠️ `looks_like_placeholder_secret`, NOT `is_placeholder`. The latter
@@ -1111,6 +1126,7 @@ impl ScanRunner {
         .judged_value(judged_value)
         .public_prefix(public.map(|(prefix, _)| prefix.to_string()));
         finding.note = note;
+        finding.encoded = encoded.map(str::to_string);
         finding.line = line;
 
         // C5: what the project has looked at. The fingerprint never holds the

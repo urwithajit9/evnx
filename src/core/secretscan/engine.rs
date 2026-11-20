@@ -79,11 +79,84 @@ pub struct Found {
     /// The `.env` key, when there is one.
     pub variable: Option<String>,
     pub detection: Detection,
+    /// `base64`, `hex` or `url` when the finding is in text decoded from the
+    /// value at this line (RM-71); `None` for the value as written.
+    pub encoded: Option<&'static str>,
 }
 
 /// Scan `text` and return every detection, at most one per value, in the
 /// order they appear.
 pub fn scan_text(text: &str, ctx: &Context) -> Vec<Found> {
+    let mut found = scan_text_as_written(text, ctx);
+    scan_decoded(text, ctx, &mut found);
+    found
+}
+
+/// RM-71: values that are base64, hex or percent-encoded text, decoded once
+/// and checked against the format rules only (D8). A finding names the
+/// encoding and sits on the line of the encoded value, and replaces whatever
+/// else was reported about that same value on the line (the name check or the
+/// entropy fallback), so one value stays one finding.
+fn scan_decoded(text: &str, ctx: &Context, out: &mut Vec<Found>) {
+    use super::decode;
+    let mut budget = decode::MAX_CANDIDATES_PER_FILE;
+    for (i, line) in text.lines().enumerate() {
+        let line_num = i + 1;
+        let variable = matches!(ctx.kind, Kind::Dotenv)
+            .then(|| assignment_key(line))
+            .flatten();
+        for token in decode::tokens(line) {
+            if budget == 0 {
+                return;
+            }
+            budget -= 1;
+            let mut hit = false;
+            for (encoding, decoded) in decode::decode(token) {
+                for detection in one_finding_per_value(ctx.registry.scan_decoded(&decoded)) {
+                    if out.iter().any(|f| {
+                        f.line == line_num
+                            && f.encoded == Some(encoding.as_str())
+                            && f.detection.rule_id == detection.rule_id
+                            && f.detection.matched_value == detection.matched_value
+                    }) {
+                        continue;
+                    }
+                    hit = true;
+                    out.push(Found {
+                        line: line_num,
+                        variable: variable.clone(),
+                        detection,
+                        encoded: Some(encoding.as_str()),
+                    });
+                }
+            }
+            if hit {
+                out.retain(|f| {
+                    !(f.line == line_num
+                        && f.encoded.is_none()
+                        && f.detection
+                            .matched_value
+                            .trim_matches(|c| c == '"' || c == '\'')
+                            == token)
+                });
+            }
+        }
+    }
+}
+
+/// `KEY` of a `KEY=value` or `export KEY=value` line.
+fn assignment_key(line: &str) -> Option<String> {
+    let l = line.trim_start();
+    let l = strip_export(l).unwrap_or(l);
+    let (k, _) = l.split_once('=')?;
+    let k = k.trim();
+    (!k.is_empty()
+        && k.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.'))
+    .then(|| k.to_string())
+}
+
+fn scan_text_as_written(text: &str, ctx: &Context) -> Vec<Found> {
     // ── `.env`: the real parser, not a second implementation ─────────────
     //
     // ⚠️ This used to split every line on `=` itself. A continuation line of
@@ -191,6 +264,7 @@ fn scan_lines(text: &str, ctx: &Context) -> Vec<Found> {
                 line: line_num,
                 variable,
                 detection,
+                encoded: None,
             });
         }
     }
@@ -213,6 +287,7 @@ fn scan_env(doc: &Document, ctx: &Context, out: &mut Vec<Found>) {
                 line: line_num,
                 variable: Some(key.clone()),
                 detection,
+                encoded: None,
             });
         }
     }
@@ -272,6 +347,7 @@ fn scan_env(doc: &Document, ctx: &Context, out: &mut Vec<Found>) {
                 line: line_num,
                 variable,
                 detection,
+                encoded: None,
             });
         }
     }
@@ -440,6 +516,7 @@ fn scan_structured(text: &str, format: Format, ctx: &Context) -> Vec<Found> {
                 line: leaf.line,
                 variable: Some(leaf.path.clone()),
                 detection,
+                encoded: None,
             });
         }
     }
@@ -480,6 +557,7 @@ fn scan_structured(text: &str, format: Format, ctx: &Context) -> Vec<Found> {
                 line,
                 variable,
                 detection,
+                encoded: None,
             })
         })
         .collect();

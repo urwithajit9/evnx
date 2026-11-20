@@ -102,6 +102,16 @@ What a folder walk reads:\n\
 \x20 In a git repository, findings in files git ignores and does not track\n\
 \x20 are summarised, not counted (--include-ignored counts them).\n\
 \n\
+Encoded values:\n\
+\x20 a value of 16 to 4096 characters that is base64, hex or percent-encoded\n\
+\x20 text is decoded once and checked against the rules below only (not names\n\
+\x20 or entropy). The finding shows \"encoded\" in JSON.\n\
+\n\
+Accepting a finding:\n\
+\x20 evnx:allow <rule> reason=used-in-tests|false-positive|fix-later, then\n\
+\x20 free text, on the line or the one above; --update-baseline --reason CODE\n\
+\x20 does the same for the baseline. The summary counts by reason.\n\
+\n\
 Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):\n\
 \x20 AWS Access Key, AWS Temporary Access Key (STS), GitHub Fine-grained PAT,\n\
 \x20 Slack Token, Google API Key, JSON Web Token, Stripe Secret Key (LIVE),\n\

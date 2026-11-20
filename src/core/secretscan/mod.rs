@@ -13,6 +13,7 @@
 pub mod assign;
 pub mod checksum;
 mod confidence;
+pub mod decode;
 pub mod detector;
 pub mod engine;
 pub mod heuristic;

@@ -20,6 +20,7 @@
 //!     fingerprint: String::new(),
 //!     reason: None,
 //!     reason_code: None,
+//!     encoded: None,
 //!     pattern: "AWS Access Key".to_string(),
 //!     confidence: Confidence::High,
 //!     severity: Severity::Critical,
@@ -98,6 +99,10 @@ pub struct Finding {
     /// `reason=` or its baseline entry. Absent when none was given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason_code: Option<String>,
+    /// `base64`, `hex` or `url` when the finding is in text decoded from the
+    /// value at its location (RM-71). Absent for a value as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoded: Option<String>,
     pub pattern: String,
     #[serde(serialize_with = "serialize_confidence")]
     pub confidence: Confidence,
@@ -288,6 +293,7 @@ impl Finding {
             fingerprint: String::new(),
             reason: None,
             reason_code: None,
+            encoded: None,
             rule_id: crate::core::secretscan::patternset::slug(
                 pattern.split(':').next().unwrap_or(&pattern),
             ),

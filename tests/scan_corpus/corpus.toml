@@ -106,6 +106,40 @@ expect = [
 ]
 
 [[case]]
+id = "pos-decode-k8s-secret-yaml"
+family = "decode"
+format = "yaml"
+as = "secret.yaml"
+expect = [{ line = 6, rule = "github-token" }]
+
+[[case]]
+id = "pos-decode-json-b64"
+family = "decode"
+format = "json"
+as = "config.json"
+expect = [{ line = 3, rule = "stripe-live-secret-key" }]
+
+[[case]]
+id = "pos-decode-url-dotenv"
+family = "decode"
+format = "dotenv"
+as = ".env"
+expect = [{ line = 2, rule = "connection-string-credentials" }]
+
+[[case]]
+id = "pos-decode-hex-shell"
+family = "decode"
+format = "shell"
+as = "run.sh"
+expect = [{ line = 2, rule = "npm-access-token" }]
+
+[[case]]
+id = "neg-decode-binary-and-hashes"
+family = "decode"
+format = "dotenv"
+as = ".env"
+
+[[case]]
 id = "pos-vcs-github-shell"
 family = "vcs"
 format = "shell"
