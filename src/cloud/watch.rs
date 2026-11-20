@@ -25,6 +25,26 @@
 //! Finding out a teammate changed a secret **before** your next deploy picks it
 //! up silently. That is the failure this prevents — not the inconvenience of
 //! typing `pull`.
+//!
+//! ─── `--on-change -- <COMMAND>...` ──────────────────────────────────────────
+//!
+//! Runs a command once per reported change (the rule that prints the line, so
+//! your own pushes are skipped unless `--include-mine`). Three rules, one
+//! reason each:
+//!
+//! * **No shell.** The command is run as `evnx run` runs it: `program` and
+//!   arguments, nothing interpreted. A key name or a vault name can never
+//!   become shell syntax, and Windows and Unix behave alike. A pipeline asks
+//!   for a shell: `-- sh -c '...'`.
+//! * **Nothing from evnx's environment.** Every `EVNX_*` variable is stripped
+//!   (the API token above all), except the two this adds: `EVNX_WATCH_VAULT`
+//!   (the vault's `name/environment`) and `EVNX_WATCH_VERSION` (the new latest
+//!   number). Names and numbers, never a value: watch has none to give.
+//! * **Synchronous, and a failing command does not stop the watch.** The next
+//!   poll waits for the command to finish, so changes that arrive meanwhile
+//!   are one call afterwards, not a queue. A non-zero exit or a command that
+//!   could not start prints one warning and watching goes on: a hook that
+//!   failed once is not a reason to stop telling people about changes.
 
 use anyhow::{Result, anyhow};
 use colored::Colorize;
@@ -36,6 +56,7 @@ use super::sync::{
     VersionSummary, key_delta, key_delta_line, list_versions, my_user_id, resolve_target,
 };
 use super::vault;
+use crate::core::secret::Vars;
 
 /// ⚠️ A floor, not a suggestion. A one-second poll against a shared API is a
 /// denial-of-service someone writes by accident, and the value of knowing two
@@ -103,12 +124,111 @@ fn needs_report(fresh: &[VersionSummary], last: i32, me: Option<&str>, include_m
         .any(|v| include_mine || me != Some(v.pushed_by.as_str()))
 }
 
+/// The variables the `--on-change` command gets, and the only `EVNX_*` it gets.
+///
+/// A vault's label and a version number: public facts the server already
+/// shows to anyone who can list the vault. Never a value.
+fn hook_env(vault_label: &str, version: i32) -> Vars {
+    let mut vars = Vars::new();
+    vars.insert("EVNX_WATCH_VAULT".to_string(), vault_label.into());
+    vars.insert("EVNX_WATCH_VERSION".to_string(), version.to_string().into());
+    vars
+}
+
+/// Run the `--on-change` command for a change and say how it went.
+///
+/// Returns whether it succeeded. Never an error: see the module note.
+fn run_hook(command: &[String], vault_label: &str, version: i32) -> bool {
+    let Some((program, args)) = command.split_first() else {
+        return true;
+    };
+    let env = hook_env(vault_label, version);
+    // The program only: the arguments are the user's, but a line that echoes
+    // them is a place a token typed into one would end up in a log.
+    crate::say!(
+        "    {}",
+        format!("running {program} for v{version}").dimmed()
+    );
+    match crate::core::inject::spawn_with_env(program, args, &env, None) {
+        Ok(status) if status.success() => true,
+        Ok(status) => {
+            let how = status.code().map_or_else(
+                || "was stopped by a signal".to_string(),
+                |c| format!("exited {c}"),
+            );
+            crate::utils::ui::warning(format!(
+                "the --on-change command {program} {how} for v{version}; watching goes on."
+            ));
+            false
+        }
+        Err(e) => {
+            let why = if e.kind() == std::io::ErrorKind::NotFound {
+                "no such command".to_string()
+            } else {
+                e.to_string()
+            };
+            crate::utils::ui::warning(format!(
+                "the --on-change command {program} did not run for v{version} ({why}); \
+                 watching goes on. It is run directly, not through a shell: \
+                 `-- sh -c '...'` for a pipeline."
+            ));
+            false
+        }
+    }
+}
+
+/// Print one reported change, and run the command if there is one.
+#[allow(clippy::too_many_arguments)]
+fn report_change(
+    vault_ref: &vault::VaultRef,
+    previous: Option<&VersionSummary>,
+    newest_now: &VersionSummary,
+    verbose: bool,
+    hook: Option<&[String]>,
+) {
+    let line = match previous {
+        Some(p) => key_delta_line(&key_delta(p, newest_now)),
+        None => format!("{} keys", newest_now.key_count),
+    };
+
+    let when = super::when::stamp(&newest_now.pushed_at);
+    println!(
+        "  {} v{} · {} · {}",
+        "▲".green().bold(),
+        newest_now.version_num,
+        line,
+        when.dimmed()
+    );
+    println!(
+        "    {}",
+        format!("evnx cloud pull --vault {}", vault_ref.label()).cyan()
+    );
+
+    if verbose {
+        let d = previous.map(|p| key_delta(p, newest_now));
+        if let Some(d) = d {
+            if d.changed_contents && d.added.is_empty() && d.removed.is_empty() {
+                println!(
+                    "    {}",
+                    "the key names are identical, so a value changed — evnx cannot see which"
+                        .dimmed()
+                );
+            }
+        }
+    }
+
+    if let Some(command) = hook {
+        run_hook(command, &vault_ref.label(), newest_now.version_num);
+    }
+}
+
 pub fn run(
     server_override: Option<&str>,
     vault_target: Option<String>,
     interval_secs: u64,
     once: bool,
     include_mine: bool,
+    hook: Option<Vec<String>>,
     verbose: bool,
 ) -> Result<()> {
     if interval_secs < MIN_INTERVAL_SECS {
@@ -117,6 +237,13 @@ pub fn run(
              Polling faster does not make a teammate push sooner."
         ));
     }
+
+    if hook.as_ref().is_some_and(Vec::is_empty) {
+        return Err(crate::core::verdict::usage(
+            "--on-change needs a command after `--`: evnx cloud watch --on-change -- <COMMAND>",
+        ));
+    }
+    let hook = hook.as_deref();
 
     let vault_target = resolve_target(vault_target)?;
     let server = CloudConfig::resolve_server(server_override)?;
@@ -151,6 +278,18 @@ pub fn run(
 
     loop {
         if once {
+            // A change is pending when the vault is past what this machine has
+            // seen (the high-water mark, raised by its own push, pull and run).
+            // That is the one thing a single check can compare with, and it is
+            // only worth doing when there is a command to run.
+            if let (Some(command), Some(mark)) = (hook, highwater_mark(&vault_ref)) {
+                if let Some(newest_now) = newest(&seen).filter(|n| n.version_num > mark) {
+                    if needs_report(&seen, mark, me.as_deref(), include_mine) {
+                        let previous = seen.iter().find(|v| v.version_num == mark);
+                        report_change(&vault_ref, previous, newest_now, verbose, Some(command));
+                    }
+                }
+            }
             return Ok(());
         }
         std::thread::sleep(Duration::from_secs(interval_secs));
@@ -209,40 +348,16 @@ pub fn run(
         // the reader, and showing only the last hop would hide a key that
         // appeared and vanished.
         let previous = seen.iter().find(|v| v.version_num == last);
-        let line = match previous {
-            Some(p) => key_delta_line(&key_delta(p, newest_now)),
-            None => format!("{} keys", newest_now.key_count),
-        };
-
-        let when = super::when::stamp(&newest_now.pushed_at);
-        println!(
-            "  {} v{} · {} · {}",
-            "▲".green().bold(),
-            newest_now.version_num,
-            line,
-            when.dimmed()
-        );
-        println!(
-            "    {}",
-            format!("evnx cloud pull --vault {}", vault_ref.label()).cyan()
-        );
-
-        if verbose {
-            let d = previous.map(|p| key_delta(p, newest_now));
-            if let Some(d) = d {
-                if d.changed_contents && d.added.is_empty() && d.removed.is_empty() {
-                    println!(
-                        "    {}",
-                        "the key names are identical, so a value changed — evnx cannot see which"
-                            .dimmed()
-                    );
-                }
-            }
-        }
+        report_change(&vault_ref, previous, newest_now, verbose, hook);
 
         last = newest_now.version_num;
         seen = fresh;
     }
+}
+
+/// This machine's mark for the vault, if it has one.
+fn highwater_mark(vault_ref: &vault::VaultRef) -> Option<i32> {
+    super::highwater::seen(&vault_ref.id)
 }
 
 #[cfg(test)]
@@ -298,10 +413,65 @@ mod tests {
         assert!(needs_report(&fresh, 1, None, false));
     }
 
+    /// The command's environment is the vault label and the version number, and
+    /// nothing else: no value, no key name.
+    #[test]
+    fn the_hook_environment_is_the_vault_and_the_version_only() {
+        let env = hook_env("app/production", 7);
+        let got: Vec<(String, String)> = env
+            .iter()
+            .map(|(k, v)| (k.clone(), v.expose().to_string()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("EVNX_WATCH_VAULT".to_string(), "app/production".to_string()),
+                ("EVNX_WATCH_VERSION".to_string(), "7".to_string()),
+            ]
+        );
+    }
+
+    /// A failing command is a warning, not an end to watching: `run_hook` says
+    /// it failed and returns, for a non-zero exit and for a command that does
+    /// not exist alike.
+    #[test]
+    fn a_failing_or_missing_command_is_not_fatal() {
+        let sh = |s: &str| vec!["sh".to_string(), "-c".to_string(), s.to_string()];
+        assert!(run_hook(&sh("exit 0"), "app/production", 2));
+        assert!(!run_hook(&sh("exit 3"), "app/production", 2));
+        assert!(!run_hook(
+            &["evnx-no-such-program-16b2".to_string()],
+            "app/production",
+            2
+        ));
+        assert!(run_hook(&[], "app/production", 2));
+    }
+
+    /// The command sees the two watch variables. (That every other `EVNX_*`
+    /// variable is stripped is `inject`'s own test, `t_i227_*`, as this runs
+    /// through the same launcher.)
+    #[test]
+    #[cfg(unix)]
+    fn the_hook_sees_its_two_variables() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let marker = dir.path().join("out");
+        let script = format!(
+            r#"printf '%s|%s' "$EVNX_WATCH_VAULT" "$EVNX_WATCH_VERSION" > '{}'"#,
+            marker.display()
+        );
+        let ok = run_hook(
+            &["sh".to_string(), "-c".to_string(), script],
+            "app/production",
+            4,
+        );
+        assert!(ok);
+        assert_eq!(std::fs::read_to_string(marker).unwrap(), "app/production|4");
+    }
+
     #[test]
     fn an_interval_below_the_floor_is_refused() {
         for bad in [0, 1, 4] {
-            let e = run(None, Some("x".into()), bad, true, false, false).unwrap_err();
+            let e = run(None, Some("x".into()), bad, true, false, None, false).unwrap_err();
             assert!(
                 e.to_string().contains("minimum"),
                 "interval {bad} should be refused: {e}"

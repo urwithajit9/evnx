@@ -194,12 +194,15 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
             interval,
             once,
             include_mine,
+            on_change,
+            command,
         } => watch::run(
             server_override,
             vault,
             interval,
             once,
             include_mine,
+            on_change.then_some(command),
             verbose,
         ),
         CloudCommands::Diff {

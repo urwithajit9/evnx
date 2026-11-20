@@ -99,6 +99,13 @@ pub fn observe(vault_id: &str, label: &str, latest: i32) {
     }
 }
 
+/// The highest version this machine has seen of a vault, if it has seen any.
+#[must_use]
+pub fn seen(vault_id: &str) -> Option<i32> {
+    let path = path()?;
+    load(&path).get(&key(vault_id)).copied()
+}
+
 /// Raise the mark to `version`, which this client has just pushed or fetched.
 pub fn note(vault_id: &str, version: i32) {
     let Some(path) = path() else { return };

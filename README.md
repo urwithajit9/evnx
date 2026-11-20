@@ -1372,6 +1372,13 @@ evnx cloud watch --vault app/production   # notify when someone else pushes
 poll is a blip; from the third in a row it says so on stderr, and after ten in a
 row it stops with exit 2 and what to check.
 
+`--on-change -- <COMMAND>...` runs a command once for each reported change, for
+example `evnx cloud watch --on-change -- ./notify.sh`. It is run directly, not
+through a shell (for a pipeline: `-- sh -c 'a | b'`), and it gets
+`EVNX_WATCH_VAULT` and `EVNX_WATCH_VERSION` and no other `EVNX_*` variable. A
+non-zero exit prints one warning and watching goes on. With `--once` it runs
+when the vault is past the latest version this machine has seen.
+
 ⛔ `cloud watch` **notifies and never pulls.** Pulling automatically would
 overwrite local edits without being asked, and it would mean holding the vault
 key in memory for as long as the watch runs. It tells you; you decide.

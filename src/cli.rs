@@ -2097,6 +2097,28 @@ pub enum CloudCommands {
         /// Report your own pushes too. By default only someone else's are shown.
         #[arg(long)]
         include_mine: bool,
+
+        /// Run the command after `--` once for each reported change.
+        ///
+        /// It runs directly, not through a shell, as `evnx run` does; for a
+        /// pipeline ask for one: `-- sh -c 'a | b'`. It gets `EVNX_WATCH_VAULT`
+        /// and `EVNX_WATCH_VERSION` (names and numbers, never values), and no
+        /// other `EVNX_*` variable. It runs to the end before the next poll, so
+        /// changes that arrive meanwhile are one call afterwards. A non-zero exit
+        /// prints one warning and watching goes on. With `--once` it runs when
+        /// the vault has a change this machine has not seen yet. It cannot pull:
+        /// `evnx cloud pull` inside the command asks for the master password.
+        #[arg(long, requires = "command")]
+        on_change: bool,
+
+        /// The command to run, after `--`.
+        #[arg(
+            last = true,
+            allow_hyphen_values = true,
+            value_name = "COMMAND",
+            requires = "on_change"
+        )]
+        command: Vec<String>,
     },
 
     /// What changed between two versions — key names only, never values.

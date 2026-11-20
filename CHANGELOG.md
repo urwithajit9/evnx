@@ -34,6 +34,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version it deleted; other machines still see the "latest went down" warning,
   which now says an admin may have deleted it.
 
+- **`evnx cloud watch --on-change -- <COMMAND>...`** runs a command once for
+  each reported change. It runs directly, not through a shell, like `evnx run`;
+  it gets `EVNX_WATCH_VAULT` and `EVNX_WATCH_VERSION` and no other `EVNX_*`
+  variable. It finishes before the next poll, so changes that arrive meanwhile
+  are one call. A failing command prints one warning and watching goes on. With
+  `--once` it runs when the vault is past the latest version this machine has
+  seen.
+
 ### Changed
 
 - `evnx run --help` and `evnx cloud run --help` show `-- <COMMAND>...` in the
