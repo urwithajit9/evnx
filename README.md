@@ -317,6 +317,8 @@ evnx add blueprint t3_modern      # a whole stack
 evnx add custom API_URL=https://api.example.com DEBUG=false --yes   # your own: values go to .env only, .env.example gets placeholders
 evnx add custom                   # ... or one prompt at a time
 evnx add custom GOOGLE_CREDENTIALS --from-file service-account.json --yes   # one value from a file (or `-` for stdin)
+evnx add import secrets.json --dry-run   # many variables from one file: the mapping, no values
+evnx add import k8s-secret.yaml --yes    # .env, .properties, INI, JSON, YAML, CSV
 evnx add --list                   # every id
 evnx add service redis --dry-run  # what would be written; --json for scripts
 ```
@@ -328,6 +330,20 @@ break is dropped (`--keep-trailing-newline` keeps it). The value is written in
 double quotes with `\n` escapes, so it reads back exactly, and it is never printed:
 a dry run says `NAME: 1,842 bytes, 31 lines`. A name `.env` already has is kept.
 The same flag works on `evnx set`.
+
+`add import <FILE|->` reads many variables from one file into `.env` (`.env.example` gets
+placeholders). Formats follow the extension, or `--from env|properties|ini|json|yaml|csv`
+(always needed for stdin). Names become UPPER_SNAKE (`db.host` and `db-host` are both
+`DB_HOST`); nested JSON/YAML keys join with `__`; a Kubernetes Secret's base64 `data` is
+decoded, a docker-compose `environment:` and a GitHub Actions `env:` are known shapes;
+INI `[db] host` becomes `DB_HOST`. `--section` picks one INI section, top-level key,
+compose service or workflow job (its name is left off the variable names), and
+`--only` / `--exclude` take globs. Two sources that make one name, an array, `null`, a
+binary value or an invalid name are refused with exit 2 and nothing is written. A name
+`.env` already has is kept and reported. `--dry-run` prints `source key -> NAME -> new |
+kept | refused` and never a value; `--json` carries it as `mapping[]`. A source file that
+git tracks and that holds secret-looking values gets a warning to untrack it and rotate
+them. `web.config` (`<appSettings>`) is not supported yet: this build has no XML reader.
 
 `--dir` names the folder that holds `.env.example` and `.env`. When the project keeps a
 contract, the new names are recorded in the nearest `.evnx.toml` at or above that folder,

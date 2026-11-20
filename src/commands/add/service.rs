@@ -58,6 +58,7 @@ pub fn handle(service_id: Option<&str>, path: &str, mode: &Mode) -> Result<Outco
         example_render: None,
         env_from_values: false,
         values: None,
+        json_extra: None,
     };
     confirm_and_apply(Path::new(path), &vars, &flow, mode)
 }

@@ -565,6 +565,7 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
         example_render: Some(&render_example),
         env_from_values: true,
         values: Some(&values),
+        json_extra: None,
     };
     confirm_and_apply(output_path, &collected, &flow, mode)
 }

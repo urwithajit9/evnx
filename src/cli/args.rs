@@ -235,6 +235,25 @@ pub enum ConvertFrom {
     Json,
 }
 
+/// What `evnx add import` can read.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportFormat {
+    /// `NAME=value` lines, as a `.env`.
+    Env,
+    /// Java `.properties`.
+    Properties,
+    /// INI sections: `[db] host` becomes DB_HOST.
+    Ini,
+    /// JSON: flat, nested, or a Kubernetes Secret.
+    Json,
+    /// YAML: flat, nested, a Kubernetes Secret, compose or GitHub Actions.
+    Yaml,
+    /// Two columns: name, value.
+    Csv,
+    /// A `web.config` with `<appSettings>` (not supported yet).
+    WebConfig,
+}
+
 /// What `evnx convert --to` can write (and, from 0.14.2, `cloud export --to`).
 ///
 /// Fifteen formats, spelled as [`crate::formats::FORMATS`] names them, except
@@ -288,6 +307,22 @@ impl ConvertTarget {
             Self::Heroku => "heroku",
             Self::Vercel => "vercel",
             Self::Railway => "railway",
+        }
+    }
+}
+
+impl ImportFormat {
+    /// The reader for this spelling.
+    pub fn format(self) -> crate::core::import::Format {
+        use crate::core::import::Format;
+        match self {
+            Self::Env => Format::Env,
+            Self::Properties => Format::Properties,
+            Self::Ini => Format::Ini,
+            Self::Json => Format::Json,
+            Self::Yaml => Format::Yaml,
+            Self::Csv => Format::Csv,
+            Self::WebConfig => Format::WebConfig,
         }
     }
 }

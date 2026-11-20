@@ -53,6 +53,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `EVNX_*` variable out of the command it starts.
 
 
+- **`evnx add import <FILE|->`** adds many variables from one file to `.env`:
+  `.env`, `.properties`, INI, JSON, YAML (flat, nested with `__`, a Kubernetes
+  Secret with base64 `data`, a docker-compose `environment:`, a GitHub Actions
+  `env:`) and CSV. Names become UPPER_SNAKE; `--from` names the format,
+  `--section`, `--only` and `--exclude` narrow it. Collisions, arrays, `null`,
+  binary values and invalid names are refused (exit 2, nothing written); names
+  `.env` already has are kept and reported; `.env.example` gets placeholders.
+  `--dry-run` and `--json` give a source-to-name mapping and never a value.
+  A tracked source file with secrets gets a warning to untrack it and rotate
+  them. `web.config` is not supported yet.
+
+### Fixed
+
+- **`add custom NAME=value` now writes the value to `.env` when the template
+  lists NAME with another value** (such as an empty `NAME=`). It used to report
+  a template conflict and write nothing.
+
 ---
 
 ## [0.15.0] - 2026-11-19

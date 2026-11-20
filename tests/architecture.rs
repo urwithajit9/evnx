@@ -612,6 +612,14 @@ const EXPOSE_ALLOW: &[(&str, &str)] = &[
         "restore reads a refused line to name the key it looks like",
     ),
     (
+        "core/import/mod.rs",
+        "add import writes the imported values into .env and spots a `$` or a secret by its value",
+    ),
+    (
+        "core/import/text.rs",
+        "add import reads env-like and properties files into Secret values",
+    ),
+    (
         "core/value_file.rs",
         "--from-file checks a value read from a file (size, lines, binary) before it is stored",
     ),

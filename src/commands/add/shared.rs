@@ -601,6 +601,9 @@ pub struct Flow<'a> {
     /// stands in): `add custom` only. With it, a name the env file already
     /// has with another value is kept and reported, not counted as added.
     pub values: Option<&'a IndexMap<String, Option<String>>>,
+    /// Fields added to the `--json` document (`add import`'s `mapping`).
+    /// Names and statuses only: nothing in it may be a value.
+    pub json_extra: Option<&'a serde_json::Value>,
 }
 
 /// Plan, preview, ask (unless `--yes`), apply and report: the whole of an
@@ -636,14 +639,14 @@ pub fn confirm_and_apply(
     if mode.dry_run {
         let json = extra
             .as_ref()
-            .map(|e| json_doc(&plan, true, &Applied::default(), e));
+            .map(|e| with_extra(json_doc(&plan, true, &Applied::default(), e), flow));
         emit(&plan, flow, Step::DryRun, json)?;
         return Ok(Outcome::Unchanged);
     }
     if plan.is_empty() {
         let json = extra
             .as_ref()
-            .map(|e| json_doc(&plan, false, &Applied::default(), e));
+            .map(|e| with_extra(json_doc(&plan, false, &Applied::default(), e), flow));
         emit(
             &plan,
             flow,
@@ -711,7 +714,9 @@ pub fn confirm_and_apply(
         !mode.json,
     )?;
     // Asked: the conflicts were shown with the question.
-    let json = extra.as_ref().map(|e| json_doc(&plan, false, &applied, e));
+    let json = extra
+        .as_ref()
+        .map(|e| with_extra(json_doc(&plan, false, &applied, e), flow));
     emit(
         &plan,
         flow,
@@ -751,11 +756,22 @@ fn keep_differing(
     plan: &mut Plan,
     values: &IndexMap<String, Option<String>>,
 ) -> Result<()> {
-    let Some(env) = read_assignments(&output_path.join(&plan.env_file))? else {
-        return Ok(());
-    };
+    let env = read_assignments(&output_path.join(&plan.env_file))?.unwrap_or_default();
     for (name, given) in values {
-        let (Some(existing), Some(given)) = (env.get(name), given) else {
+        let Some(given) = given else { continue };
+        let Some(existing) = env.get(name) else {
+            // The env file lacks it. The template listing it with another
+            // value (`API_URL=` against the placeholder) says nothing about
+            // `.env`: the value given is written there, and the template is
+            // left as it is (it already has the name).
+            if plan.conflicts.iter().any(|c| &c.var_name == name) {
+                plan.conflicts.retain(|c| &c.var_name != name);
+                if plan.env_exists || plan.create_env_file {
+                    if let Some(meta) = plan.requested.vars.get(name) {
+                        plan.to_env.vars.insert(name.clone(), meta.clone());
+                    }
+                }
+            }
             continue;
         };
         if existing != given {
@@ -765,6 +781,18 @@ fn keep_differing(
         }
     }
     Ok(())
+}
+
+/// `doc` with the flow's own fields added.
+fn with_extra(mut doc: serde_json::Value, flow: &Flow) -> serde_json::Value {
+    if let (Some(serde_json::Value::Object(extra)), Some(map)) =
+        (flow.json_extra, doc.as_object_mut())
+    {
+        for (k, v) in extra {
+            map.insert(k.clone(), v.clone());
+        }
+    }
+    doc
 }
 
 /// `--json`: the result as one document. Names only, and conflicts with the

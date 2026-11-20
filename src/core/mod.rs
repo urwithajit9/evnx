@@ -17,6 +17,7 @@ pub mod gitignore;
 pub mod glob;
 #[cfg(feature = "net")]
 pub mod http;
+pub mod import;
 pub mod inject;
 pub mod json;
 pub mod key_rules;

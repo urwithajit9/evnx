@@ -359,7 +359,7 @@ mod tests {
         ];
         assert_eq!(
             set_many(src, &values, ".env").unwrap(),
-            "# top\nA=1\nB=keep # note\nC=\"a b\"\n".replace("C=\"a b\"", "C=\"a b\"")
+            "# top\nA=1\nB=keep # note\nC=\"a b\"\n"
         );
     }
 

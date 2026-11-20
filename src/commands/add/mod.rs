@@ -5,6 +5,7 @@
 //! - `framework <id>`  — Add variables for a framework (e.g., django)
 //! - `blueprint <id>`  — Add variables from a stack blueprint
 //! - `custom`          — Interactive custom variable addition
+//! - `import <file>`   — Many variables from one file (.env, INI, JSON, YAML, CSV, …)
 
 use anyhow::{Result, bail};
 use colored::*;
@@ -13,6 +14,7 @@ use std::path::Path;
 pub mod blueprint;
 pub mod custom;
 pub mod framework;
+pub mod import;
 pub mod report;
 pub mod service;
 pub mod shared;
@@ -122,6 +124,23 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
                 required,
                 optional,
                 from_file: file.request(),
+            },
+            &mode,
+        )?,
+        crate::cli::AddTarget::Import {
+            file,
+            from,
+            section,
+            only,
+            exclude,
+        } => import::handle(
+            output_path,
+            import::Args {
+                file,
+                from: from.map(|f| f.format()),
+                section,
+                only,
+                exclude,
             },
             &mode,
         )?,

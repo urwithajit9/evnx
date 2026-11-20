@@ -151,6 +151,7 @@ pub fn handle(
         example_render: None,
         env_from_values: false,
         values: None,
+        json_extra: None,
     };
     confirm_and_apply(output_path, &vars, &flow, mode)
 }
