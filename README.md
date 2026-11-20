@@ -1310,14 +1310,16 @@ evnx cloud diff                                     # what differs between two v
 evnx cloud diff --local                             # v0.11.0+: your file against the latest version, nothing written
 evnx cloud export --output ../backup --all-versions # every version to disk, decrypted
 evnx cloud delete-version 2 --vault app/production  # remove one version for good
+evnx cloud delete-version --latest                  # admin: remove the latest; the one before takes over
 ```
 
 `cloud export` writes the latest version unless `--all-versions` is given, into
 `./evnx-export/` unless `--output` (`-o`) names a directory. Inside a git work
 tree it refuses the default directory unless `--force`, and writes a
 `.gitignore` there either way: these are plaintext secrets. `cloud
-delete-version` never removes the latest version, and needs a sign-in rather than
-an API token.
+delete-version` removes the latest version only with `--latest`, which names the
+version that takes over and asks for the vault's full name; a vault with one
+version cannot be emptied this way. It needs a sign-in rather than an API token.
 
 ### Which file push and pull use
 
@@ -1369,6 +1371,13 @@ evnx cloud watch --vault app/production   # notify when someone else pushes
 `cloud watch` skips your own pushes; `--include-mine` shows them too. A failed
 poll is a blip; from the third in a row it says so on stderr, and after ten in a
 row it stops with exit 2 and what to check.
+
+`--on-change -- <COMMAND>...` runs a command once for each reported change, for
+example `evnx cloud watch --on-change -- ./notify.sh`. It is run directly, not
+through a shell (for a pipeline: `-- sh -c 'a | b'`), and it gets
+`EVNX_WATCH_VAULT` and `EVNX_WATCH_VERSION` and no other `EVNX_*` variable. A
+non-zero exit prints one warning and watching goes on. With `--once` it runs
+when the vault is past the latest version this machine has seen.
 
 ⛔ `cloud watch` **notifies and never pulls.** Pulling automatically would
 overwrite local edits without being asked, and it would mean holding the vault
@@ -1785,6 +1794,11 @@ Only `.evnx.toml`, with the leading dot, is read. A bare `evnx.toml` stops every
 with the rename to make; beside a `.evnx.toml` it is a warning.
 
 Full reference: <https://docs.evnx.dev/cli/reference/configuration-file>
+
+`evnx config show` prints every setting in force and where it came from: the
+default, a line of `.evnx.toml`, the user's `config.toml`, an environment
+variable, a flag or a policy file. `--json` has the usual `run` header.
+Credentials are shown only as `set (hidden)` or `not set`.
 
 ⚠️ **On v0.4.x and earlier this file did nothing.** The loader existed and nothing called
 it, so a project with `[validate] strict = true` validated non-strictly and said nothing.

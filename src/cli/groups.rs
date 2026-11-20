@@ -58,6 +58,7 @@ pub const GROUPS: &[Group] = &[
             ("diff", Local),
             ("scan", Local),
             ("doctor", Local),
+            ("config", Local),
         ],
     },
     Group {

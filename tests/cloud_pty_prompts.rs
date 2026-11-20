@@ -307,6 +307,16 @@ fn cloud_push_reads_the_typed_master_password() {
 /// A mock with just enough for each `auth` and `cloud delete-version`
 /// confirmation to be reached; any change request fails the test.
 fn decline_server() -> (mockito::ServerGuard, Vec<mockito::Mock>) {
+    let mut s = base_server();
+    let changes = ["POST", "DELETE", "PATCH", "PUT"]
+        .iter()
+        .map(|m| s.mock(m, mockito::Matcher::Any).expect(0).create())
+        .collect();
+    (s, changes)
+}
+
+/// The reads of [`decline_server`], with no change request allowed or refused.
+fn base_server() -> mockito::ServerGuard {
     let mut s = mockito::Server::new();
     s.mock("GET", "/api/v1/vaults")
         .with_status(200)
@@ -338,11 +348,7 @@ fn decline_server() -> (mockito::ServerGuard, Vec<mockito::Mock>) {
             "expires_at":null,"created_at":"2026-10-20T09:00:00Z","last_used_at":null}]}"#,
         )
         .create();
-    let changes = ["POST", "DELETE", "PATCH", "PUT"]
-        .iter()
-        .map(|m| s.mock(m, mockito::Matcher::Any).expect(0).create())
-        .collect();
-    (s, changes)
+    s
 }
 
 /// Answering "n" to the auth and version-delete confirmations exits 4 and sends
@@ -356,6 +362,10 @@ fn a_no_at_an_auth_or_version_confirmation_exits_4() {
         (
             &["cloud", "delete-version", "1", "--vault", "app"][..],
             "Delete version 1",
+        ),
+        (
+            &["cloud", "delete-version", "--latest", "--vault", "app"][..],
+            "Type app/development to confirm",
         ),
     ] {
         let (server, changes) = decline_server();
@@ -379,4 +389,41 @@ fn a_no_at_an_auth_or_version_confirmation_exits_4() {
             m.assert();
         }
     }
+}
+
+/// `delete-version --latest` asks for the full vault name; typing it deletes the
+/// latest version and nothing else.
+#[test]
+fn del_latest_typing_the_vault_name_deletes_the_latest() {
+    let mut server = base_server();
+    let del = server
+        .mock(
+            "DELETE",
+            format!("/api/v1/vaults/{VAULT_ID}/versions/2").as_str(),
+        )
+        .with_status(200)
+        .with_body(r#"{"deleted":2,"latest":1,"was_latest":true}"#)
+        .expect(1)
+        .create();
+    let url = server.url();
+    let p = Project::new();
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &url);
+    let mut run = Pty::spawn_with(
+        p.path(),
+        &["cloud", "delete-version", "--latest", "--vault", "app"],
+        &[
+            ("EVNX_SERVER", url.as_str()),
+            ("EVNX_CONFIG_DIR", cfg.to_str().unwrap()),
+        ],
+    );
+    let seen = run.wait_for("Type app/development to confirm");
+    assert!(
+        seen.contains("Version 1") && seen.contains("becomes the latest"),
+        "{seen}"
+    );
+    run.type_line("app/development");
+    let (rest, code) = run.finish();
+    assert_eq!(code, 0, "{rest}");
+    del.assert();
 }

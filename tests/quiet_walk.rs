@@ -118,6 +118,7 @@ const EXEMPT: &[(&str, &str)] = &[
     ("parse", "data: the listing is the answer"),
     ("get", "data: the value is the answer"),
     ("history", "data: the listing is the answer"),
+    ("config show", "data: the listing is the answer"),
     (
         "undo",
         "needs a copy an earlier write kept; its quiet run is in tests/write_safety.rs",

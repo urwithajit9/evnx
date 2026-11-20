@@ -210,3 +210,367 @@ fn rm86_link_file_is_stored_from_the_toml_folder() {
     outside.assert_code(2);
     assert!(outside.stderr.contains("is outside"), "{}", outside.stderr);
 }
+
+// ─── `cloud delete-version --latest` ─────────────────────────────────────────
+
+fn versions_body(nums: &[i32]) -> String {
+    let rows: Vec<String> = nums
+        .iter()
+        .rev()
+        .map(|n| {
+            format!(
+                r#"{{"version_num":{n},"key_count":{n},"key_names":["A"],"blob_hash":"h{n}",
+                "blob_size_bytes":40,"pushed_by":"u-me","pushed_at":"2026-11-1{n}T09:00:00Z"}}"#
+            )
+        })
+        .collect();
+    format!(r#"{{"versions":[{}]}}"#, rows.join(","))
+}
+
+/// A server with `app/production` holding `nums`, and one mock per version
+/// deletion that is expected to happen.
+fn latest_server(nums: &[i32]) -> mockito::ServerGuard {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"production",
+            "role":"admin","version_count":{},"updated_at":"2026-11-18T00:00:00Z"}}]}}"#,
+            nums.len()
+        ))
+        .create();
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions").as_str(),
+    )
+    .with_status(200)
+    .with_body(versions_body(nums))
+    .create();
+    s
+}
+
+fn marks(p: &Project) -> serde_json::Value {
+    let text = std::fs::read_to_string(p.path().join("cfg/high-water.json")).unwrap_or_default();
+    serde_json::from_str(&text).unwrap_or(serde_json::Value::Null)
+}
+
+/// `--latest` resolves the number from the list, deletes that number, names the
+/// version that takes over, and lowers this machine's high-water mark so the
+/// machine that did it is not the one that warns.
+#[test]
+fn del_latest_with_yes_deletes_the_resolved_number_and_lowers_the_mark() {
+    let mut s = latest_server(&[1, 2, 3]);
+    let del = s
+        .mock(
+            "DELETE",
+            format!("/api/v1/vaults/{VAULT_ID}/versions/3").as_str(),
+        )
+        .with_status(200)
+        .with_body(r#"{"deleted":3,"latest":2,"was_latest":true}"#)
+        .expect(1)
+        .create();
+    let other = s
+        .mock(
+            "DELETE",
+            mockito::Matcher::Regex(r"/versions/[12]$".to_string()),
+        )
+        .expect(0)
+        .create();
+    let p = Project::new();
+    std::fs::create_dir_all(p.path().join("cfg")).unwrap();
+    std::fs::write(
+        p.path().join("cfg/high-water.json"),
+        format!(r#"{{"{VAULT_ID}": 3}}"#),
+    )
+    .unwrap();
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &[
+            "cloud",
+            "delete-version",
+            "--latest",
+            "--vault",
+            "app/production",
+            "--yes",
+        ],
+        None,
+    );
+    out.assert_code(0);
+    del.assert();
+    other.assert();
+    assert!(
+        out.stdout
+            .contains("Version 2 (2 key(s), pushed 2026-11-12) becomes the latest"),
+        "{}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("deleted version 3"), "{}", out.stdout);
+    assert_eq!(marks(&p)[VAULT_ID], 2, "the mark must follow the delete");
+}
+
+/// The vault's only version is not deletable this way: the message names the
+/// whole-vault delete and nothing is sent.
+#[test]
+fn del_latest_with_a_single_version_is_refused_and_sends_nothing() {
+    let mut s = latest_server(&[1]);
+    let any = s.mock("DELETE", mockito::Matcher::Any).expect(0).create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "cloud",
+            "delete-version",
+            "--latest",
+            "--vault",
+            "app/production",
+            "--yes",
+        ],
+        None,
+    );
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("only version") && out.stderr.contains("evnx vault delete"),
+        "{}",
+        out.stderr
+    );
+    any.assert();
+}
+
+/// A bare number for the latest version is still refused, and the message says
+/// which flag does it.
+#[test]
+fn del_latest_by_number_points_to_the_flag() {
+    let mut s = latest_server(&[1, 2]);
+    let any = s.mock("DELETE", mockito::Matcher::Any).expect(0).create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "cloud",
+            "delete-version",
+            "2",
+            "--vault",
+            "app/production",
+            "--yes",
+        ],
+        None,
+    );
+    out.assert_code(2);
+    assert!(out.stderr.contains("--latest"), "{}", out.stderr);
+    any.assert();
+}
+
+/// Without a terminal and without `--yes`: exit 4, the command with `--yes` is
+/// named, and nothing is sent.
+#[test]
+fn del_latest_without_a_terminal_exits_4() {
+    let mut s = latest_server(&[1, 2]);
+    let any = s.mock("DELETE", mockito::Matcher::Any).expect(0).create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "cloud",
+            "delete-version",
+            "--latest",
+            "--vault",
+            "app/production",
+        ],
+        None,
+    );
+    out.assert_code(4);
+    assert!(
+        out.stderr
+            .contains("evnx cloud delete-version --latest --vault app/production --yes"),
+        "{}",
+        out.stderr
+    );
+    any.assert();
+}
+
+/// `VERSION` and `--latest` are one choice, and one of them is required.
+#[test]
+fn del_latest_and_a_number_conflict_and_one_is_required() {
+    let s = mockito::Server::new();
+    for args in [
+        &["cloud", "delete-version", "2", "--latest", "--vault", "x"][..],
+        &["cloud", "delete-version", "--vault", "x"][..],
+    ] {
+        let out = signed_in(&Project::new(), &s.url(), args, None);
+        out.assert_code(2);
+    }
+}
+
+// ─── `cloud watch --on-change` ───────────────────────────────────────────────
+
+/// A project whose high-water mark for the vault is `mark`, and a signed-in
+/// server listing `nums`. The command in these tests writes the two watch
+/// variables to `out`, and (to prove the API token is not handed over) `tok`.
+fn watch_setup(mark: i32, nums: &[i32]) -> (Project, mockito::ServerGuard) {
+    let s = latest_server(nums);
+    let p = Project::new();
+    std::fs::create_dir_all(p.path().join("cfg")).unwrap();
+    std::fs::write(
+        p.path().join("cfg/high-water.json"),
+        format!(r#"{{"{VAULT_ID}": {mark}}}"#),
+    )
+    .unwrap();
+    (p, s)
+}
+
+fn hook_script(p: &Project, exit: i32) -> String {
+    format!(
+        "printf '%s|%s|%s\\n' \"$EVNX_WATCH_VAULT\" \"$EVNX_WATCH_VERSION\" \"${{EVNX_TOKEN:-none}}\" \
+         >> '{}'; exit {exit}",
+        p.path().join("hook.out").display()
+    )
+}
+
+/// `--once --on-change`: the vault is past what this machine has seen, so the
+/// command runs once, with the vault and the new version and no `EVNX_TOKEN`,
+/// and its exit status does not change watch's.
+#[test]
+fn n14_7_once_runs_the_command_for_a_pending_change_and_a_failure_is_not_fatal() {
+    let (p, s) = watch_setup(1, &[1, 2]);
+    let script = hook_script(&p, 3);
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &[
+            "cloud",
+            "watch",
+            "--vault",
+            "app/production",
+            "--once",
+            "--on-change",
+            "--",
+            "sh",
+            "-c",
+            &script,
+        ],
+        None,
+    );
+    out.assert_code(0);
+    assert_eq!(
+        p.read("hook.out"),
+        "app/production|2|none\n",
+        "{}\n{}",
+        out.stdout,
+        out.stderr
+    );
+    assert!(out.stdout.contains("v2"), "{}", out.stdout);
+    assert!(
+        out.stderr.contains("exited 3") && out.stderr.contains("watching goes on"),
+        "{}",
+        out.stderr
+    );
+}
+
+/// Nothing pending (the mark is already at the latest): no command.
+#[test]
+fn n14_7_once_runs_nothing_when_nothing_is_new() {
+    let (p, s) = watch_setup(2, &[1, 2]);
+    let script = hook_script(&p, 0);
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &[
+            "cloud",
+            "watch",
+            "--vault",
+            "app/production",
+            "--once",
+            "--on-change",
+            "--",
+            "sh",
+            "-c",
+            &script,
+        ],
+        None,
+    );
+    out.assert_code(0);
+    assert!(!p.path().join("hook.out").exists(), "{}", out.stdout);
+}
+
+/// `--on-change` and the command belong together, and nothing runs without both.
+#[test]
+fn n14_7_the_flag_and_the_command_require_each_other() {
+    let s = mockito::Server::new();
+    for args in [
+        &["cloud", "watch", "--vault", "x", "--on-change"][..],
+        &["cloud", "watch", "--vault", "x", "--", "true"][..],
+    ] {
+        signed_in(&Project::new(), &s.url(), args, None).assert_code(2);
+    }
+}
+
+/// Without `--once`: a change that appears after the first poll runs the
+/// command once; a failing command leaves watch running (it is killed here).
+#[test]
+fn n14_7_a_new_version_runs_the_command_and_watching_goes_on() {
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"production",
+            "role":"admin","version_count":1,"updated_at":"2026-11-18T00:00:00Z"}}]}}"#
+        ))
+        .create();
+    let path = format!("/api/v1/vaults/{VAULT_ID}/versions");
+    // The first list (at start) has one version; every later one has two.
+    s.mock("GET", path.as_str())
+        .with_status(200)
+        .with_body(versions_body(&[1]))
+        .expect(1)
+        .create();
+    s.mock("GET", path.as_str())
+        .with_status(200)
+        .with_body(versions_body(&[1, 2]))
+        .create();
+
+    let p = Project::new();
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let script = hook_script(&p, 3);
+    let mut child = Command::new(support::evnx_bin())
+        .current_dir(p.path())
+        .args([
+            "cloud",
+            "watch",
+            "--vault",
+            "app/production",
+            "--interval",
+            "5",
+            "--on-change",
+            "--",
+            "sh",
+            "-c",
+            &script,
+        ])
+        .env("NO_COLOR", "1")
+        .env("EVNX_SERVER", s.url())
+        .env("EVNX_CONFIG_DIR", &cfg)
+        .env("EVNX_TOKEN", "must-not-reach-the-command")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let marker = p.path().join("hook.out");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !marker.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    // Let a second poll go by: a failed command must not have ended the watch,
+    // and the same version must not run it twice.
+    std::thread::sleep(Duration::from_secs(6));
+    let still_running = child.try_wait().unwrap().is_none();
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(still_running, "a failing command ended the watch");
+    assert_eq!(p.read("hook.out"), "app/production|2|none\n");
+}

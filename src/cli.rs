@@ -2097,6 +2097,28 @@ pub enum CloudCommands {
         /// Report your own pushes too. By default only someone else's are shown.
         #[arg(long)]
         include_mine: bool,
+
+        /// Run the command after `--` once for each reported change.
+        ///
+        /// It runs directly, not through a shell, as `evnx run` does; for a
+        /// pipeline ask for one: `-- sh -c 'a | b'`. It gets `EVNX_WATCH_VAULT`
+        /// and `EVNX_WATCH_VERSION` (names and numbers, never values), and no
+        /// other `EVNX_*` variable. It runs to the end before the next poll, so
+        /// changes that arrive meanwhile are one call afterwards. A non-zero exit
+        /// prints one warning and watching goes on. With `--once` it runs when
+        /// the vault has a change this machine has not seen yet. It cannot pull:
+        /// `evnx cloud pull` inside the command asks for the master password.
+        #[arg(long, requires = "command")]
+        on_change: bool,
+
+        /// The command to run, after `--`.
+        #[arg(
+            last = true,
+            allow_hyphen_values = true,
+            value_name = "COMMAND",
+            requires = "on_change"
+        )]
+        command: Vec<String>,
     },
 
     /// What changed between two versions — key names only, never values.
@@ -2207,17 +2229,28 @@ pub enum CloudCommands {
     /// Permanent. The blob is removed from storage and the server has never
     /// held anything that could rebuild it.
     ///
-    /// The latest version cannot be deleted. `evnx cloud pull` and `evnx
-    /// cloud run` fetch it, so removing it would silently change what every
-    /// consumer of the vault receives. Push a newer version first, or delete the
-    /// whole vault.
+    /// Deleting the latest version needs `--latest`, because `evnx cloud pull`
+    /// and `evnx cloud run` fetch it: the version before it becomes the
+    /// latest, and every consumer of the vault gets that one from then on. The
+    /// prompt names the version that takes over and asks for the full vault
+    /// name; `--yes` skips it, for CI. A vault with one version cannot be
+    /// emptied this way: delete the whole vault instead.
     ///
     /// Needs admin on the vault: a developer can push new versions but not
     /// remove old ones. Use `evnx cloud history` to see what a vault holds.
     DeleteVersion {
         /// Version number to delete, as `evnx cloud history` shows it.
-        #[arg(value_name = "VERSION", value_parser = clap::value_parser!(i32).range(1..))]
-        version_num: i32,
+        #[arg(
+            value_name = "VERSION",
+            value_parser = clap::value_parser!(i32).range(1..),
+            required_unless_present = "latest",
+            conflicts_with = "latest"
+        )]
+        version_num: Option<i32>,
+
+        /// Delete the latest version instead of naming a number.
+        #[arg(long)]
+        latest: bool,
 
         /// Vault to act on. Optional in a bound directory.
         #[arg(long, value_name = "VAULT")]
@@ -2983,6 +3016,19 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         output: args::OutputArgs,
     },
 
+    /// Show every effective setting and where it came from.
+    ///
+    /// One row per setting: the key, its value and its source, which is
+    /// `default`, a line of `.evnx.toml`, an environment variable, a flag or a
+    /// policy file. Credentials are shown only as `set (hidden)` or `not set`.
+    /// Settings that belong to one run, such as `scan --severity`, are flags of
+    /// that command and are not listed.
+    #[command(after_help = docs::CONFIG.after_help, arg_required_else_help = true)]
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+
     /// Put a file back as it was before evnx last changed it.
     ///
     /// Swaps the file and its `<file>.bak`, so running it again puts the newer
@@ -3734,6 +3780,19 @@ pub struct ScanArgs {
     /// the command line itself is still printed.
     #[arg(long, conflicts_with_all = ["format", "json"])]
     pub exit_only: bool,
+}
+
+/// What `evnx config` can do.
+#[derive(Subcommand, Debug)]
+pub enum ConfigAction {
+    /// Print each setting with the value in force and its source.
+    ///
+    /// Unknown keys in `.evnx.toml` are listed as warnings. A file that does
+    /// not parse exits 2.
+    Show {
+        #[command(flatten)]
+        output: args::OutputArgs,
+    },
 }
 
 /// The options of `evnx diff`, boxed in [`Commands::Diff`] so the enum stays small (RUST-16).

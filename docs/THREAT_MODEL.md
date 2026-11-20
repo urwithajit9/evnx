@@ -322,8 +322,8 @@ The server cannot check ciphertext. Anyone who may push (developer and above, or
 `read_write` token) can push bytes that do not decrypt, and they become the latest
 version. Nothing notices until a client pulls. Recovery: push a valid version, or
 have an admin delete the bad one. The server accepts deleting the latest version
-when an older one exists (PROTOCOL 7.4). In 0.14.0 `evnx cloud delete-version`
-still refuses the latest, so that case needs a direct API call.
+when an older one exists (PROTOCOL 7.4), and `evnx cloud delete-version --latest`
+does it.
 
 Source: `srv:src/routes/versions.rs:45-152,482-565`,
 `cli:src/cloud/sync.rs:1397-1404`.

@@ -77,9 +77,9 @@ pub fn regression(label: &str, seen: i32, latest: i32) -> Option<String> {
         format!(
             "the server says {label} is at version {latest}, but this machine has already \
              seen version {seen}.\n\
-             \x20 A newer version may have been removed (an admin deleted the latest version), \
-             or the server may be serving older data than it did (a rollback or a \
-             restored backup). Check `evnx cloud history \
+             \x20 A newer version may have been removed (an admin may have deleted it with \
+             `evnx cloud delete-version --latest`), or the server may be serving older \
+             data than it did (a rollback or a restored backup). Check `evnx cloud history \
              --vault {label}` before you rely on this."
         )
     })
@@ -99,11 +99,29 @@ pub fn observe(vault_id: &str, label: &str, latest: i32) {
     }
 }
 
+/// The highest version this machine has seen of a vault, if it has seen any.
+#[must_use]
+pub fn seen(vault_id: &str) -> Option<i32> {
+    let path = path()?;
+    load(&path).get(&key(vault_id)).copied()
+}
+
 /// Raise the mark to `version`, which this client has just pushed or fetched.
 pub fn note(vault_id: &str, version: i32) {
     let Some(path) = path() else { return };
     let mut marks = load(&path);
     if version > marks.get(&key(vault_id)).copied().unwrap_or(0) {
+        let _ = store_one(&path, &mut marks, vault_id, version);
+    }
+}
+
+/// Set the mark to `version`, up or down: this client has just deleted the
+/// latest version itself (`cloud delete-version --latest`), so the lower number
+/// is now what the server should report and must not read as a rollback.
+pub fn set(vault_id: &str, version: i32) {
+    let Some(path) = path() else { return };
+    let mut marks = load(&path);
+    if marks.get(&key(vault_id)).copied() != Some(version) {
         let _ = store_one(&path, &mut marks, vault_id, version);
     }
 }
@@ -139,7 +157,7 @@ mod tests {
             "{msg}"
         );
         assert!(msg.contains("evnx cloud history --vault app/production"));
-        assert!(msg.contains("admin deleted the latest version"), "{msg}");
+        assert!(msg.contains("an admin may have deleted it"), "{msg}");
         assert!(regression("app/production", 7, 7).is_none());
         assert!(regression("app/production", 7, 9).is_none());
         // Never seen: nothing to compare with, even for an empty vault.

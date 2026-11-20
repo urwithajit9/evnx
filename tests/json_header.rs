@@ -67,6 +67,7 @@ fn local_args(path: &str) -> Option<Vec<&'static str>> {
         "doctor" => vec!["doctor"],
         "spec check" => vec!["spec", "check"],
         "history" => vec!["history"],
+        "config show" => vec!["config", "show"],
         "parse" => vec!["parse", "--env", ".env"],
         "commands" => vec!["commands"],
         // Reads local state only; no request.
