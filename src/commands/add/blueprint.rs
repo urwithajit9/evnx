@@ -84,6 +84,7 @@ pub fn handle(blueprint_id: Option<&str>, output_path: &Path, mode: &Mode) -> Re
         example_render: None,
         env_from_values: false,
         values: None,
+        json_extra: None,
     };
     confirm_and_apply(output_path, &vars, &flow, mode)
 }

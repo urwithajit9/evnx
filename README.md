@@ -316,9 +316,34 @@ evnx add framework nextjs         # --language is optional
 evnx add blueprint t3_modern      # a whole stack
 evnx add custom API_URL=https://api.example.com DEBUG=false --yes   # your own: values go to .env only, .env.example gets placeholders
 evnx add custom                   # ... or one prompt at a time
+evnx add custom GOOGLE_CREDENTIALS --from-file service-account.json --yes   # one value from a file (or `-` for stdin)
+evnx add import secrets.json --dry-run   # many variables from one file: the mapping, no values
+evnx add import k8s-secret.yaml --yes    # .env, .properties, INI, JSON, YAML, CSV
 evnx add --list                   # every id
 evnx add service redis --dry-run  # what would be written; --json for scripts
 ```
+
+`--from-file` is for values that are several lines long: a certificate, a private
+key, a service-account JSON. It takes exactly one `NAME` and no `=value`; the file
+may be up to 64 KiB of text (a binary file needs `--base64`), and one final line
+break is dropped (`--keep-trailing-newline` keeps it). The value is written in
+double quotes with `\n` escapes, so it reads back exactly, and it is never printed:
+a dry run says `NAME: 1,842 bytes, 31 lines`. A name `.env` already has is kept.
+The same flag works on `evnx set`.
+
+`add import <FILE|->` reads many variables from one file into `.env` (`.env.example` gets
+placeholders). Formats follow the extension, or `--from env|properties|ini|json|yaml|csv`
+(always needed for stdin). Names become UPPER_SNAKE (`db.host` and `db-host` are both
+`DB_HOST`); nested JSON/YAML keys join with `__`; a Kubernetes Secret's base64 `data` is
+decoded, a docker-compose `environment:` and a GitHub Actions `env:` are known shapes;
+INI `[db] host` becomes `DB_HOST`. `--section` picks one INI section, top-level key,
+compose service or workflow job (its name is left off the variable names), and
+`--only` / `--exclude` take globs. Two sources that make one name, an array, `null`, a
+binary value or an invalid name are refused with exit 2 and nothing is written. A name
+`.env` already has is kept and reported. `--dry-run` prints `source key -> NAME -> new |
+kept | refused` and never a value; `--json` carries it as `mapping[]`. A source file that
+git tracks and that holds secret-looking values gets a warning to untrack it and rotate
+them. `web.config` (`<appSettings>`) is not supported yet: this build has no XML reader.
 
 `--dir` names the folder that holds `.env.example` and `.env`. When the project keeps a
 contract, the new names are recorded in the nearest `.evnx.toml` at or above that folder,
@@ -336,6 +361,9 @@ evnx set API_TOKEN                         # a secret-looking name is typed with
 printf %s "$TOKEN" | evnx set API_TOKEN    # nothing in your shell history
 evnx set LOG_LEVEL=info --if-missing       # only when the name is not there yet
 evnx set PORT=8080 --dry-run               # the change, nothing written
+evnx set TLS_KEY --from-file key.pem       # a value from a file (several lines are fine); never printed
+evnx set --fill                            # ask for each empty or placeholder value (secrets with no echo, Enter skips)
+evnx set --fill --only 'DB_*' --dry-run    # which names it would ask for; needs no terminal
 
 PORT=$(evnx get PORT)                      # the value alone, no sourcing
 evnx get --exists DATABASE_URL             # prints nothing; exit 0 when set, 1 when not
@@ -349,6 +377,16 @@ replaced is confirmed first (`--yes` skips it); without a terminal and without
 result line is `old → new`, and `changed (value hidden)` for a secret; `--json`
 carries names and statuses, never a value. A value given on the command line
 works for a secret-looking name and warns that your shell history has it.
+
+`set --fill` is the step after `evnx init --yes`, in place of opening the file in an
+editor. It asks, in file order, for every name whose value is empty or a placeholder
+(`YOUR_KEY_HERE`, `changeme`: the rule `validate` uses); a secret-looking name is typed
+with no echo and Enter skips one. Nothing is written until the last answer, in one atomic
+write with one `.bak`, and Ctrl-C before that writes nothing. Afterwards it prints
+`validate`'s summary when a template exists. It needs a terminal: with none, or under
+`--yes` or `--json`, it exits **4** and names `--dry-run` and `evnx set NAME`. A name that is
+only in the template is not added here (`evnx sync --direction reverse` adds it); the run
+lists those. `--json` carries `filled`, `skipped`, `remaining` and `missing`: names only.
 
 `get` refuses a secret-looking name (or a value that looks like a credential)
 without `--reveal`, also when piped: exit **4**. A name that is not in the file

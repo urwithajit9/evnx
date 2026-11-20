@@ -100,6 +100,44 @@ pub fn current(content: &str, name: &str, label: &str) -> Result<Option<Current>
     }))
 }
 
+/// Every name the file assigns, in the order each first appears, with what it
+/// holds now (the last assignment counts, as in [`current`]). Unexpanded.
+pub fn assignments(content: &str, label: &str) -> Result<Vec<(String, super::secret::Secret)>> {
+    let doc = read(content, label)?;
+    let mut order: Vec<&str> = Vec::new();
+    for e in &doc.entries {
+        if !order.contains(&e.key.as_str()) {
+            order.push(&e.key);
+        }
+    }
+    Ok(order
+        .into_iter()
+        .filter_map(|name| {
+            doc.entries.iter().rev().find(|e| e.key == name).map(|e| {
+                (
+                    name.to_string(),
+                    super::secret::Secret::new(plain(e.value.expose())),
+                )
+            })
+        })
+        .collect())
+}
+
+/// `content` with every `(name, value)` set, one after the other: what `set
+/// --fill` writes. Each step is checked as [`set`] checks it, so the file only
+/// changes in those values.
+pub fn set_many(
+    content: &str,
+    values: &[(String, super::secret::Secret)],
+    label: &str,
+) -> Result<String> {
+    let mut text = content.to_string();
+    for (name, value) in values {
+        text = set(&text, name, value.expose(), label)?.text;
+    }
+    Ok(text)
+}
+
 /// A value without the parser's internal marker for an escaped `$`.
 fn plain(value: &str) -> String {
     value.replace('\u{fdd0}', "")
@@ -303,6 +341,26 @@ mod tests {
         let e = set("A=1\nB=2\nA=3\n", "A", "9", ".env").unwrap();
         assert_eq!(e.text, "A=1\nB=2\nA=9\n");
         assert_eq!((e.assignments, e.line, e.old.as_deref()), (2, 3, Some("3")));
+    }
+
+    #[test]
+    fn assignments_lists_each_name_once_with_its_last_value() {
+        let got = assignments("A=1\nB=\nA=3\nexport C=\"x y\"\n", ".env").unwrap();
+        let got: Vec<(&str, &str)> = got.iter().map(|(n, v)| (n.as_str(), v.expose())).collect();
+        assert_eq!(got, [("A", "3"), ("B", ""), ("C", "x y")]);
+    }
+
+    #[test]
+    fn set_many_changes_only_those_values() {
+        let src = "# top\nA=\nB=keep # note\nC=YOUR_KEY_HERE\n";
+        let values = vec![
+            ("A".to_string(), super::super::secret::Secret::new("1")),
+            ("C".to_string(), super::super::secret::Secret::new("a b")),
+        ];
+        assert_eq!(
+            set_many(src, &values, ".env").unwrap(),
+            "# top\nA=1\nB=keep # note\nC=\"a b\"\n"
+        );
     }
 
     #[test]

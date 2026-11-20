@@ -612,6 +612,30 @@ const EXPOSE_ALLOW: &[(&str, &str)] = &[
         "restore reads a refused line to name the key it looks like",
     ),
     (
+        "core/import/mod.rs",
+        "add import writes the imported values into .env and spots a `$` or a secret by its value",
+    ),
+    (
+        "core/import/text.rs",
+        "add import reads env-like and properties files into Secret values",
+    ),
+    (
+        "core/value_file.rs",
+        "--from-file checks a value read from a file (size, lines, binary) before it is stored",
+    ),
+    (
+        "commands/add/custom.rs",
+        "add custom hands a --from-file value to the writer",
+    ),
+    (
+        "commands/fill.rs",
+        "set --fill reads a value to tell a placeholder from a real one; answers go straight into a Secret",
+    ),
+    (
+        "commands/set.rs",
+        "set hands a --from-file value to the in-place writer",
+    ),
+    (
         "commands/add/shared.rs",
         "add compares an existing example value and writes .env and .env.example",
     ),

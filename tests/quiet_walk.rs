@@ -47,6 +47,7 @@ fn cases() -> Vec<Case> {
         case("add framework", &["add", "framework", "django", "--yes"]),
         case("add blueprint", &["add", "blueprint", "t3_modern", "--yes"]),
         case("add custom", &["add", "custom", "MY_FLAG=1", "--yes"]),
+        case("add import", &["add", "import", "vars.json", "--yes"]),
         case("validate", &["validate"]),
         case("scan", &["scan", "."]),
         case("diff", &["diff"]),
@@ -202,7 +203,8 @@ fn healthy_project() -> Project {
         .mode(".env", 0o600)
         .file(".gitignore", ".env\n")
         .file("pw", "pw-for-demo-only-123456\n")
-        .file("t.tpl", "port: {{PORT}}\n");
+        .file("t.tpl", "port: {{PORT}}\n")
+        .file("vars.json", "{\"IMPORTED_ONE\":\"1\"}\n");
     p.track(".env.example").track(".gitignore");
     p.commit_all("init");
     p

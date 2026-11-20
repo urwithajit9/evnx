@@ -64,7 +64,13 @@ pub enum AddTarget {
     /// Examples:
     ///   evnx add custom API_URL=https://api.example.com DEBUG=false --yes
     ///   evnx add custom STRIPE_WEBHOOK_SECRET --desc "Stripe webhook signing secret" --required
+    ///   evnx add custom GOOGLE_CREDENTIALS --from-file service-account.json --yes
     ///   evnx add custom            (asks for each variable)
+    ///
+    /// `--from-file PATH` (or `-` for standard input) reads one value from a
+    /// file: a certificate, a key, a service-account JSON. It takes exactly one
+    /// NAME and no `=value`. At most 64 KiB of text; a binary file needs
+    /// `--base64`. The value is never printed: a dry run says its size.
     ///
     /// A name without `=value` gets a placeholder. When it looks like a secret
     /// (`*_SECRET`, `*_TOKEN`, `*_KEY`, `*_PASSWORD`, `*_PWD`, …) and there is a
@@ -97,6 +103,56 @@ pub enum AddTarget {
         /// the run says how to make them optional (`evnx spec init`).
         #[arg(long, conflicts_with = "required")]
         optional: bool,
+
+        #[command(flatten)]
+        file: args::FromFileArgs,
+    },
+
+    /// Add many variables from one file: .env, .properties, INI, JSON, YAML or CSV.
+    ///
+    /// Names are made UPPER_SNAKE (`db.host` and `db-host` both become
+    /// DB_HOST); nested JSON and YAML keys are joined with `__`. The values go
+    /// to `.env`, and `.env.example` gets placeholders. A name `.env` already
+    /// has is kept, and reported.
+    ///
+    /// Formats follow the extension, or --from: env, properties, ini, json,
+    /// yaml, csv (web.config is not supported yet). YAML and JSON know a Kubernetes Secret (its base64 `data`
+    /// is decoded), a docker-compose `environment:` and a GitHub Actions
+    /// `env:`. Reading standard input (`-`) needs --from.
+    ///
+    /// Two sources that make one name, an array, a binary value or a name that
+    /// cannot be made valid are refused, and nothing is written; narrow the
+    /// import with --only and --exclude. `--dry-run` prints the mapping from
+    /// each source key to its name, and never a value.
+    ///
+    /// Examples:
+    ///   evnx add import secrets.json --dry-run
+    ///   evnx add import k8s-secret.yaml --yes
+    ///   evnx add import compose.yaml --section web --env-name staging
+    ///   cat settings.ini | evnx add import - --from ini --only 'DB_*'
+    Import {
+        /// The file to read, or `-` for standard input.
+        #[arg(value_name = "FILE|-")]
+        file: String,
+
+        /// The file's format, when its extension does not say (always needed
+        /// for standard input).
+        #[arg(long, value_name = "FORMAT", value_enum)]
+        from: Option<args::ImportFormat>,
+
+        /// Import one section only: an INI section, a top-level JSON or YAML
+        /// key, a compose service or a GitHub Actions job. Its name is not
+        /// part of the variable names.
+        #[arg(long, value_name = "NAME")]
+        section: Option<String>,
+
+        /// Only names matching these globs (comma-separated or repeated).
+        #[arg(long, value_name = "GLOB", value_delimiter = ',')]
+        only: Vec<String>,
+
+        /// Leave out names matching these globs (comma-separated or repeated).
+        #[arg(long, value_name = "GLOB", value_delimiter = ',')]
+        exclude: Vec<String>,
     },
 }
 
@@ -2432,35 +2488,25 @@ pub enum Commands {
     /// (`API_TOKEN`, `DB_PASSWORD`) is asked for with no echo, and a value
     /// typed on the command line works but warns: your shell keeps it.
     ///
+    /// `--from-file PATH` (or `-` for standard input) reads the value from a
+    /// file: a certificate, a key, a service-account JSON. Several lines are
+    /// fine; the value is never printed.
+    ///
+    /// `--fill` goes through every name in the file whose value is empty or a
+    /// placeholder (`YOUR_KEY_HERE`, `changeme`) and asks for each one: a
+    /// secret-looking name with no echo, Enter to skip. Nothing is written
+    /// until the last answer, in one write with one `.bak`. It needs a
+    /// terminal (exit 4 without one); `--dry-run` lists the names it would
+    /// ask for. It sets names that are in the file; one that is only in the
+    /// template is added by `evnx sync --direction reverse`.
+    ///
     /// A value that is replaced is confirmed first, unless --yes. With no
     /// terminal and no value on stdin, the exit code is 4.
     #[command(after_help = docs::SET.after_help, arg_required_else_help = true)]
     #[command(mut_arg("dry_run", |a| a.help("Show what would change; write nothing. Needs no terminal.")))]
     #[command(mut_arg("json", |a| a.help("Print the result as JSON: names and statuses, never a value.")))]
-    Set {
-        /// The variable, as NAME or NAME=VALUE.
-        #[arg(value_name = "NAME[=VALUE]")]
-        assignment: String,
-
-        #[command(flatten)]
-        env: args::EnvArgs,
-
-        #[command(flatten)]
-        dir: args::DirArgs,
-
-        /// Do nothing when the name is already in the file.
-        #[arg(long)]
-        if_missing: bool,
-
-        #[command(flatten)]
-        dry: args::DryRunArgs,
-
-        #[command(flatten)]
-        confirm: args::ConfirmArgs,
-
-        #[command(flatten)]
-        output: args::OutputArgs,
-    },
+    #[command(mut_arg("from_file", |a| a.conflicts_with("fill")))]
+    Set(Box<SetArgs>),
 
     /// Print one variable's value, without sourcing the file.
     ///
@@ -3231,6 +3277,48 @@ pub struct AddArgs {
     /// template created. For a server that keeps `.env.prod` alone.
     #[arg(long, global = true, conflicts_with = "example")]
     pub no_template: bool,
+}
+
+/// The options of `evnx set`, boxed in [`Commands::Set`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct SetArgs {
+    /// The variable, as NAME or NAME=VALUE.
+    #[arg(
+        value_name = "NAME[=VALUE]",
+        required_unless_present = "fill",
+        conflicts_with = "fill"
+    )]
+    pub assignment: Option<String>,
+
+    #[command(flatten)]
+    pub env: args::EnvArgs,
+
+    #[command(flatten)]
+    pub dir: args::DirArgs,
+
+    /// Do nothing when the name is already in the file.
+    #[arg(long, conflicts_with = "fill")]
+    pub if_missing: bool,
+
+    /// Ask for every name whose value is empty or a placeholder.
+    #[arg(long)]
+    pub fill: bool,
+
+    /// With --fill: only names matching these globs (comma-separated or repeated).
+    #[arg(long, value_name = "GLOB", value_delimiter = ',', requires = "fill")]
+    pub only: Vec<String>,
+
+    #[command(flatten)]
+    pub file: args::FromFileArgs,
+
+    #[command(flatten)]
+    pub dry: args::DryRunArgs,
+
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
+
+    #[command(flatten)]
+    pub output: args::OutputArgs,
 }
 
 /// The options of `evnx remove`, boxed in [`Commands::Remove`] so the enum stays small (RUST-16).

@@ -53,6 +53,7 @@ fn local_args(path: &str) -> Option<Vec<&'static str>> {
         "init" => vec!["init", "--dry-run"],
         "add" | "add custom" => vec!["add", "custom", "NEWVAR", "--dry-run"],
         "add service" => vec!["add", "service", "postgres", "--dry-run"],
+        "add import" => vec!["add", "import", "vars.json", "--dry-run"],
         "add framework" => vec!["add", "framework", "django", "--dry-run"],
         "add blueprint" => vec!["add", "blueprint", "t3_modern", "--dry-run"],
         "remove" => vec!["remove", "--check", "B"],
@@ -80,6 +81,7 @@ fn every_json_output_carries_the_run_header() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join(".env"), "A=1\nB=hello\n").unwrap();
     std::fs::write(dir.path().join(".env.example"), "A=\nB=\nC=\n").unwrap();
+    std::fs::write(dir.path().join("vars.json"), "{\"NEW_ONE\":\"1\"}").unwrap();
 
     let out = evnx(dir.path())
         .args(["commands", "--json"])

@@ -17,6 +17,7 @@ pub mod gitignore;
 pub mod glob;
 #[cfg(feature = "net")]
 pub mod http;
+pub mod import;
 pub mod inject;
 pub mod json;
 pub mod key_rules;
@@ -40,6 +41,7 @@ pub mod shell;
 pub mod signals;
 pub mod spec;
 pub mod value;
+pub mod value_file;
 pub mod verdict;
 
 // Re-export commonly used types

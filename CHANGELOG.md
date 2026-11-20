@@ -26,6 +26,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   attestation: `gh attestation verify <archive> -R urwithajit9/evnx
   --predicate-type https://cyclonedx.org/bom`.
 
+- **`evnx add custom NAME --from-file <path|->` and `evnx set NAME --from-file
+  <path|->`** read one value from a file or from standard input: a certificate,
+  a private key, a service-account JSON. Several lines are fine; the value is
+  written double-quoted with `\n` escapes, so `evnx get` and every dotenv
+  reader get it back exactly. At most 64 KiB; one final line break is dropped
+  (`--keep-trailing-newline` keeps it); a binary file needs `--base64`; the
+  command takes exactly one NAME and no `NAME=value`. The value is never
+  printed: a dry run says `118 bytes, 4 lines`. A source file inside a git
+  repository that is tracked or not ignored gets a warning.
+
 ### Changed
 
 - `evnx run --help` and `evnx cloud run --help` show `-- <COMMAND>...` in the
@@ -41,6 +51,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own
   environment while it is read (that needed `unsafe`); `run` still keeps every
   `EVNX_*` variable out of the command it starts.
+
+
+- **`evnx add import <FILE|->`** adds many variables from one file to `.env`:
+  `.env`, `.properties`, INI, JSON, YAML (flat, nested with `__`, a Kubernetes
+  Secret with base64 `data`, a docker-compose `environment:`, a GitHub Actions
+  `env:`) and CSV. Names become UPPER_SNAKE; `--from` names the format,
+  `--section`, `--only` and `--exclude` narrow it. Collisions, arrays, `null`,
+  binary values and invalid names are refused (exit 2, nothing written); names
+  `.env` already has are kept and reported; `.env.example` gets placeholders.
+  `--dry-run` and `--json` give a source-to-name mapping and never a value.
+  A tracked source file with secrets gets a warning to untrack it and rotate
+  them. `web.config` is not supported yet.
+
+### Fixed
+
+- **`add custom NAME=value` now writes the value to `.env` when the template
+  lists NAME with another value** (such as an empty `NAME=`). It used to report
+  a template conflict and write nothing.
 
 ---
 

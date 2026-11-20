@@ -4,6 +4,7 @@ pub mod backup;
 pub mod convert;
 pub mod diff;
 pub mod doctor;
+pub mod fill;
 pub mod get;
 pub mod init;
 pub mod migrate;
