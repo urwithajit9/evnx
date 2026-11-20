@@ -5,6 +5,8 @@ expect_severity = "high"
 
 positive = [
   ["glpat-", "DUrInmgq-d6p7_tni1o_"],
+  # Routable form: a longer body, then `.` and nine characters.
+  ["glpat-", "Rk3vT9xWq2LmN7pYb4Hc8Zs1Fd6Ga", ".", "01", "1x9k2m7"],
 ]
 
 near_miss = [

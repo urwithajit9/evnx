@@ -203,15 +203,168 @@ fn csv_with_and_without_a_header() {
     assert_eq!(value(&q, "D").as_deref(), Some("4"));
 }
 
+// ── web.config ───────────────────────────────────────────────────────────
+
+fn web_config(inner: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<configuration>\n  \
+         <connectionStrings>\n    <add name=\"Main\" connectionString=\"Server=x\"/>\n  \
+         </connectionStrings>\n  <appSettings>\n{inner}\n  </appSettings>\n</configuration>\n"
+    )
+}
+
 #[test]
-fn web_config_is_not_supported_yet_and_says_so() {
+fn web_config_reads_app_settings_with_entities_decoded() {
     let p = base().file(
         "web.config",
-        "<configuration><appSettings><add key=\"A\" value=\"1\"/></appSettings></configuration>",
+        &web_config(
+            r#"    <add key="Db:Password" value="p&amp;ss &lt;w&gt; &quot;q&quot; &#x41;&#66;" />
+    <add key="ApiUrl" value='https://x.test/?a=1&amp;b=2'/>"#,
+        ),
     );
+    import(&p, "web.config").assert_code(0);
+    assert_eq!(
+        value(&p, "DB_PASSWORD").as_deref(),
+        Some("p&ss <w> \"q\" AB")
+    );
+    assert_eq!(
+        value(&p, "APIURL").as_deref(),
+        Some("https://x.test/?a=1&b=2")
+    );
+    // connectionStrings are not appSettings.
+    assert_eq!(value(&p, "MAIN"), None);
+    assert!(!p.read(".env").contains("Server=x"));
+}
+
+#[test]
+fn web_config_skips_comments_and_cdata() {
+    let p = base().file(
+        "web.config",
+        &web_config(
+            r#"    <!-- <add key="Old" value="gone"/> -->
+    <![CDATA[ <add key="Raw" value="no"/> ]]>
+    <add key="Live" value="yes"/>"#,
+        ),
+    );
+    import(&p, "web.config").assert_code(0);
+    assert_eq!(value(&p, "LIVE").as_deref(), Some("yes"));
+    assert_eq!(value(&p, "OLD"), None);
+    assert_eq!(value(&p, "RAW"), None);
+}
+
+#[test]
+fn web_config_applies_clear_and_remove_in_order_and_the_last_add_counts() {
+    let p = base().file(
+        "web.config",
+        &web_config(
+            r#"    <add key="Inherited" value="1"/>
+    <clear/>
+    <add key="A" value="1"/>
+    <add key="B" value="2"/>
+    <remove key="b"/>
+    <add key="C" value="first"/>
+    <add key="C" value="second"/>"#,
+        ),
+    );
+    let out = run(p.path(), &["add", "import", "web.config", "--dry-run"]);
+    out.assert_code(0);
+    out.assert_contains("appSettings.A");
+    out.assert_contains("appSettings.C");
+    assert!(!out.all().contains("INHERITED"), "{}", out.all());
+    assert!(!out.all().contains("appSettings.B"), "{}", out.all());
+    import(&p, "web.config").assert_code(0);
+    assert_eq!(value(&p, "A").as_deref(), Some("1"));
+    assert_eq!(value(&p, "B"), None);
+    assert_eq!(value(&p, "C").as_deref(), Some("second"));
+    assert_eq!(value(&p, "INHERITED"), None);
+}
+
+#[test]
+fn web_config_with_a_bom_or_in_utf16_is_read() {
+    let text = web_config(r#"    <add key="K" value="v&#233;"/>"#);
+    let p = base().file("web.config", &format!("\u{feff}{text}"));
+    import(&p, "web.config").assert_code(0);
+    assert_eq!(value(&p, "K").as_deref(), Some("vé"));
+
+    let q = base();
+    let utf16 = text.replace("utf-8", "utf-16");
+    let mut bytes = vec![0xFF, 0xFE];
+    for unit in utf16.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    std::fs::write(q.path().join("Web.config"), bytes).unwrap();
+    import(&q, "Web.config").assert_code(0);
+    assert_eq!(value(&q, "K").as_deref(), Some("vé"));
+}
+
+#[test]
+fn web_config_without_app_settings_or_with_config_source_says_why() {
+    let p = base().file("web.config", "<configuration><system.web/></configuration>");
     let out = import(&p, "web.config");
     out.assert_code(2);
-    out.assert_contains("not supported yet");
+    out.assert_contains("no <appSettings>");
+    let q = base().file(
+        "web.config",
+        "<configuration><appSettings configSource=\"secrets.config\"/></configuration>",
+    );
+    import(&q, "web.config")
+        .assert_code(2)
+        .assert_contains("configSource");
+    assert_eq!(q.read(".env"), "KEEP=1\n");
+}
+
+#[test]
+fn web_config_that_is_malformed_names_a_line_and_no_value() {
+    for (i, broken) in [
+        // An unclosed tag.
+        format!("<configuration><appSettings><add key=\"K\" value=\"{CANARY}\"></appSettings></configuration>"),
+        // An unknown entity next to the value.
+        format!("<configuration>\n<appSettings>\n<add key=\"K\" value=\"{CANARY}&{CANARY};\"/>\n</appSettings></configuration>"),
+        // An attribute without quotes.
+        format!("<configuration><appSettings><add key=K value={CANARY}/></appSettings></configuration>"),
+        // Not XML at all.
+        format!("{CANARY}=1\n"),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let p = base().file("web.config", broken);
+        let out = import(&p, "web.config");
+        out.assert_code(2);
+        assert!(!out.all().contains(CANARY), "case {i}: {}", out.all());
+        assert!(!out.all().contains("canary"), "case {i}: {}", out.all());
+        assert_eq!(p.read(".env"), "KEEP=1\n", "case {i}");
+    }
+    let p = base().file(
+        "web.config",
+        &format!("<configuration>\n<appSettings>\n<add key=\"K\" value=\"{CANARY}&{CANARY};\"/>\n</appSettings></configuration>"),
+    );
+    import(&p, "web.config").assert_contains("not valid XML (line 3,");
+}
+
+#[test]
+fn web_config_refusals_and_dry_runs_print_no_value() {
+    let p = base().file(
+        "web.config",
+        &web_config(&format!(
+            "    <add key=\"Api.Key\" value=\"{CANARY}\"/>\n    <add key=\"api-key\" value=\"{CANARY}-2\"/>\n    <add value=\"{CANARY}-3\"/>\n    <add key=\"NoValue\"/>"
+        )),
+    );
+    for args in [
+        &["add", "import", "web.config", "--dry-run"][..],
+        &["add", "import", "web.config", "--yes"],
+        &["add", "import", "web.config", "--dry-run", "--json"],
+    ] {
+        let out = run(p.path(), args);
+        out.assert_code(2);
+        assert!(!out.all().contains(CANARY), "{args:?}\n{}", out.all());
+    }
+    let out = import(&p, "web.config");
+    // Api.Key and api-key make one name; the nameless add and the add with no
+    // value are refused, each named.
+    out.assert_contains("API_KEY is made by appSettings.Api.Key and appSettings.api-key");
+    out.assert_contains("has no key attribute");
+    out.assert_contains("has no value attribute");
     assert_eq!(p.read(".env"), "KEEP=1\n");
 }
 

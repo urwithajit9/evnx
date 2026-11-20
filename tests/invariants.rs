@@ -3,8 +3,8 @@
 //! The suites elsewhere check one command against hand-written input. This one
 //! chains commands: what `init`, `convert`, `migrate --print-only`, `sync`,
 //! `add` and `remove` write is fed back to evnx's own readers, and to an
-//! independent one (`serde_json`, `serde_yaml`, `toml`, `sh`) where a format has
-//! one. A disagreement is a bug in the writer or the reader, never in the test:
+//! independent one (`serde_json`, `yaml-rust2` through `core::yaml`, `toml`,
+//! `sh`) where a format has one. A disagreement is a bug in the writer or the reader, never in the test:
 //! the expected values are written out below, and a self-check holds the
 //! fixture to what they say.
 //!
@@ -16,6 +16,7 @@
 
 mod support;
 
+use evnx::core::yaml;
 use std::collections::BTreeMap;
 use support::{Project, run};
 
@@ -366,15 +367,16 @@ fn json_strings(v: &serde_json::Value) -> Result<BTreeMap<String, String>, Strin
         .collect()
 }
 
-fn yaml_strings(v: &serde_yaml::Value) -> Result<BTreeMap<String, String>, String> {
-    let map = v.as_mapping().ok_or("not a mapping")?;
+fn yaml_doc(text: &str) -> Result<yaml::Value, String> {
+    yaml::document(text, yaml::Duplicates::Refuse).map_err(|e| e.to_string())
+}
+
+fn yaml_strings(v: Option<&yaml::Value>) -> Result<BTreeMap<String, String>, String> {
+    let map = v.and_then(yaml::Value::as_map).ok_or("not a mapping")?;
     map.iter()
-        .map(|(k, v)| {
-            let k = k.as_str().ok_or("non-string key")?.to_string();
-            match v {
-                serde_yaml::Value::String(s) => Ok((k, lf(s))),
-                other => Err(format!("{k} reads back as {other:?}, not a string")),
-            }
+        .map(|(k, v)| match v {
+            yaml::Value::String(s) => Ok((k.clone(), lf(s))),
+            other => Err(format!("{k} reads back as {other:?}, not a string")),
         })
         .collect()
 }
@@ -451,16 +453,14 @@ fn read_back(format: &str, out: &str, p: &Project) -> Result<BTreeMap<String, St
                 })
                 .collect()
         }
-        "yaml" => yaml_strings(&serde_yaml::from_str(out).map_err(|e| e.to_string())?),
-        "kubernetes" => {
-            let doc: serde_yaml::Value = serde_yaml::from_str(out).map_err(|e| e.to_string())?;
-            yaml_strings(&doc["stringData"])
-        }
+        "yaml" => yaml_strings(Some(&yaml_doc(out)?)),
+        "kubernetes" => yaml_strings(yaml_doc(out)?.get("stringData")),
         "docker-compose" => {
             // Compose reads `$$` as a literal `$`.
-            let doc: serde_yaml::Value = serde_yaml::from_str(out).map_err(|e| e.to_string())?;
-            let list = doc["environment"]
-                .as_sequence()
+            let doc = yaml_doc(out)?;
+            let list = doc
+                .get("environment")
+                .and_then(yaml::Value::as_seq)
                 .ok_or("no environment list")?;
             let mut map = BTreeMap::new();
             for item in list {
@@ -696,11 +696,12 @@ fn kubernetes_base64_reads_back() {
         &["convert", "--to", "kubernetes", "--name", "s", "--base64"],
     );
     out.assert_code(0);
-    let doc: serde_yaml::Value = serde_yaml::from_str(&lf(&out.stdout)).unwrap();
-    let data = doc["data"].as_mapping().expect("a data mapping");
+    let doc = yaml_doc(&lf(&out.stdout)).unwrap();
+    let data = doc.get("data").expect("a data mapping");
+    assert!(data.as_map().is_some(), "a data mapping");
     let mut f = Failures::default();
     for (k, _, v) in FIXTURE {
-        match data.get(*k).and_then(|x| x.as_str()) {
+        match data.get(k).and_then(|x| x.as_str()) {
             None => f.add(k, "missing from data"),
             Some(b) => match unbase64(b) {
                 Ok(s) => f.check(s == *v, k, format!("wrote {v:?}, decodes to {s:?}")),

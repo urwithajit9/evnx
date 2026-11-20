@@ -20,7 +20,7 @@
 //! | Multiline values         | ✓ (opt-in via [`ParserConfig::allow_multiline`]) |
 //! | `${VAR}` expansion       | ✓         |
 //! | `$VAR` expansion         | ✓         |
-//! | Unset `$name`            | kept as written (`ab$cd` stays `ab$cd`; Docker Compose reads `ab`). `${cd}` unset is an error; `${cd:-}` gives the Compose reading |
+//! | Unset `$name`            | kept as written: `ab$cd` stays `ab$cd` (Docker Compose: `ab`). `${cd:-}` is the value or nothing, as in Compose; `${cd}` unset is an error |
 //! | Circular expansion guard | ✓         |
 //! | Strict uppercase keys    | ✓ (opt-in via [`ParserConfig::strict`]) |
 //! | Keys with `.` `-` `[` `]`, a leading digit, Unicode letters | ✓ (D12, 0.13.0; see [`is_env_key`]) |

@@ -348,9 +348,7 @@ jobs:
       - name: Attest the SBOM for each archive
         id: attest
         continue-on-error: true
-        # TODO(owner): pin this action by full commit SHA, in the style of the
-        # other actions in this file (the SHA could not be looked up offline).
-        uses: actions/attest-sbom@v4 # TODO(owner): pin SHA for v4
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-path: |
             dist/*.tar.gz
@@ -365,8 +363,7 @@ jobs:
 
       - name: Attest the SBOM for each archive (retry)
         if: steps.attest.outcome == 'failure'
-        # TODO(owner): pin this action by full commit SHA (same as above).
-        uses: actions/attest-sbom@v4 # TODO(owner): pin SHA for v4
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-path: |
             dist/*.tar.gz

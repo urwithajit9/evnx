@@ -98,13 +98,23 @@ unicode-width = "0.2"
 
 # Progress bars — used in utils/ui.rs and migrate/destinations/github.rs;
 # always compiled so both call-sites can import without a feature gate.
-indicatif = "0.17"
+indicatif = "0.18"
 
 # Serialization
 serde      = { version = "1",   features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
 toml       = "0.8"
+# YAML is only read (scan, `init` detection, `add import`); every YAML writer
+# is hand-written. Pure Rust, no C port: it replaced serde_yaml, which is
+# deprecated and pulled in unsafe-libyaml. Called from core/yaml.rs only.
+# No default features: its `encoding` feature decodes byte input, and evnx
+# hands it text.
+yaml-rust2 = { version = "0.13.1", default-features = false }
+# XML, read only, for one thing: the <appSettings> of a web.config in
+# `add import` (core/import/webconfig.rs). Pure Rust; it decodes entities and
+# skips comments and CDATA, which a hand-written reader gets wrong. No
+# features: the file is decoded to text before it is parsed.
+quick-xml = "0.42.0"
 
 # Base64 — used in core/converter.rs (convert command) and github.rs (encryption);
 # always compiled for the same reason as indicatif above.

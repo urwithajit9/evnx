@@ -410,12 +410,16 @@ keywords = ["hvs.", "hvb."]
 confidence = "high"
 severity = "critical"
 
+# GitLab's token table uses `glpat-` for personal, impersonation, project and group
+# access tokens. Newer tokens are routable: a longer body, then `.` and nine
+# lowercase characters. The routable shape is adapted from gitleaks (MIT,
+# github.com/gitleaks/gitleaks).
 [[rules]]
 id = "gitlab-pat"
 name = "GitLab Personal Access Token"
 provider = "GitLab"
 category = "source-ci"
-regex = '\bglpat-[A-Za-z0-9_-]{20}\b'
+regex = '\bglpat-[A-Za-z0-9_-]{20,300}(?:\.[0-9a-z]{9})?\b'
 keywords = ["glpat-"]
 confidence = "high"
 severity = "high"
@@ -531,14 +535,15 @@ url = "https://console.cloud.google.com/apis/credentials"
 # statement where there is no page (Atlassian), as the inclusion rule above requires.
 
 # GitLab's token overview lists `glrt-` for runner authentication tokens (16.0+), which replace
-# registration tokens. The routable form (`glrt-t1_…`) starts the same way. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+# registration tokens. The routable form (`glrt-t1_…`) starts the same way. A runner created
+# with a registration token gets `glrtr-` instead. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
 [[rules]]
 id = "gitlab-runner-token"
 name = "GitLab Runner Authentication Token"
 provider = "GitLab"
 category = "source-ci"
-regex = '\bglrt-[A-Za-z0-9_-]{20,}'
-keywords = ["glrt-"]
+regex = '\bglrtr?-[A-Za-z0-9_-]{20,}'
+keywords = ["glrt-", "glrtr-"]
 confidence = "high"
 severity = "high"
 url = "https://docs.gitlab.com/ci/runners/runners_scope/"
@@ -902,18 +907,18 @@ confidence = "medium"
 severity = "high"
 url = "https://docs.gitlab.com/user/clusters/agent/"
 
-# A secret that authenticates webhook calls.
-# Format: to be verified against GitLab docs (prefix `glwt-`, body unverified).
+# A workspace token (GitLab 18.2+). GitLab's token table lists the prefix `glwt-`;
+# the body length is not published, so this stays medium.
 [[rules]]
-id = "gitlab-webhook-token"
-name = "GitLab Webhook Token"
+id = "gitlab-workspace-token"
+name = "GitLab Workspace Token"
 provider = "GitLab"
 category = "source-ci"
 regex = '\bglwt-[A-Za-z0-9_-]{20,}'
 keywords = ["glwt-"]
 confidence = "medium"
 severity = "medium"
-url = "https://docs.gitlab.com/user/project/integrations/webhooks/"
+url = "https://docs.gitlab.com/user/workspace/"
 
 # Provisions and removes users in a group through SCIM.
 # Format: to be verified against GitLab docs (prefix `glsoat-`, body unverified).

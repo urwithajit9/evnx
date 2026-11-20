@@ -81,7 +81,7 @@ mod tests {
     }
 
     /// CONV-1's reproduction: every value reads back as the same string.
-    /// serde_yaml reads YAML 1.2; the 1.1 words are checked by their quotes.
+    /// evnx reads YAML 1.2; the 1.1 words are checked by their quotes.
     #[test]
     fn conv1_every_value_is_a_quoted_string() {
         let pairs = [
@@ -105,9 +105,10 @@ mod tests {
             assert!(line[k.len() + 2..].starts_with('"'), "{line}");
             let _ = v;
         }
-        let back: IndexMap<String, serde_yaml::Value> = serde_yaml::from_str(&out).unwrap();
+        let back =
+            crate::core::yaml::document(&out, crate::core::yaml::Duplicates::Refuse).unwrap();
         for (k, v) in pairs {
-            assert_eq!(back[k], serde_yaml::Value::String(v.to_string()), "{k}");
+            assert_eq!(back.get(k).and_then(|x| x.as_str()), Some(v), "{k}");
         }
     }
 

@@ -397,10 +397,11 @@ fn compose_images(root: &Path) -> Vec<(String, String)> {
         let Ok(text) = std::fs::read_to_string(root.join(name)) else {
             continue;
         };
-        let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) else {
+        let Ok(doc) = crate::core::yaml::document(&text, crate::core::yaml::Duplicates::Refuse)
+        else {
             continue;
         };
-        let Some(services) = doc.get("services").and_then(|s| s.as_mapping()) else {
+        let Some(services) = doc.get("services").and_then(|s| s.as_map()) else {
             continue;
         };
 
@@ -410,11 +411,9 @@ fn compose_images(root: &Path) -> Vec<(String, String)> {
             let image = spec
                 .get("image")
                 .and_then(|i| i.as_str())
-                .map(str::to_string)
-                .or_else(|| key.as_str().map(str::to_string));
-            if let Some(image) = image {
-                out.push((image, name.to_string()));
-            }
+                .unwrap_or(key)
+                .to_string();
+            out.push((image, name.to_string()));
         }
         break;
     }

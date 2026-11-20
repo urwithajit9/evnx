@@ -27,6 +27,15 @@ allow = [
 ]
 confidence-threshold = 0.9
 
+# Zlib is accepted for one crate only, not for the whole tree. foldhash 0.2
+# (Zlib, a permissive licence with no notice-in-binary requirement) comes in
+# through yaml-rust2 -> hashlink -> hashbrown 0.17, the YAML reader that
+# replaced serde_yaml. `cargo tree -e normal --all-features -i foldhash@0.2.0`
+# shows the path. A second Zlib crate fails the check until it is decided too.
+exceptions = [
+    { allow = ["Zlib"], crate = "foldhash" },
+]
+
 [bans]
 # Two versions of one crate are common (a dependency lags another's major
 # version) and are not a failure; they show up as a warning.

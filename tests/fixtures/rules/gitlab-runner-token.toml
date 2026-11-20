@@ -6,6 +6,8 @@ expect_severity = "high"
 positive = [
   ["glrt-", "uCo5tyJaJWQBf2BS8gax"],
   ["glrt-", "t1_tQzYD5fqYx0SB5aB6KvmBzFP89l"],
+  # Created through a registration token.
+  ["glrtr-", "Kq7vN2sXa9LmP4tYb8Wc"],
 ]
 
 near_miss = [

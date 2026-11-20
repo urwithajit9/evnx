@@ -17,13 +17,14 @@
 //! ⛔ A value is a [`Secret`]. No error, mapping or report in this module holds
 //! one: a reason names a key or a line, never text from the file.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use indexmap::IndexMap;
 
 use super::secret::Secret;
 
 mod structured;
 mod text;
+mod webconfig;
 
 pub use text::normalise;
 
@@ -146,11 +147,7 @@ pub fn read(format: Format, text: &str, section: Option<&str>) -> Result<Vec<Fou
         Format::Csv => text::csv(text, section),
         Format::Json => structured::json(text, section),
         Format::Yaml => structured::yaml(text, section),
-        Format::WebConfig => bail!(
-            "web.config is not supported yet: this build has no XML reader. \
-             Copy the <appSettings> entries into a .env or a CSV (name,value) \
-             and import that."
-        ),
+        Format::WebConfig => webconfig::read(text, section),
     }
 }
 
@@ -370,11 +367,14 @@ mod tests {
     }
 
     #[test]
-    fn web_config_is_not_supported_and_says_so() {
-        let e = read(Format::WebConfig, "<x/>", None)
-            .unwrap_err()
-            .to_string();
-        assert!(e.contains("not supported yet"), "{e}");
+    fn web_config_reads_app_settings() {
+        let f = read(
+            Format::WebConfig,
+            "<configuration><appSettings><add key=\"A\" value=\"1\"/></appSettings></configuration>",
+            None,
+        )
+        .unwrap();
+        assert_eq!(f[0].name, "A");
     }
 
     #[test]

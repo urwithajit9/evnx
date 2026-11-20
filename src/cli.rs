@@ -108,7 +108,7 @@ pub enum AddTarget {
         file: args::FromFileArgs,
     },
 
-    /// Add many variables from one file: .env, .properties, INI, JSON, YAML or CSV.
+    /// Add many variables from one file: .env, .properties, INI, JSON, YAML, CSV or web.config.
     ///
     /// Names are made UPPER_SNAKE (`db.host` and `db-host` both become
     /// DB_HOST); nested JSON and YAML keys are joined with `__`. The values go
@@ -116,9 +116,11 @@ pub enum AddTarget {
     /// has is kept, and reported.
     ///
     /// Formats follow the extension, or --from: env, properties, ini, json,
-    /// yaml, csv (web.config is not supported yet). YAML and JSON know a Kubernetes Secret (its base64 `data`
-    /// is decoded), a docker-compose `environment:` and a GitHub Actions
-    /// `env:`. Reading standard input (`-`) needs --from.
+    /// yaml, csv, web-config. YAML and JSON know a Kubernetes Secret (its
+    /// base64 `data` is decoded), a docker-compose `environment:` and a GitHub
+    /// Actions `env:`. A web.config gives its `<appSettings>` `add` entries
+    /// (`clear` and `remove` applied). Reading standard input (`-`) needs
+    /// --from.
     ///
     /// Two sources that make one name, an array, a binary value or a name that
     /// cannot be made valid are refused, and nothing is written; narrow the

@@ -250,7 +250,7 @@ pub enum ImportFormat {
     Yaml,
     /// Two columns: name, value.
     Csv,
-    /// A `web.config` with `<appSettings>` (not supported yet).
+    /// A `web.config`: the `<add key value>` entries of `<appSettings>`.
     WebConfig,
 }
 
