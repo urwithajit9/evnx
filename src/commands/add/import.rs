@@ -56,20 +56,21 @@ fn format_of(args: &Args) -> Result<Format> {
     if args.file == "-" {
         return Err(crate::core::verdict::usage(
             "standard input has no file name to tell the format from: add --from \
-             (env, properties, ini, json, yaml or csv).",
+             (env, properties, ini, json, yaml, csv or web-config).",
         ));
     }
     Format::detect(&args.file).ok_or_else(|| {
         crate::core::verdict::usage(format!(
             "cannot tell the format of {} from its name: add --from \
-             (env, properties, ini, json, yaml or csv).",
+             (env, properties, ini, json, yaml, csv or web-config).",
             crate::utils::path::label(&args.file)
         ))
     })
 }
 
-/// The file's text, or standard input's.
-fn read_text(file: &str) -> Result<String> {
+/// The file's text, or standard input's. A web.config may be UTF-16 (with
+/// its byte-order mark), as Windows tools save it; it is decoded here.
+fn read_text(file: &str, format: Format) -> Result<String> {
     if file == "-" {
         return crate::utils::term::read_piped("evnx add import -");
     }
@@ -90,13 +91,45 @@ fn read_text(file: &str) -> Result<String> {
             "{shown} is over 8 MiB: that is not a file of variables"
         )));
     }
+    if format == Format::WebConfig {
+        if let Some(text) = utf16(&bytes) {
+            return text.ok_or_else(|| {
+                crate::core::verdict::usage(format!("{shown} is not valid UTF-16 text"))
+            });
+        }
+    }
     String::from_utf8(bytes)
         .map_err(|_| crate::core::verdict::usage(format!("{shown} is not UTF-8 text")))
 }
 
+/// `None` without a UTF-16 byte-order mark; then the text, or `Some(None)`
+/// when the rest is not UTF-16.
+fn utf16(bytes: &[u8]) -> Option<Option<String>> {
+    let (rest, little) = match bytes {
+        [0xFF, 0xFE, rest @ ..] => (rest, true),
+        [0xFE, 0xFF, rest @ ..] => (rest, false),
+        _ => return None,
+    };
+    if rest.len() % 2 != 0 {
+        return Some(None);
+    }
+    let units = rest.chunks_exact(2).map(|c| {
+        if little {
+            u16::from_le_bytes([c[0], c[1]])
+        } else {
+            u16::from_be_bytes([c[0], c[1]])
+        }
+    });
+    Some(
+        char::decode_utf16(units)
+            .collect::<Result<String, _>>()
+            .ok(),
+    )
+}
+
 pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
     let format = format_of(&args)?;
-    let text = read_text(&args.file)?;
+    let text = read_text(&args.file, format)?;
     let found = import::read(format, &text, args.section.as_deref())
         .map_err(|e| crate::core::verdict::usage(format!("{e:#}")))?;
     drop(text);

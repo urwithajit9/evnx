@@ -110,6 +110,11 @@ toml       = "0.8"
 # No default features: its `encoding` feature decodes byte input, and evnx
 # hands it text.
 yaml-rust2 = { version = "0.13.1", default-features = false }
+# XML, read only, for one thing: the <appSettings> of a web.config in
+# `add import` (core/import/webconfig.rs). Pure Rust; it decodes entities and
+# skips comments and CDATA, which a hand-written reader gets wrong. No
+# features: the file is decoded to text before it is parsed.
+quick-xml = "0.42.0"
 
 # Base64 — used in core/converter.rs (convert command) and github.rs (encryption);
 # always compiled for the same reason as indicatif above.

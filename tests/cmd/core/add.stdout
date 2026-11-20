@@ -11,7 +11,7 @@ Commands:
   framework  Add variables for a framework
   blueprint  Add variables from a stack blueprint (without overwriting existing)
   custom     Add your own variables: as arguments, or one prompt at a time
-  import     Add many variables from one file: .env, .properties, INI, JSON, YAML or CSV
+  import     Add many variables from one file: .env, .properties, INI, JSON, YAML, CSV or web.config
   help       Print this message or the help of the given subcommand(s)
 
 Options:

@@ -79,7 +79,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.env` already has are kept and reported; `.env.example` gets placeholders.
   `--dry-run` and `--json` give a source-to-name mapping and never a value.
   A tracked source file with secrets gets a warning to untrack it and rotate
-  them. `web.config` is not supported yet.
+  them.
+- **`evnx add import` reads a `web.config`** (`.config`, `.xml`, or
+  `--from web-config`): the `<add key value>` entries of
+  `<configuration><appSettings>`, with `<clear/>` and `<remove key>` applied
+  in order and the last `<add>` of a key counting. Entities are decoded;
+  comments and CDATA are skipped; `<connectionStrings>` is not read. A UTF-8
+  byte-order mark and UTF-16 files are accepted. An error names a line and a
+  column, never a value.
 
 
 - **`add custom NAME=value` now writes the value to `.env` when the template

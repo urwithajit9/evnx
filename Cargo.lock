@@ -963,6 +963,7 @@ dependencies = [
  "predicates",
  "pretty_assertions",
  "qrcode",
+ "quick-xml",
  "rayon",
  "regex",
  "reqwest",
@@ -2288,6 +2289,15 @@ name = "qrcode"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
+
+[[package]]
+name = "quick-xml"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "quinn"
