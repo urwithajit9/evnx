@@ -286,8 +286,8 @@ gh attestation verify evnx-x86_64-unknown-linux-musl.tar.gz -R urwithajit9/evnx 
   --predicate-type https://cyclonedx.org/bom
 ```
 
-The `actions/attest-sbom` step is pinned by tag until the owner replaces it with the full
-commit SHA (`TODO(owner)` in the workflow).
+The `actions/attest-sbom` step is pinned by full commit SHA (v4.1.0), like every other
+action in the file.
 
 ⓘ **One failed attempt is retried by the build itself** (since v0.11.0): the first
 attest step may fail, and after 60 seconds a second one runs. A yellow warning,
