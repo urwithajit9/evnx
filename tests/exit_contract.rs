@@ -389,6 +389,14 @@ fn cases() -> Vec<Case> {
         case("undo", 0, || (kept_copy(), vec!["undo", "--dry-run"])),
         case("undo", 2, || (clean(), vec!["undo"])),
         case("undo", 4, || (kept_copy(), vec!["undo", "--clear"])),
+        // config show
+        case("config show", 0, || (clean(), vec!["config", "show"])),
+        case("config show", 2, || {
+            (
+                Project::new().file(".evnx.toml", "[scan\n"),
+                vec!["config", "show"],
+            )
+        }),
     ]
 }
 
@@ -442,6 +450,7 @@ const LOCAL: &[&str] = &[
     "backup",
     "restore",
     "undo",
+    "config show",
 ];
 
 /// Local codes in the table with no case, and why. `sync` 4 and `init` 4 are

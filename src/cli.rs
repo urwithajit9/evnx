@@ -3016,6 +3016,19 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         output: args::OutputArgs,
     },
 
+    /// Show every effective setting and where it came from.
+    ///
+    /// One row per setting: the key, its value and its source, which is
+    /// `default`, a line of `.evnx.toml`, an environment variable, a flag or a
+    /// policy file. Credentials are shown only as `set (hidden)` or `not set`.
+    /// Settings that belong to one run, such as `scan --severity`, are flags of
+    /// that command and are not listed.
+    #[command(after_help = docs::CONFIG.after_help, arg_required_else_help = true)]
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+
     /// Put a file back as it was before evnx last changed it.
     ///
     /// Swaps the file and its `<file>.bak`, so running it again puts the newer
@@ -3767,6 +3780,19 @@ pub struct ScanArgs {
     /// the command line itself is still printed.
     #[arg(long, conflicts_with_all = ["format", "json"])]
     pub exit_only: bool,
+}
+
+/// What `evnx config` can do.
+#[derive(Subcommand, Debug)]
+pub enum ConfigAction {
+    /// Print each setting with the value in force and its source.
+    ///
+    /// Unknown keys in `.evnx.toml` are listed as warnings. A file that does
+    /// not parse exits 2.
+    Show {
+        #[command(flatten)]
+        output: args::OutputArgs,
+    },
 }
 
 /// The options of `evnx diff`, boxed in [`Commands::Diff`] so the enum stays small (RUST-16).

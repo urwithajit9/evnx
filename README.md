@@ -1795,6 +1795,11 @@ with the rename to make; beside a `.evnx.toml` it is a warning.
 
 Full reference: <https://docs.evnx.dev/cli/reference/configuration-file>
 
+`evnx config show` prints every setting in force and where it came from: the
+default, a line of `.evnx.toml`, the user's `config.toml`, an environment
+variable, a flag or a policy file. `--json` has the usual `run` header.
+Credentials are shown only as `set (hidden)` or `not set`.
+
 ⚠️ **On v0.4.x and earlier this file did nothing.** The loader existed and nothing called
 it, so a project with `[validate] strict = true` validated non-strictly and said nothing.
 Keys named in older copies of this README — `env_file`, `auto_fix`, `exclude_patterns`,

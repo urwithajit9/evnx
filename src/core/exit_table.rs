@@ -125,6 +125,8 @@ fn spec(path: &[&str]) -> (Vec<u8>, bool) {
         ["scan", ..] => (vec![0, 2], false),
         ["spec"] | ["spec", "check"] => (vec![0, 1, 2], false),
         ["spec", ..] => (vec![0, 2], false),
+        // `config show`: 2 is a file that does not parse.
+        ["config", ..] => (vec![0, 2], false),
         ["backup"] | ["history"] | ["commands"] | ["completions"] => (vec![0, 2], false),
         ["restore"] => (vec![0, 2, 4, 5], false),
         ["run"] => (vec![0, 2], true),

@@ -42,6 +42,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--once` it runs when the vault is past the latest version this machine has
   seen.
 
+- **`evnx config show`** prints every effective setting with its source: the
+  built-in default, a line of `.evnx.toml`, the user's `config.toml`, an
+  environment variable, a global flag, or a scan policy file. `--json` has the
+  usual `run` header, a `files` list, the `settings` and any warnings for
+  unknown keys. Credentials are shown only as `set (hidden)` or `not set`, and
+  a server URL that does not validate is refused without being quoted.
+
 ### Changed
 
 - `evnx run --help` and `evnx cloud run --help` show `-- <COMMAND>...` in the

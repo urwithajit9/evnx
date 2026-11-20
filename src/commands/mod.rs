@@ -1,6 +1,7 @@
 pub mod add;
 pub mod align;
 pub mod backup;
+pub mod config;
 pub mod convert;
 pub mod diff;
 pub mod doctor;

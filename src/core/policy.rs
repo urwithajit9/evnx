@@ -119,6 +119,33 @@ impl Policy {
         })
     }
 
+    /// The file this policy was read from.
+    #[must_use]
+    pub fn file(&self) -> &Path {
+        &self.file
+    }
+
+    /// The policy's settings, for `evnx config show`: key and value as JSON.
+    /// Rule names and a severity: nothing secret.
+    #[must_use]
+    pub fn settings(&self) -> Vec<(&'static str, serde_json::Value)> {
+        use serde_json::json;
+        vec![
+            ("policy.required_rules", json!(self.body.required_rules)),
+            (
+                "policy.max_severity_floor",
+                json!(self.body.max_severity_floor),
+            ),
+            (
+                "policy.allow_disable",
+                match &self.body.allow_disable {
+                    AllowDisable::All(b) => json!(b),
+                    AllowDisable::Names(n) => json!(n),
+                },
+            ),
+        ]
+    }
+
     /// Check the repository's `[scan]` section and this run's `--severity`
     /// against the policy. The first conflict is the error.
     pub fn check(&self, scan: &ScanPolicy, severity_flag: Option<&str>) -> Result<()> {

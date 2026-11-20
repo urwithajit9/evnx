@@ -403,6 +403,13 @@ pub const PARSE: CommandDoc = CommandDoc {
     after_help: "Full guide: https://docs.evnx.dev/cli/commands/parse",
 };
 
+pub const CONFIG: CommandDoc = CommandDoc {
+    command: "config",
+    url: "https://docs.evnx.dev/cli/commands/config",
+    description: "Every effective setting and where it came from",
+    after_help: "Full guide: https://docs.evnx.dev/cli/commands/config",
+};
+
 pub const HISTORY: CommandDoc = CommandDoc {
     command: "history",
     url: "https://docs.evnx.dev/cli/commands/history",
@@ -557,6 +564,7 @@ pub const ALL: &[&CommandDoc] = &[
     &ORG,
     &PARSE,
     &HISTORY,
+    &CONFIG,
     &UNDO,
     &RUN,
     &COMMANDS,

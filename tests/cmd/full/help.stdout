@@ -14,6 +14,7 @@ Local files:
   diff         Compare two env files: keys missing or extra, and values between environments
   scan         Detect secrets that look real (AWS keys, tokens, etc.)
   doctor       Check .env files, Git config, project structure, and security
+  config       Show every effective setting and where it came from
 
 Convert and run:
   convert      Transform `.env` files into multiple output formats

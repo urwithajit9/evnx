@@ -1379,6 +1379,18 @@ fn run() -> Result<Verdict, EvnxError> {
             .map(clean)
         }
 
+        Commands::Config { action } => match action {
+            evnx::cli::ConfigAction::Show { output } => {
+                commands::config::show(commands::config::Options {
+                    json: output.resolved() == evnx::cli::args::Format::Json,
+                    quiet: cli.quiet,
+                    verbose: cli.verbose,
+                    no_color: cli.no_color,
+                })
+                .map(clean)
+            }
+        },
+
         Commands::History { output } => {
             commands::undo::history(output.resolved() == evnx::cli::args::Format::Json).map(clean)
         }
