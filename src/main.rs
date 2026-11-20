@@ -526,6 +526,7 @@ fn run() -> Result<Verdict, EvnxError> {
                 exit_zero,
                 include_ignored,
                 staged,
+                history,
                 no_config,
                 follow_symlinks,
                 include_dir,
@@ -713,6 +714,11 @@ fn run() -> Result<Verdict, EvnxError> {
                         }),
                         include_ignored,
                         staged,
+                        history: history
+                            .as_deref()
+                            .map(commands::scan::history::Range::parse)
+                            .transpose()
+                            .map_err(EvnxError::Config)?,
                         follow_symlinks,
                         include_dirs: include_dir,
                         no_config,

@@ -45,7 +45,7 @@ const MANAGERS: [(&str, &str); 2] = [
 
 /// `.git/hooks/pre-commit`, or wherever `core.hooksPath` and worktrees put it.
 fn hook_path(cwd: &Path) -> Result<PathBuf> {
-    let root = super::staged::toplevel(cwd)?;
+    let root = super::git_blobs::toplevel(cwd, "scan hook")?;
     let out = Command::new("git")
         .args(["rev-parse", "--git-path", "hooks"])
         .current_dir(&root)

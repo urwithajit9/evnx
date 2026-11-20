@@ -55,6 +55,8 @@
 
 pub mod context;
 pub mod filters;
+pub mod git_blobs;
+pub mod history;
 pub mod hook;
 pub mod models;
 pub mod output;
@@ -133,6 +135,9 @@ pub struct ScanOptions {
     pub disable: Vec<String>,
     /// `--staged` (C9): scan the git index, not the files on disk.
     pub staged: bool,
+    /// `--history [RANGE]` (RM-69): scan the blobs in git history, not the
+    /// files on disk.
+    pub history: Option<history::Range>,
     /// `--follow-symlinks`: read a symlinked file in a walk when its target is
     /// inside the scanned folder.
     pub follow_symlinks: bool,
@@ -177,6 +182,7 @@ impl Default for ScanOptions {
             max_file_size: None,
             disable: Vec::new(),
             staged: false,
+            history: None,
             follow_symlinks: false,
             include_dirs: Vec::new(),
             no_config: false,
@@ -355,6 +361,8 @@ pub fn run(opts: ScanOptions) -> Result<Verdict, anyhow::Error> {
         .with_effective_config(effective);
         if opts.staged {
             runner.run_staged(opts.paths.clone(), output_format)
+        } else if let Some(range) = &opts.history {
+            runner.run_history(opts.paths.clone(), range, output_format)
         } else {
             runner.run(opts.paths.clone(), output_format)
         }

@@ -593,7 +593,11 @@ fn name_files(paths: &[&str]) -> String {
 /// Whether the file a finding is in may be in git history: tracked, or
 /// nothing is known (outside a repository the old advice stands).
 fn may_be_committed(f: &super::models::Finding) -> bool {
-    !from_stdin(f) && matches!(f.git, None | Some(super::models::GitState::Tracked))
+    !from_stdin(f)
+        && matches!(
+            f.git,
+            None | Some(super::models::GitState::Tracked | super::models::GitState::History)
+        )
 }
 
 /// Found in what `evnx scan -` read (RM-48): no file, so no history to rewrite.
@@ -757,8 +761,24 @@ pub(super) fn file_of(location: &str) -> &str {
 fn split_location(location: &str) -> (&str, usize) {
     let head = location.split(" (").next().unwrap_or(location);
     match head.rsplit_once(':') {
-        Some((file, line)) => (file, line.parse().unwrap_or(1)),
+        Some((file, line)) => (without_commit(file), line.parse().unwrap_or(1)),
         None => (head, 1),
+    }
+}
+
+/// `path` from `path@abc1234`: the form `--history` gives a location (RM-69).
+/// Seven hex digits after the last `@`, nothing else, so a file that merely
+/// has an `@` in its name is left alone.
+fn without_commit(file: &str) -> &str {
+    match file.rsplit_once('@') {
+        Some((path, short))
+            if !path.is_empty()
+                && short.len() == 7
+                && short.bytes().all(|b| b.is_ascii_hexdigit()) =>
+        {
+            path
+        }
+        _ => file,
     }
 }
 

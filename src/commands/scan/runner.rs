@@ -594,7 +594,7 @@ impl ScanRunner {
             ));
         }
         let cwd = std::env::current_dir()?;
-        super::staged::toplevel(&cwd)?;
+        super::git_blobs::toplevel(&cwd, "--staged")?;
         let paths: Vec<String> = paths.into_iter().filter(|p| p != ".").collect();
         let staged = super::staged::staged(&cwd, &paths, self.filter.max_bytes())?;
         if matches!(format, OutputFormat::Pretty) {
@@ -611,49 +611,12 @@ impl ScanRunner {
         }
         let mut read = Vec::with_capacity(staged.len());
         for file in staged {
-            let label = PathBuf::from(&file.path);
-            let Some(bytes) = file.bytes else {
-                results.skipped.push(UnreadableFile {
-                    path: file.path.clone(),
-                    reason: format!(
-                        "larger than {} ({})",
-                        super::filters::size_label(self.filter.max_bytes()),
-                        super::filters::size_label(file.size)
-                    ),
-                });
+            let Some(first) =
+                self.scan_loaded(&file.path, file.bytes, file.size, true, &mut results)?
+            else {
                 continue;
             };
-            if self.verbose {
-                ui::scanning_file_stderr(&label, Self::read_as(&label).describe_file(&label));
-            }
-            let first = results.findings.len();
-            if super::walk::is_pkcs12_bytes(&bytes) {
-                self.add_pkcs12(&label, &mut results);
-            } else {
-                match decode_bytes(bytes) {
-                    Decoded::Text(c) => {
-                        self.scan_text(&label, &c, Self::read_as(&label), &mut results)?
-                    }
-                    // Binary handling as for a walk (I-047).
-                    Decoded::Unreadable { reason } if !FileFilter::is_scannable(&label) => {
-                        results.skipped.push(UnreadableFile {
-                            path: file.path.clone(),
-                            reason: format!("not text: {reason}"),
-                        });
-                        continue;
-                    }
-                    Decoded::Unreadable { reason } => {
-                        results.unreadable.push(UnreadableFile {
-                            path: file.path.clone(),
-                            reason,
-                        });
-                        continue;
-                    }
-                }
-            }
-            read.push(label);
-            results.findings[first..]
-                .sort_by(|a, b| (a.line, &a.pattern).cmp(&(b.line, &b.pattern)));
+            read.push(PathBuf::from(&file.path));
             // ⚠️ No git hold-back: a staged file is committed whatever
             // `.gitignore` says.
             for finding in &mut results.findings[first..] {
@@ -662,6 +625,161 @@ impl ScanRunner {
             }
         }
         self.finish(results, format, &read)
+    }
+
+    /// `evnx scan --history [RANGE]` (RM-69): the blobs the commits in `range`
+    /// introduced, each scanned once and attributed to the oldest commit that
+    /// has it. `paths` are pathspecs. Returns whether anything counted, as
+    /// [`ScanRunner::run`] does.
+    pub fn run_history(
+        &self,
+        paths: Vec<String>,
+        range: &super::history::Range,
+        format: OutputFormat,
+    ) -> Result<bool> {
+        let entries = self.history_entries(paths, range)?;
+        self.scan_history(entries, range, format)
+            .map(|(found, _)| found)
+    }
+
+    /// The blobs `--history` would read: the range's, less what `--exclude` and
+    /// `--extensions` leave out.
+    pub fn history_entries(
+        &self,
+        paths: Vec<String>,
+        range: &super::history::Range,
+    ) -> Result<Vec<super::history::Entry>> {
+        if paths.iter().any(|p| p == "-") {
+            return Err(crate::core::verdict::usage(
+                "--history reads git commits; it cannot be combined with `-` (stdin)",
+            ));
+        }
+        let cwd = std::env::current_dir()?;
+        super::git_blobs::toplevel(&cwd, "--history")?;
+        let mut entries = super::history::blobs(&cwd, range, &paths)?;
+        entries.retain(|e| self.filter.selects_in_history(Path::new(&e.path)));
+        Ok(entries)
+    }
+
+    /// Scan `entries` (from [`ScanRunner::history_entries`]) and report.
+    /// Returns whether anything counted, and how many blobs were read.
+    pub fn scan_history(
+        &self,
+        entries: Vec<super::history::Entry>,
+        range: &super::history::Range,
+        format: OutputFormat,
+    ) -> Result<(bool, usize)> {
+        use rayon::prelude::*;
+        let cwd = std::env::current_dir()?;
+        if matches!(format, OutputFormat::Pretty) {
+            ui::print_header(
+                "evnx scan",
+                Some(&format!("Checking history: {}", range.label())),
+            );
+        }
+        let mut results = ScanResults::new(0);
+        if entries.is_empty() {
+            if matches!(format, OutputFormat::Pretty) {
+                ui::success("no files in that range, nothing scanned");
+                return Ok((false, 0));
+            }
+            return self.finish(results, format, &[]).map(|found| (found, 0));
+        }
+        let total = entries.len();
+        let started = std::time::Instant::now();
+        let mut told = std::time::Duration::ZERO;
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut read: Vec<PathBuf> = Vec::new();
+        let mut done = 0usize;
+        // A chunk at a time: a long history is not held in memory whole.
+        for chunk in entries.chunks(HISTORY_CHUNK) {
+            let shas: Vec<String> = chunk.iter().map(|e| e.blob.clone()).collect();
+            let blobs = super::git_blobs::read_blobs(&cwd, &shas, self.filter.max_bytes())?;
+            let scanned: Vec<(ScanResults, bool)> = chunk
+                .par_iter()
+                .zip(blobs)
+                .map(|(entry, blob)| {
+                    let mut local = ScanResults::new(0);
+                    let first =
+                        self.scan_loaded(&entry.path, blob.bytes, blob.size, false, &mut local)?;
+                    Ok((local, first.is_some()))
+                })
+                .collect::<Vec<Result<_>>>()
+                .into_iter()
+                .collect::<Result<_>>()?;
+            for (entry, (mut local, was_read)) in chunk.iter().zip(scanned) {
+                if was_read {
+                    read.push(PathBuf::from(&entry.path));
+                }
+                annotate_history(&mut local, entry, &mut seen);
+                results.merge(local);
+            }
+            done += chunk.len();
+            // Said once the scan is slow enough to look stuck.
+            if started.elapsed() >= told + std::time::Duration::from_secs(2)
+                && !ui::is_quiet()
+                && done < total
+            {
+                told = started.elapsed();
+                eprintln!("  scanning history: {done} of {total} files");
+            }
+        }
+        let n = read.len();
+        self.finish(results, format, &read).map(|found| (found, n))
+    }
+
+    /// Scan one blob that git handed over (`--staged`, `--history`) as the
+    /// file `path`. `bytes` is `None` for a blob over the size cap. Returns
+    /// where this file's findings start in `results.findings`, or `None`
+    /// when it was set aside (too large, or not text) and so was not read.
+    fn scan_loaded(
+        &self,
+        path: &str,
+        bytes: Option<Vec<u8>>,
+        size: u64,
+        announce: bool,
+        results: &mut ScanResults,
+    ) -> Result<Option<usize>> {
+        let label = PathBuf::from(path);
+        let Some(bytes) = bytes else {
+            results.skipped.push(UnreadableFile {
+                path: path.to_string(),
+                reason: format!(
+                    "larger than {} ({})",
+                    super::filters::size_label(self.filter.max_bytes()),
+                    super::filters::size_label(size)
+                ),
+            });
+            return Ok(None);
+        };
+        if announce && self.verbose {
+            ui::scanning_file_stderr(&label, Self::read_as(&label).describe_file(&label));
+        }
+        let first = results.findings.len();
+        if super::walk::is_pkcs12_bytes(&bytes) {
+            self.add_pkcs12(&label, results);
+        } else {
+            match decode_bytes(bytes) {
+                Decoded::Text(c) => self.scan_text(&label, &c, Self::read_as(&label), results)?,
+                // Binary handling as for a walk (I-047).
+                Decoded::Unreadable { reason } if !FileFilter::is_scannable(&label) => {
+                    results.skipped.push(UnreadableFile {
+                        path: path.to_string(),
+                        reason: format!("not text: {reason}"),
+                    });
+                    return Ok(None);
+                }
+                Decoded::Unreadable { reason } => {
+                    results.unreadable.push(UnreadableFile {
+                        path: path.to_string(),
+                        reason,
+                    });
+                    return Ok(None);
+                }
+            }
+        }
+        results.findings[first..].sort_by(|a, b| (a.line, &a.pattern).cmp(&(b.line, &b.pattern)));
+        Ok(Some(first))
     }
 
     /// Report `results`, or write them as the baseline: shared by a walk and
@@ -689,7 +807,13 @@ impl ScanRunner {
                 .iter()
                 .chain(&results.known)
                 .map(|f| {
-                    let file = super::output::file_of(&f.location).to_string();
+                    // A history finding's location is `path@abc1234:LINE`; the
+                    // baseline names the file, as a walk would.
+                    let file = f
+                        .commit
+                        .as_ref()
+                        .and(f.repo_path.clone())
+                        .unwrap_or_else(|| super::output::file_of(&f.location).to_string());
                     (f.fingerprint.clone(), f.rule_id.clone(), file)
                 })
                 .collect();
@@ -1235,6 +1359,49 @@ impl ScanRunner {
     //         "└──────────────────────────────────────────────────────┘".cyan()
     //     );
     // }
+}
+
+/// Blobs read from git in one batch by `--history`.
+const HISTORY_CHUNK: usize = 256;
+
+/// Mark what one blob's scan found as history (RM-69): the commit, the blob
+/// and the time, `path@abc1234:LINE` for where, and the same secret seen again
+/// in a later blob dropped (the file was edited, the secret stayed).
+fn annotate_history(
+    local: &mut ScanResults,
+    entry: &super::history::Entry,
+    seen: &mut std::collections::HashSet<String>,
+) {
+    let short: String = entry.commit.chars().take(7).collect();
+    let mark = |f: &mut Finding| {
+        // `path:LINE (VAR)` becomes `path@abc1234:LINE (VAR)`.
+        if let Some(rest) = f
+            .location
+            .strip_prefix(&display_portable(Path::new(&entry.path)))
+        {
+            f.location = format!("{}@{short}{rest}", display_portable(Path::new(&entry.path)));
+        }
+        f.commit = Some(entry.commit.clone());
+        f.blob = Some(entry.blob.clone());
+        f.commit_time = Some(entry.time);
+        f.git = Some(super::models::GitState::History);
+        f.repo_path = Some(entry.path.clone());
+    };
+    let counted = std::mem::take(&mut local.findings);
+    local.secrets_found = 0;
+    local.high_confidence = 0;
+    local.medium_confidence = 0;
+    local.low_confidence = 0;
+    for mut f in counted {
+        if seen.insert(f.fingerprint.clone()) {
+            mark(&mut f);
+            local.add_finding(f);
+        }
+    }
+    for list in [&mut local.known, &mut local.allowed] {
+        list.retain(|f| seen.insert(f.fingerprint.clone()));
+        list.iter_mut().for_each(mark);
+    }
 }
 
 /// The built-in rule for a password inside a URL (`core::secretscan::rules`).

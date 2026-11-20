@@ -3713,8 +3713,21 @@ pub struct ScanArgs {
     /// that is what the commit records. Paths limit it to staged files
     /// under them. Nothing staged exits 0. `evnx scan hook install` runs
     /// this before every commit.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "history")]
     pub staged: bool,
+
+    /// Scan the files git history added or changed, not the files on disk.
+    ///
+    /// Takes any revision range: `--history origin/main..HEAD`,
+    /// `--history v0.15.0..`. Bare `--history` is everything reachable from
+    /// `HEAD`, and `--history all` every ref. Each distinct file version is
+    /// read once, whole (so a name rule sees its key), and reported against
+    /// the oldest commit that has it: `path@abc1234:LINE`. A secret that was
+    /// added and later removed is still found: rotate it, then rewrite
+    /// history. Paths limit it to files under them. Exits 2 outside a
+    /// repository.
+    #[arg(long, value_name = "RANGE", num_args = 0..=1, default_missing_value = "")]
+    pub history: Option<String>,
 
     /// Ignore the repository's `.evnx.toml` and use the built-in defaults.
     ///

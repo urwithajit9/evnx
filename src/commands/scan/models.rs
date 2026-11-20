@@ -40,6 +40,9 @@
 //!     repo_path: None,
 //!     note: None,
 //!     line: 15,
+//!     commit: None,
+//!     blob: None,
+//!     commit_time: None,
 //! };
 //!
 //! let mut results = ScanResults::new(100);
@@ -174,6 +177,17 @@ pub struct Finding {
     /// line is also in `location`.
     #[serde(skip)]
     pub line: usize,
+
+    /// `--history` (RM-69): the oldest commit in the range that has the blob
+    /// the finding is in. Absent for every other scan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    /// `--history`: the blob's object id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob: Option<String>,
+    /// `--history`: that commit's time, seconds since the epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_time: Option<i64>,
 }
 
 /// Whether a finding counts (C5).
@@ -200,6 +214,9 @@ pub enum GitState {
     Ignored,
     /// Read from the index by `--staged` (C9): the next commit records it.
     Staged,
+    /// Read from a commit's blob by `--history` (RM-69): it is in the
+    /// repository's history.
+    History,
 }
 
 impl From<crate::core::gitignore::Exposure> for GitState {
@@ -343,6 +360,9 @@ impl Finding {
             repo_path: None,
             note: None,
             line: 0,
+            commit: None,
+            blob: None,
+            commit_time: None,
         }
     }
 }
