@@ -1094,6 +1094,19 @@ impl ScanRunner {
             return;
         }
 
+        // SCAN-CONTEXT: usage and test-path hints move the level shown, never
+        // the decision. The floor above and the counts and exit code
+        // (`Finding::decided_confidence`) use `detection.confidence` as it was.
+        let before = detection.confidence;
+        let (shown, context) = super::context::adjust(
+            &detection.rule_id,
+            before,
+            lines
+                .get(line.wrapping_sub(1))
+                .is_some_and(|l| super::context::is_usage(l)),
+            super::context::is_test_path(&display_portable(path)),
+        );
+
         let judged_value = detection.judged_value;
         // I-052: a connection string is not a provider key, so say which kind
         // of URL holds the password rather than "matches a live key format".
@@ -1112,7 +1125,7 @@ impl ScanRunner {
         let rule = (detection.rule_id.clone(), detection.severity);
         let mut finding = Finding::new(
             detection.pattern,
-            detection.confidence,
+            shown,
             preview,
             if let Some(ref var) = variable {
                 format!("{}:{} ({})", display_portable(path), line, var)
@@ -1127,6 +1140,10 @@ impl ScanRunner {
         .public_prefix(public.map(|(prefix, _)| prefix.to_string()));
         finding.note = note;
         finding.encoded = encoded.map(str::to_string);
+        if shown != before {
+            finding.confidence_before_context = Some(before);
+        }
+        finding.context = context.into_iter().map(str::to_string).collect();
         finding.line = line;
 
         // C5: what the project has looked at. The fingerprint never holds the

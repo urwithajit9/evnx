@@ -53,6 +53,7 @@
 //! }
 //! ```
 
+pub mod context;
 pub mod filters;
 pub mod hook;
 pub mod models;

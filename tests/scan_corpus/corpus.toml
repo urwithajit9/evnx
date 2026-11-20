@@ -140,6 +140,23 @@ format = "dotenv"
 as = ".env"
 
 [[case]]
+id = "pos-context-usage-shell"
+family = "context"
+format = "shell"
+as = "call.sh"
+expect = [{ line = 2, rule = "high-entropy-string" }]
+
+[[case]]
+id = "pos-context-test-path-dotenv"
+family = "context"
+format = "dotenv"
+as = "tests/fixtures/.env"
+expect = [
+  { line = 2, rule = "stripe-live-secret-key" },
+  { line = 3, rule = "sensitive-config-key" },
+]
+
+[[case]]
 id = "pos-vcs-github-shell"
 family = "vcs"
 format = "shell"

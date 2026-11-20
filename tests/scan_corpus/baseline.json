@@ -1,7 +1,7 @@
 {
   "version": 1,
   "overall": {
-    "tp": 65,
+    "tp": 68,
     "fp": 0,
     "fn": 0,
     "precision": 1.0,
@@ -24,6 +24,13 @@
     },
     "cloud": {
       "tp": 8,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "context": {
+      "tp": 3,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,
@@ -95,7 +102,7 @@
       "recall": 1.0
     },
     "dotenv": {
-      "tp": 33,
+      "tp": 35,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,
@@ -116,7 +123,7 @@
       "recall": 1.0
     },
     "shell": {
-      "tp": 7,
+      "tp": 8,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,

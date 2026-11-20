@@ -107,6 +107,13 @@ Encoded values:\n\
 \x20 text is decoded once and checked against the rules below only (not names\n\
 \x20 or entropy). The finding shows \"encoded\" in JSON.\n\
 \n\
+Context:\n\
+\x20 a value on a line with an Authorization or Bearer header, an HTTP client\n\
+\x20 call or a connection string is shown one level higher; a file under a\n\
+\x20 test, tests, mock, spec or fixtures folder one level lower (name, entropy\n\
+\x20 and medium findings only). Nothing is dropped, and the exit code and\n\
+\x20 --confidence use the level before the hint.\n\
+\n\
 Accepting a finding:\n\
 \x20 evnx:allow <rule> reason=used-in-tests|false-positive|fix-later, then\n\
 \x20 free text, on the line or the one above; --update-baseline --reason CODE\n\

@@ -21,6 +21,8 @@
 //!     reason: None,
 //!     reason_code: None,
 //!     encoded: None,
+//!     context: Vec::new(),
+//!     confidence_before_context: None,
 //!     pattern: "AWS Access Key".to_string(),
 //!     confidence: Confidence::High,
 //!     severity: Severity::Critical,
@@ -103,6 +105,18 @@ pub struct Finding {
     /// value at its location (RM-71). Absent for a value as written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encoded: Option<String>,
+    /// The hints that moved `confidence` (SCAN-CONTEXT): `usage` and/or
+    /// `test-path`. Empty when none applied.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context: Vec<String>,
+    /// The confidence before the hints, when they changed it. The exit code,
+    /// the `--confidence` floor and the summary counts use this one (D9).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_opt_confidence"
+    )]
+    pub confidence_before_context: Option<Confidence>,
     pub pattern: String,
     #[serde(serialize_with = "serialize_confidence")]
     pub confidence: Confidence,
@@ -222,7 +236,24 @@ where
     serializer.serialize_str(&confidence.to_string())
 }
 
+fn serialize_opt_confidence<S>(c: &Option<Confidence>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match c {
+        Some(c) => serializer.serialize_str(&c.to_string()),
+        None => serializer.serialize_none(),
+    }
+}
+
 impl Finding {
+    /// The confidence the exit code and the counts use: the one before any
+    /// context hint (D9).
+    #[must_use]
+    pub fn decided_confidence(&self) -> Confidence {
+        self.confidence_before_context.unwrap_or(self.confidence)
+    }
+
     /// Record that this finding came from the variable's **name**, with the
     /// value unexamined.
     ///
@@ -294,6 +325,8 @@ impl Finding {
             reason: None,
             reason_code: None,
             encoded: None,
+            context: Vec::new(),
+            confidence_before_context: None,
             rule_id: crate::core::secretscan::patternset::slug(
                 pattern.split(':').next().unwrap_or(&pattern),
             ),
@@ -688,7 +721,7 @@ impl ScanResults {
     /// assert_eq!(results.high_confidence, 1);
     /// ```
     pub fn add_finding(&mut self, finding: Finding) {
-        match finding.confidence {
+        match finding.decided_confidence() {
             Confidence::High => self.high_confidence += 1,
             Confidence::Medium => self.medium_confidence += 1,
             Confidence::Low => self.low_confidence += 1,
