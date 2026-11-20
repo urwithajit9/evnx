@@ -31,6 +31,9 @@ These do not change without a CHANGELOG "Breaking" entry, and are tested.
   (`migrate` prints the commands you will run, and those carry the values by design.)
 - **`run` keeps the file's value over your environment's by default** (`--prefer vault`).
   `--prefer env` is the opt-in for the other way round.
+- **The scan baseline** (`.evnx/baseline.json`) stays `schema_version` 1. A field added
+  to it is optional (an entry's `reason` is the first), and an evnx that does not know a
+  field ignores it, so a team on mixed versions can share one committed baseline.
 - **Files that can hold a secret** are created owner-only (mode 600; an owner-only ACL
   on Windows), and a file evnx replaces is kept as `.bak`.
 

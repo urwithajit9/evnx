@@ -204,7 +204,9 @@ pub fn may_generate(key: &str) -> bool {
 /// Whether a value a **format rule** matched cannot be a working credential
 /// (I-050, N-20): a placeholder (Lenient, no key), a run of one filler
 /// character after the prefix (`sk_live_xxxx…`, `ghp_0000…`, `AKIA****…`), or
-/// the `user:password@localhost` URL evnx writes into new projects.
+/// the `user:password@localhost` URL evnx writes into new projects, or a
+/// classic GitHub token (`ghp_`, `gho_`, `ghu_`, `ghr_`) whose checksum fails
+/// ([`crate::core::secretscan::checksum`]).
 ///
 /// ⚠️ For rule matches, and for a value the contract declares secret (R-init).
 /// The name and entropy heuristics already drop placeholders; the format rules
@@ -216,6 +218,12 @@ pub fn may_generate(key: &str) -> bool {
 pub fn is_stand_in(value: &str) -> bool {
     let v = value.trim();
     if is_placeholder("", v, Strictness::Lenient) || crate::core::placeholder::is_url_placeholder(v)
+    {
+        return true;
+    }
+    // SCAN-CRC: a classic GitHub token whose checksum fails was never issued.
+    if crate::core::secretscan::checksum::verdict(v)
+        == crate::core::secretscan::checksum::Verdict::Invalid
     {
         return true;
     }
@@ -818,7 +826,8 @@ mod tests {
     fn secret_shaped_values() {
         for v in [
             "sk_live_51H1234567890abcdefghijk",
-            "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8",
+            "ghp_\
+A1b2C3d4E5f6G7h8I9j0K1l2M3n4Fx3dtsr8",
             "AKIA4OZRMFJ3VREALKEY",
             "-----BEGIN PRIVATE KEY-----",
             "postgres://admin:s3cr3t@db.internal:5432/app",

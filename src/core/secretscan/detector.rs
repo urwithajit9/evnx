@@ -266,6 +266,13 @@ pub trait SecretDetector: Send + Sync {
     fn scan_line(&self, _line: &str, _location: &str) -> Vec<Detection> {
         Vec::new()
     }
+
+    /// Text decoded from a base64, hex or percent-encoded value (RM-71, D8):
+    /// only detectors that match **formats** answer, never a name or an
+    /// entropy check. Default: none.
+    fn scan_decoded(&self, _text: &str) -> Vec<Detection> {
+        Vec::new()
+    }
 }
 
 /// Registry that manages all active secret detectors.
@@ -647,6 +654,14 @@ impl DetectorRegistry {
             .collect()
     }
 
+    /// Decoded text against the format rules alone (RM-71, D8).
+    pub fn scan_decoded(&self, text: &str) -> Vec<Detection> {
+        self.detectors
+            .iter()
+            .flat_map(|d| d.scan_decoded(text))
+            .collect()
+    }
+
     /// Get the number of registered detectors.
     ///
     /// Useful for debugging and verbose output.
@@ -805,11 +820,19 @@ impl RuleDetector {
 
 impl From<super::patternset::PatternMatch> for Detection {
     fn from(found: super::patternset::PatternMatch) -> Self {
+        // SCAN-CRC: a classic GitHub token whose checksum passes is that shape
+        // for certain, whatever the rule that matched it says.
+        let confidence =
+            if super::checksum::verdict(&found.value) == super::checksum::Verdict::Valid {
+                found.confidence.max(super::Confidence::High)
+            } else {
+                found.confidence
+            };
         Detection {
             judged_value: true,
             rule_id: found.id,
             pattern: found.name,
-            confidence: found.confidence,
+            confidence,
             severity: found.severity,
             action_url: found.url,
             matched_value: found.value,
@@ -855,6 +878,13 @@ impl SecretDetector for RuleDetector {
 
     fn scan_line(&self, line: &str, _location: &str) -> Vec<Detection> {
         self.live_matches(line)
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    fn scan_decoded(&self, text: &str) -> Vec<Detection> {
+        self.live_matches(text)
             .into_iter()
             .map(Into::into)
             .collect()

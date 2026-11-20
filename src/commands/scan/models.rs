@@ -19,6 +19,10 @@
 //!     status: Status::New,
 //!     fingerprint: String::new(),
 //!     reason: None,
+//!     reason_code: None,
+//!     encoded: None,
+//!     context: Vec::new(),
+//!     confidence_before_context: None,
 //!     pattern: "AWS Access Key".to_string(),
 //!     confidence: Confidence::High,
 //!     severity: Severity::Critical,
@@ -92,6 +96,27 @@ pub struct Finding {
     /// An `allowed` finding's reason, from its marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// The reason code of an `allowed` or `known` finding (SCAN-REASONS):
+    /// `used-in-tests`, `false-positive`, `fix-later`, from its marker's
+    /// `reason=` or its baseline entry. Absent when none was given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    /// `base64`, `hex` or `url` when the finding is in text decoded from the
+    /// value at its location (RM-71). Absent for a value as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoded: Option<String>,
+    /// The hints that moved `confidence` (SCAN-CONTEXT): `usage` and/or
+    /// `test-path`. Empty when none applied.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context: Vec<String>,
+    /// The confidence before the hints, when they changed it. The exit code,
+    /// the `--confidence` floor and the summary counts use this one (D9).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_opt_confidence"
+    )]
+    pub confidence_before_context: Option<Confidence>,
     pub pattern: String,
     #[serde(serialize_with = "serialize_confidence")]
     pub confidence: Confidence,
@@ -211,7 +236,24 @@ where
     serializer.serialize_str(&confidence.to_string())
 }
 
+fn serialize_opt_confidence<S>(c: &Option<Confidence>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match c {
+        Some(c) => serializer.serialize_str(&c.to_string()),
+        None => serializer.serialize_none(),
+    }
+}
+
 impl Finding {
+    /// The confidence the exit code and the counts use: the one before any
+    /// context hint (D9).
+    #[must_use]
+    pub fn decided_confidence(&self) -> Confidence {
+        self.confidence_before_context.unwrap_or(self.confidence)
+    }
+
     /// Record that this finding came from the variable's **name**, with the
     /// value unexamined.
     ///
@@ -281,6 +323,10 @@ impl Finding {
             status: Status::New,
             fingerprint: String::new(),
             reason: None,
+            reason_code: None,
+            encoded: None,
+            context: Vec::new(),
+            confidence_before_context: None,
             rule_id: crate::core::secretscan::patternset::slug(
                 pattern.split(':').next().unwrap_or(&pattern),
             ),
@@ -459,7 +505,7 @@ impl EffectiveConfig {
 /// ⚠️ The fields are **confidence** levels, not severities. A high-confidence
 /// detection means "this really looks like an AWS key", not "this is the worst
 /// problem here" — the two are different questions and the docs conflated them.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Summary {
     /// Findings reported, after any `--severity` and `--confidence` filtering.
     pub total: usize,
@@ -489,6 +535,10 @@ pub struct Summary {
     /// Findings in the baseline (C5).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub known: usize,
+    /// Allowed and known findings by reason code (SCAN-REASONS), for the ones
+    /// that have one. Absent when none does.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub by_reason: std::collections::BTreeMap<String, usize>,
 }
 
 /// Findings per severity, in the JSON `summary` (C2).
@@ -584,7 +634,20 @@ impl ScanResults {
             ignored_by_git: self.ignored_by_git.iter().map(|f| f.findings).sum(),
             allowed: self.allowed.len(),
             known: self.known.len(),
+            by_reason: self.reason_counts(self.allowed.iter().chain(&self.known)),
         }
+    }
+
+    /// `findings` counted by reason code, those without one left out.
+    pub fn reason_counts<'a>(
+        &self,
+        findings: impl Iterator<Item = &'a Finding>,
+    ) -> std::collections::BTreeMap<String, usize> {
+        let mut out = std::collections::BTreeMap::new();
+        for code in findings.filter_map(|f| f.reason_code.as_deref()) {
+            *out.entry(code.to_string()).or_insert(0) += 1;
+        }
+        out
     }
 }
 
@@ -658,7 +721,7 @@ impl ScanResults {
     /// assert_eq!(results.high_confidence, 1);
     /// ```
     pub fn add_finding(&mut self, finding: Finding) {
-        match finding.confidence {
+        match finding.decided_confidence() {
             Confidence::High => self.high_confidence += 1,
             Confidence::Medium => self.medium_confidence += 1,
             Confidence::Low => self.low_confidence += 1,

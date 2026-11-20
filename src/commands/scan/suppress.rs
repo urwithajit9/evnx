@@ -32,17 +32,40 @@ pub fn fingerprint(rule_id: &str, file: &str, variable: Option<&str>, line_text:
     h.finalize().to_hex().to_string()
 }
 
+/// The reason codes a marker (`reason=<code>`) and a baseline entry may carry
+/// (SCAN-REASONS). A code is a closed vocabulary so the summary can count by
+/// it; the free text after the marker says the rest. Any other code is kept
+/// as written and warned about.
+pub const REASON_CODES: &[&str] = &["used-in-tests", "false-positive", "fix-later"];
+
+/// Whether `code` is one of [`REASON_CODES`].
+pub fn is_known_reason(code: &str) -> bool {
+    REASON_CODES.contains(&code)
+}
+
+/// The warning for a reason code outside [`REASON_CODES`].
+pub fn unknown_reason_warning(code: &str) -> String {
+    format!(
+        "unknown reason '{code}'; the codes are {}",
+        REASON_CODES.join(", ")
+    )
+}
+
 /// An `evnx:allow` marker on a line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Marker {
     /// The rule it silences. `None` is a bare marker, which silences nothing.
     pub rule: Option<String>,
-    /// Why, after `—`, `-` or `:`. Optional, but its absence is warned about.
+    /// Why, in words, after `—`, `-` or `:`. Optional, but when neither this
+    /// nor `reason_code` is given, its absence is warned about.
     pub reason: Option<String>,
+    /// `reason=<code>` straight after the rule id (SCAN-REASONS).
+    pub reason_code: Option<String>,
 }
 
-/// The marker on `line`, if any: `evnx:allow <rule-id> — reason`, in any
-/// comment style, since only the text after `evnx:allow` is read.
+/// The marker on `line`, if any: `evnx:allow <rule-id> [reason=<code>] —
+/// free text`, in any comment style, since only the text after `evnx:allow`
+/// is read.
 pub fn marker_in(line: &str) -> Option<Marker> {
     let rest = line.split_once("evnx:allow")?.1;
     let rest = rest.trim_start();
@@ -50,7 +73,26 @@ pub fn marker_in(line: &str) -> Option<Marker> {
         .chars()
         .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
         .collect();
-    let after = rest[id.len()..].trim();
+    // `evnx:allow reason=…` has no rule: `reason` is the key, not an id.
+    let id = if rest[id.len()..].starts_with('=') {
+        String::new()
+    } else {
+        id
+    };
+    let mut after = rest[id.len()..].trim();
+    let mut reason_code = None;
+    if !id.is_empty() {
+        if let Some(coded) = after.strip_prefix("reason=") {
+            let code: String = coded
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            if !code.is_empty() {
+                after = coded[code.len()..].trim();
+                reason_code = Some(code.to_ascii_lowercase());
+            }
+        }
+    }
     let reason = after
         .trim_start_matches(['—', '–', '-', ':'])
         .trim()
@@ -60,6 +102,7 @@ pub fn marker_in(line: &str) -> Option<Marker> {
     Some(Marker {
         rule: (!id.is_empty()).then_some(id),
         reason: (!reason.is_empty()).then(|| reason.to_string()),
+        reason_code,
     })
 }
 
@@ -89,6 +132,11 @@ pub struct Entry {
     pub file: String,
     /// The day it was first accepted, `YYYY-MM-DD`.
     pub added: String,
+    /// Why it was accepted: one of [`REASON_CODES`] (SCAN-REASONS, D7). Absent
+    /// in a baseline written before, and an older evnx ignores it, so the
+    /// file stays `schema_version` 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 impl Baseline {
@@ -121,10 +169,21 @@ impl Baseline {
         self.findings.iter().any(|e| e.fingerprint == fingerprint)
     }
 
+    /// The entry for `fingerprint`, if it is accepted.
+    pub fn get(&self, fingerprint: &str) -> Option<&Entry> {
+        self.findings.iter().find(|e| e.fingerprint == fingerprint)
+    }
+
     /// The baseline for `current` (fingerprint, rule, file) findings, keeping
-    /// the `added` date of each one already accepted. Sorted, so the file
-    /// diffs cleanly.
-    pub fn rewrite(&self, current: &[(String, String, String)], today: &str) -> Baseline {
+    /// the `added` date and the reason of each one already accepted; `reason`
+    /// is given only to the entries added now. Sorted, so the file diffs
+    /// cleanly.
+    pub fn rewrite(
+        &self,
+        current: &[(String, String, String)],
+        today: &str,
+        reason: Option<&str>,
+    ) -> Baseline {
         let before: HashMap<&str, &Entry> = self
             .findings
             .iter()
@@ -140,6 +199,10 @@ impl Baseline {
                     .get(fp.as_str())
                     .map(|e| e.added.clone())
                     .unwrap_or_else(|| today.to_string()),
+                reason: match before.get(fp.as_str()) {
+                    Some(e) => e.reason.clone(),
+                    None => reason.map(str::to_string),
+                },
             })
             .collect();
         findings.sort_by(|a, b| {
@@ -164,13 +227,15 @@ mod tests {
             Some(Marker {
                 rule: Some("aws-access-key".into()),
                 reason: Some("the documented example key".into()),
+                reason_code: None,
             })
         );
         assert_eq!(
             marker_in("// evnx:allow jwt").unwrap(),
             Marker {
                 rule: Some("jwt".into()),
-                reason: None
+                reason: None,
+                reason_code: None
             }
         );
         assert_eq!(
@@ -214,6 +279,7 @@ mod tests {
                 rule: "jwt".into(),
                 file: ".env".into(),
                 added: "2026-01-01".into(),
+                reason: None,
             }],
         };
         let new = old.rewrite(
@@ -222,9 +288,81 @@ mod tests {
                 ("f2".into(), "jwt".into(), "./a.env".into()),
             ],
             "2026-11-07",
+            None,
         );
         assert_eq!(new.findings[0].added, "2026-01-01");
         assert_eq!(new.findings[1].added, "2026-11-07");
         assert_eq!(new.findings[1].file, "a.env");
+    }
+
+    #[test]
+    fn a_marker_may_carry_a_reason_code_before_its_text() {
+        let m = marker_in("X=1 # evnx:allow jwt reason=used-in-tests — a fixture").unwrap();
+        assert_eq!(m.rule.as_deref(), Some("jwt"));
+        assert_eq!(m.reason_code.as_deref(), Some("used-in-tests"));
+        assert_eq!(m.reason.as_deref(), Some("a fixture"));
+        // Code alone, in a block comment.
+        let m = marker_in("/* evnx:allow jwt reason=fix-later */").unwrap();
+        assert_eq!(m.reason_code.as_deref(), Some("fix-later"));
+        assert_eq!(m.reason, None);
+        // No code: as before. `reason=` is not read without a rule id.
+        assert_eq!(
+            marker_in("# evnx:allow jwt — why").unwrap().reason_code,
+            None
+        );
+        assert_eq!(
+            marker_in("# evnx:allow reason=fix-later").unwrap().rule,
+            None
+        );
+        // An unknown code is kept as written, and is not one of the codes.
+        let m = marker_in("# evnx:allow jwt reason=Whatever").unwrap();
+        assert_eq!(m.reason_code.as_deref(), Some("whatever"));
+        assert!(!is_known_reason("whatever"));
+        assert!(REASON_CODES.iter().all(|c| is_known_reason(c)));
+    }
+
+    /// Reasons: given to new entries only, kept on old ones, never required;
+    /// and an older baseline (no `reason`) still reads, and one without a
+    /// reason writes none (schema stays 1, D7).
+    #[test]
+    fn a_reason_goes_to_new_entries_and_old_ones_keep_theirs() {
+        let old = Baseline {
+            schema_version: 1,
+            findings: vec![
+                Entry {
+                    fingerprint: "f1".into(),
+                    rule: "jwt".into(),
+                    file: ".env".into(),
+                    added: "2026-01-01".into(),
+                    reason: Some("false-positive".into()),
+                },
+                Entry {
+                    fingerprint: "f2".into(),
+                    rule: "jwt".into(),
+                    file: ".env".into(),
+                    added: "2026-01-01".into(),
+                    reason: None,
+                },
+            ],
+        };
+        let cur = [
+            ("f1".to_string(), "jwt".to_string(), ".env".to_string()),
+            ("f2".to_string(), "jwt".to_string(), ".env".to_string()),
+            ("f3".to_string(), "jwt".to_string(), "b.env".to_string()),
+        ];
+        let new = old.rewrite(&cur, "2026-11-19", Some("used-in-tests"));
+        let by = |fp: &str| new.get(fp).unwrap().reason.clone();
+        assert_eq!(by("f1").as_deref(), Some("false-positive"));
+        assert_eq!(by("f2"), None);
+        assert_eq!(by("f3").as_deref(), Some("used-in-tests"));
+        assert_eq!(new.schema_version, 1);
+
+        let text = serde_json::to_string(&old.rewrite(&cur, "d", None)).unwrap();
+        assert!(!text.contains("reason\":null"), "{text}");
+        let back: Baseline = serde_json::from_str(
+            r#"{"schema_version":1,"findings":[{"fingerprint":"a","rule":"r","file":"f","added":"d"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(back.findings[0].reason, None);
     }
 }

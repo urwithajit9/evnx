@@ -73,6 +73,11 @@ Options:
       --update-baseline
           Write this run's findings to the baseline (`--baseline`, or `.evnx/baseline.json`) and exit 0. Run it once to accept what a project already has; new findings fail from then on
 
+      --reason <CODE>
+          Why the findings `--update-baseline` adds are accepted: `used-in-tests`, `false-positive` or `fix-later`.
+          
+          Stored in the baseline for the entries added by this run; entries already there keep their reason. The summary counts allowed and known findings by it. Inline, write `evnx:allow <rule> reason=used-in-tests`.
+
       --confidence <LEVEL>
           Lowest confidence worth reporting: high, medium or low.
           
@@ -164,6 +169,23 @@ What a folder walk reads:
   In a git repository, findings in files git ignores and does not track
   are summarised, not counted (--include-ignored counts them).
 
+Encoded values:
+  a value of 16 to 4096 characters that is base64, hex or percent-encoded
+  text is decoded once and checked against the rules below only (not names
+  or entropy). The finding shows "encoded" in JSON.
+
+Context:
+  a value on a line with an Authorization or Bearer header, an HTTP client
+  call or a connection string is shown one level higher; a file under a
+  test, tests, mock, spec or fixtures folder one level lower (name, entropy
+  and medium findings only). Nothing is dropped, and the exit code and
+  --confidence use the level before the hint.
+
+Accepting a finding:
+  evnx:allow <rule> reason=used-in-tests|false-positive|fix-later, then
+  free text, on the line or the one above; --update-baseline --reason CODE
+  does the same for the baseline. The summary counts by reason.
+
 Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
   AWS Access Key, AWS Temporary Access Key (STS), GitHub Fine-grained PAT,
   Slack Token, Google API Key, JSON Web Token, Stripe Secret Key (LIVE),
@@ -184,7 +206,10 @@ Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
   Supabase Personal Access Token, Supabase Secret Key, age Secret Key, New
   Relic User API Key, Grafana Service Account Token, Grafana Cloud Access
   Policy Token, Postman API Key, Notion Integration Token, GitLab CI/CD
-  Job Token, Fly.io Access Token, Azure DevOps Personal Access Token;
+  Job Token, Fly.io Access Token, Azure DevOps Personal Access Token,
+  GitLab Feed Token, GitLab Incoming Email Token, GitLab Agent for
+  Kubernetes Token, GitLab Webhook Token, GitLab SCIM Token, GitLab Feature
+  Flags Client Token, GitLab OAuth Application Secret;
   and the heuristics: Sensitive config key, High-entropy string,
   AWS Secret Access Key.
 

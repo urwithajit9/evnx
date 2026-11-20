@@ -102,6 +102,23 @@ What a folder walk reads:\n\
 \x20 In a git repository, findings in files git ignores and does not track\n\
 \x20 are summarised, not counted (--include-ignored counts them).\n\
 \n\
+Encoded values:\n\
+\x20 a value of 16 to 4096 characters that is base64, hex or percent-encoded\n\
+\x20 text is decoded once and checked against the rules below only (not names\n\
+\x20 or entropy). The finding shows \"encoded\" in JSON.\n\
+\n\
+Context:\n\
+\x20 a value on a line with an Authorization or Bearer header, an HTTP client\n\
+\x20 call or a connection string is shown one level higher; a file under a\n\
+\x20 test, tests, mock, spec or fixtures folder one level lower (name, entropy\n\
+\x20 and medium findings only). Nothing is dropped, and the exit code and\n\
+\x20 --confidence use the level before the hint.\n\
+\n\
+Accepting a finding:\n\
+\x20 evnx:allow <rule> reason=used-in-tests|false-positive|fix-later, then\n\
+\x20 free text, on the line or the one above; --update-baseline --reason CODE\n\
+\x20 does the same for the baseline. The summary counts by reason.\n\
+\n\
 Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):\n\
 \x20 AWS Access Key, AWS Temporary Access Key (STS), GitHub Fine-grained PAT,\n\
 \x20 Slack Token, Google API Key, JSON Web Token, Stripe Secret Key (LIVE),\n\
@@ -122,7 +139,10 @@ Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
 \x20 Supabase Personal Access Token, Supabase Secret Key, age Secret Key, New\n\
 \x20 Relic User API Key, Grafana Service Account Token, Grafana Cloud Access\n\
 \x20 Policy Token, Postman API Key, Notion Integration Token, GitLab CI/CD\n\
-\x20 Job Token, Fly.io Access Token, Azure DevOps Personal Access Token;\n\
+\x20 Job Token, Fly.io Access Token, Azure DevOps Personal Access Token,\n\
+\x20 GitLab Feed Token, GitLab Incoming Email Token, GitLab Agent for\n\
+\x20 Kubernetes Token, GitLab Webhook Token, GitLab SCIM Token, GitLab Feature\n\
+\x20 Flags Client Token, GitLab OAuth Application Secret;\n\
 \x20 and the heuristics: Sensitive config key, High-entropy string,\n\
 \x20 AWS Secret Access Key.\n\
 \n\

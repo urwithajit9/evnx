@@ -1,0 +1,16 @@
+# Fixtures for `gitlab-webhook-token` (SCAN-GITLAB). Values are written as parts joined at test time, so this
+# file never holds a whole token. Format: to be verified against GitLab docs by the owner.
+
+expect_severity = "medium"
+
+positive = [
+  ["glwt-", "oAOVZmnNDR5oBYoDJq9i"],
+  ["glwt-", "s8ONgy2o2iq0ouv86RgBnnzzgN_eleWItdv-t6LGMB"],
+]
+
+near_miss = [
+  # Too short a body.
+  ["glwt-", "F7XuSp0p9GJC"],
+  # Not at a word boundary.
+  ["x", "glwt-", "L7nswsHu8wOWNkbFL7FdF4Ck"],
+]

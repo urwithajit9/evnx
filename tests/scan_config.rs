@@ -12,7 +12,8 @@ use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 use tempfile::TempDir;
 
-const GH: &str = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
+const GH: &str = "ghp_\
+A1b2C3d4E5f6G7h8I9j0K1l2M3n4Fx3dtsr8";
 
 fn project(files: &[(&str, &str)]) -> TempDir {
     let d = TempDir::new().unwrap();
@@ -160,7 +161,7 @@ fn t_i058_verbose_counts_built_in_rules_and_custom_patterns_apart() {
     let d = project(&[(".env", "A=1\n")]);
     let (_, _, stderr) = run(&d, &["scan", ".", "-v"]);
     assert!(
-        stderr.contains("63 built-in rules, 0 custom patterns"),
+        stderr.contains("70 built-in rules, 0 custom patterns"),
         "{stderr}"
     );
     assert!(!stderr.contains("custom pattern(s) active"), "{stderr}");
@@ -168,7 +169,7 @@ fn t_i058_verbose_counts_built_in_rules_and_custom_patterns_apart() {
 
     let (_, _, stderr) = run(&d, &["scan", ".", "-v", "--pattern", "ACME-[0-9]{8}"]);
     assert!(
-        stderr.contains("63 built-in rules, 1 custom pattern"),
+        stderr.contains("70 built-in rules, 1 custom pattern"),
         "{stderr}"
     );
 
@@ -285,14 +286,14 @@ fn findings(dir: &TempDir, args: &[&str]) -> serde_json::Value {
     serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}\n{out}\n{err}"))
 }
 
-/// C2: the JSON carries `schema_version: 2`, and each finding its stable
+/// C2: the JSON carries `schema_version: 3`, and each finding its stable
 /// `rule_id` and `severity` beside `confidence`.
 #[test]
 fn c2_json_carries_rule_id_and_severity() {
     let aws = format!("AKIA{}", "IOSFODNN7ABCDEFG");
     let d = project(&[(".env", &format!("AWS_ACCESS_KEY_ID={aws}\n"))]);
     let doc = findings(&d, &[]);
-    assert_eq!(doc["schema_version"], 2);
+    assert_eq!(doc["schema_version"], 3);
     let f = &doc["findings"][0];
     assert_eq!(
         (&f["rule_id"], &f["severity"], &f["confidence"]),

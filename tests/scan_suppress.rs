@@ -148,3 +148,157 @@ fn rewriting_the_baseline_keeps_what_was_accepted_and_adds_the_new() {
     let (code, doc, _) = scan(&d, &[".env"]);
     assert_eq!((code, doc["summary"]["known"].clone()), (0, 2.into()));
 }
+
+// ── SCAN-REASONS ─────────────────────────────────────────────────────────────
+
+fn third_stripe() -> String {
+    format!("sk_live_{}", "51Hqrs5555555555MNOPQRSTq")
+}
+
+#[test]
+fn a_marker_reason_code_is_counted_by_code_in_the_summary() {
+    let (a, b, c) = (stripe(), other_stripe(), third_stripe());
+    let d = project(&format!(
+        "A={a}  # evnx:allow stripe-live-secret-key reason=used-in-tests — test fixture\n\
+         B={b}  # evnx:allow stripe-live-secret-key reason=used-in-tests\n\
+         C={c}  # evnx:allow stripe-live-secret-key reason=false-positive\n"
+    ));
+    let (code, doc, err) = scan(&d, &[".env"]);
+    assert_eq!(code, 0, "{doc}");
+    assert_eq!(doc["summary"]["allowed"], 3);
+    assert_eq!(doc["summary"]["by_reason"]["used-in-tests"], 2);
+    assert_eq!(doc["summary"]["by_reason"]["false-positive"], 1);
+    assert_eq!(doc["allowed"][0]["reason_code"], "used-in-tests");
+    assert_eq!(doc["allowed"][0]["reason"], "test fixture");
+    // A code is a reason: no "has no reason" warning, and no unknown-code one.
+    assert!(!err.contains("has no reason"), "{err}");
+    assert!(!err.contains("unknown reason"), "{err}");
+}
+
+#[test]
+fn an_unknown_marker_code_warns_and_is_still_allowed_and_counted() {
+    let d = project(&format!(
+        "A={}  # evnx:allow stripe-live-secret-key reason=because\n",
+        stripe()
+    ));
+    let (code, doc, err) = scan(&d, &[".env"]);
+    assert_eq!(code, 0, "{doc}");
+    assert!(err.contains("unknown reason 'because'"), "{err}");
+    assert!(err.contains("used-in-tests"), "{err}");
+    assert_eq!(doc["summary"]["by_reason"]["because"], 1);
+}
+
+#[test]
+fn the_pretty_summary_names_the_reasons() {
+    let (a, b) = (stripe(), other_stripe());
+    let d = project(&format!(
+        "A={a}  # evnx:allow stripe-live-secret-key reason=used-in-tests\n\
+         B={b}  # evnx:allow stripe-live-secret-key reason=fix-later\n"
+    ));
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .env("NO_COLOR", "1")
+        .args(["scan", ".env"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("2 allowed inline (1 fix-later, 1 used-in-tests)"),
+        "{text}"
+    );
+}
+
+#[test]
+fn update_baseline_reason_goes_to_new_entries_and_old_ones_keep_theirs() {
+    let d = project(&format!("A={}\n", stripe()));
+    let (code, _, _) = scan(
+        &d,
+        &[".env", "--update-baseline", "--reason", "false-positive"],
+    );
+    assert_eq!(code, 0);
+    fs::write(
+        d.path().join(".env"),
+        format!("A={}\nB={}\n", stripe(), other_stripe()),
+    )
+    .unwrap();
+    let (code, _, _) = scan(&d, &[".env", "--update-baseline", "--reason", "fix-later"]);
+    assert_eq!(code, 0);
+    let text = fs::read_to_string(d.path().join(".evnx/baseline.json")).unwrap();
+    let b: serde_json::Value = serde_json::from_str(&text).unwrap();
+    // The schema stays 1: the reason is an optional field (D7).
+    assert_eq!(b["schema_version"], 1);
+    let mut reasons: Vec<String> = b["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["reason"].as_str().unwrap().to_string())
+        .collect();
+    reasons.sort();
+    assert_eq!(reasons, ["false-positive", "fix-later"]);
+    assert!(!text.contains("51Habc"), "{text}");
+
+    // Known findings carry their entry's code, and the summary counts them.
+    let (code, doc, _) = scan(&d, &[".env"]);
+    assert_eq!(code, 0);
+    assert_eq!(doc["summary"]["by_reason"]["false-positive"], 1);
+    assert_eq!(doc["summary"]["by_reason"]["fix-later"], 1);
+    assert!(doc["known"][0]["reason_code"].is_string());
+}
+
+#[test]
+fn a_baseline_with_no_reasons_still_reads_and_writes_none() {
+    let d = project(&format!("A={}\n", stripe()));
+    scan(&d, &[".env", "--update-baseline"]);
+    let text = fs::read_to_string(d.path().join(".evnx/baseline.json")).unwrap();
+    assert!(!text.contains("reason"), "{text}");
+    let (code, doc, _) = scan(&d, &[".env"]);
+    assert_eq!((code, doc["summary"]["known"].clone()), (0, 1.into()));
+    assert!(doc["summary"].get("by_reason").is_none(), "{doc}");
+}
+
+#[test]
+fn reason_needs_update_baseline_and_an_unknown_code_warns() {
+    let d = project(&format!("A={}\n", stripe()));
+    let (code, _, err) = scan(&d, &[".env", "--reason", "fix-later"]);
+    assert_eq!(code, 2, "{err}");
+    let (code, _, err) = scan(&d, &[".env", "--update-baseline", "--reason", "whatever"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(err.contains("unknown reason 'whatever'"), "{err}");
+}
+
+#[test]
+fn sarif_marks_allowed_and_known_results_suppressed_with_their_reason() {
+    let (a, b) = (stripe(), other_stripe());
+    let d = project(&format!(
+        "B={b}\n\n\
+         A={a}  # evnx:allow stripe-live-secret-key reason=used-in-tests — fixture\n"
+    ));
+    // The baseline takes B; A is allowed inline, so one result is each kind.
+    scan(
+        &d,
+        &[".env", "--update-baseline", "--reason", "false-positive"],
+    );
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .env("NO_COLOR", "1")
+        .args(["scan", ".env", "--format", "sarif"])
+        .output()
+        .unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let results = doc["runs"][0]["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2, "{doc}");
+    let kinds: Vec<&str> = results
+        .iter()
+        .map(|r| r["suppressions"][0]["kind"].as_str().unwrap())
+        .collect();
+    assert!(
+        kinds.contains(&"inSource") && kinds.contains(&"external"),
+        "{kinds:?}"
+    );
+    let just: Vec<&str> = results
+        .iter()
+        .map(|r| r["suppressions"][0]["justification"].as_str().unwrap())
+        .collect();
+    assert!(just.contains(&"used-in-tests: fixture"), "{just:?}");
+    assert!(just.contains(&"false-positive"), "{just:?}");
+}

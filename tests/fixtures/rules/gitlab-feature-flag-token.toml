@@ -1,0 +1,16 @@
+# Fixtures for `gitlab-feature-flag-token` (SCAN-GITLAB). Values are written as parts joined at test time, so this
+# file never holds a whole token. Format: to be verified against GitLab docs by the owner.
+
+expect_severity = "low"
+
+positive = [
+  ["glffct-", "0iAIUmnFliTcJmb8Sknz"],
+  ["glffct-", "aiF5sx7JnCTQTp9sc6uUE5005o_QYT3p8ky-eBHHV4"],
+]
+
+near_miss = [
+  # Too short a body.
+  ["glffct-", "ZR83cS1yNR9A"],
+  # Not at a word boundary.
+  ["x", "glffct-", "esAuM3FzaJ9lO7VakxGv1R41"],
+]

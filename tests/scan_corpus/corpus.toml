@@ -94,6 +94,69 @@ as = ".gitlab-ci.yml"
 expect = [{ line = 3, rule = "gitlab-pat" }]
 
 [[case]]
+id = "pos-vcs-gitlab-more-dotenv"
+family = "vcs"
+format = "dotenv"
+as = ".env"
+expect = [
+  { line = 2, rule = "gitlab-feed-token" },
+  { line = 3, rule = "gitlab-agent-token" },
+  { line = 4, rule = "gitlab-scim-token" },
+  { line = 5, rule = "gitlab-oauth-secret" },
+]
+
+[[case]]
+id = "pos-decode-k8s-secret-yaml"
+family = "decode"
+format = "yaml"
+as = "secret.yaml"
+expect = [{ line = 6, rule = "github-token" }]
+
+[[case]]
+id = "pos-decode-json-b64"
+family = "decode"
+format = "json"
+as = "config.json"
+expect = [{ line = 3, rule = "stripe-live-secret-key" }]
+
+[[case]]
+id = "pos-decode-url-dotenv"
+family = "decode"
+format = "dotenv"
+as = ".env"
+expect = [{ line = 2, rule = "connection-string-credentials" }]
+
+[[case]]
+id = "pos-decode-hex-shell"
+family = "decode"
+format = "shell"
+as = "run.sh"
+expect = [{ line = 2, rule = "npm-access-token" }]
+
+[[case]]
+id = "neg-decode-binary-and-hashes"
+family = "decode"
+format = "dotenv"
+as = ".env"
+
+[[case]]
+id = "pos-context-usage-shell"
+family = "context"
+format = "shell"
+as = "call.sh"
+expect = [{ line = 2, rule = "high-entropy-string" }]
+
+[[case]]
+id = "pos-context-test-path-dotenv"
+family = "context"
+format = "dotenv"
+as = "tests/fixtures/.env"
+expect = [
+  { line = 2, rule = "stripe-live-secret-key" },
+  { line = 3, rule = "sensitive-config-key" },
+]
+
+[[case]]
 id = "pos-vcs-github-shell"
 family = "vcs"
 format = "shell"
@@ -463,6 +526,12 @@ id = "neg-jwt-docs"
 family = "jwt"
 format = "text"
 as = "auth.txt"
+
+[[case]]
+id = "neg-gitlab-near-misses"
+family = "vcs"
+format = "dotenv"
+as = ".env"
 
 [[case]]
 id = "neg-chat-near-misses"

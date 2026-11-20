@@ -33,6 +33,7 @@
 //! | `{{uuid:SEED}}`            | a UUID                                            |
 //! | `{{hash:LEN:SEED}}`        | the first LEN hex digits of a SHA-256             |
 //! | `{{sri:SEED}}`             | `sha512-<base64>`, a lockfile integrity value     |
+//! | `{{b64:M}}`, `{{hexenc:M}}`, `{{urlenc:M}}` | the value marker `M` (`rule:ID#N`, `cat:a\|b`) as base64, hex or percent-encoded (RM-71) |
 //!
 //! Every value is derived from its SEED, so a run is the same on every machine.
 //!
@@ -206,12 +207,31 @@ fn marker(kind: &str, args: &str) -> String {
             "sha512-{}",
             base64::engine::general_purpose::STANDARD.encode(Sha512::digest(args.as_bytes()))
         ),
+        // RM-71: the value another marker makes, encoded: `{{b64:rule:ID#N}}`.
+        "b64" | "hexenc" | "urlenc" => {
+            let (inner_kind, inner_args) = args.split_once(':').expect("kind:args");
+            let inner = marker(inner_kind, inner_args);
+            match kind {
+                "b64" => base64::engine::general_purpose::STANDARD.encode(inner),
+                "hexenc" => hex(inner.as_bytes()),
+                _ => inner
+                    .bytes()
+                    .map(|b| {
+                        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+                            (b as char).to_string()
+                        } else {
+                            format!("%{b:02X}")
+                        }
+                    })
+                    .collect(),
+            }
+        }
         other => panic!("unknown marker {other:?}"),
     }
 }
 
 fn markers() -> Regex {
-    Regex::new(r"\{\{(rule|near|cat|gen|uuid|hash|sri):([^{}]*)\}\}").unwrap()
+    Regex::new(r"\{\{(rule|near|cat|gen|uuid|hash|sri|b64|hexenc|urlenc):([^{}]*)\}\}").unwrap()
 }
 
 fn fill(template: &str) -> String {
@@ -284,7 +304,10 @@ fn write_corpus(dir: &Path, manifest: &Manifest) {
     for case in &manifest.case {
         let folder = dir.join(&case.id);
         std::fs::create_dir_all(&folder).unwrap();
-        std::fs::write(folder.join(&case.r#as), fill(&template(case))).unwrap();
+        // `as` may name a folder (`tests/app.env`), for the path hints.
+        let file = folder.join(&case.r#as);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, fill(&template(case))).unwrap();
     }
 }
 
@@ -665,8 +688,8 @@ fn the_manifest_and_the_templates_agree() {
             case.id
         );
         assert!(
-            portable(&case.r#as),
-            "{}: `as` is not a portable file name",
+            case.r#as.split('/').all(portable),
+            "{}: `as` is not a portable file name (folders joined with `/` are fine)",
             case.id
         );
         let lines = template(case).lines().count();

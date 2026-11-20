@@ -166,5 +166,5 @@ fn scan_names_its_rule_set() {
         format!("builtin@{}", env!("CARGO_PKG_VERSION"))
     );
     // The command's own deprecated key stays beside it.
-    assert_eq!(doc["schema_version"], 2);
+    assert_eq!(doc["schema_version"], 3);
 }

@@ -15,7 +15,7 @@
 //! render(&results, OutputFormat::Pretty, &[]).unwrap();
 //! ```
 
-use super::models::{Confidence, ScanResults, Severity};
+use super::models::{Confidence, Finding, ScanResults, Severity};
 use crate::core::output::{Mode, Out, Report};
 use crate::utils::string::pluralize;
 use crate::utils::ui;
@@ -103,8 +103,10 @@ pub fn render(results: &ScanResults, format: OutputFormat, files: &[PathBuf]) ->
 /// What `scan` prints at the end: the results, and the files for the summary
 /// line of the pretty output. Findings carry a masked preview, never a value.
 ///
-/// `schema_version` 2 (C2): every finding carries `rule_id` and `severity`, and
-/// `summary.severity` counts by it. Version 1 had no field.
+/// `schema_version` 3 (SCAN-REASONS): findings carry `reason_code` when they
+/// are allowed or known, `summary.by_reason` counts by it, and the scanner adds
+/// `encoded` and `context` to a finding (RM-71, SCAN-CONTEXT). Version 2 added
+/// `rule_id` and `severity` (C2); version 1 had neither.
 #[derive(Debug)]
 pub struct ScanReport<'a> {
     pub results: &'a ScanResults,
@@ -125,7 +127,7 @@ impl serde::Serialize for ScanReport<'_> {
         }
         serde::Serialize::serialize(
             &JsonReport {
-                schema_version: 2,
+                schema_version: 3,
                 results: self.results,
                 summary: self.results.summary(),
             },
@@ -135,7 +137,7 @@ impl serde::Serialize for ScanReport<'_> {
 }
 
 impl Report for ScanReport<'_> {
-    const SCHEMA_VERSION: u32 = 2;
+    const SCHEMA_VERSION: u32 = 3;
 
     fn ruleset(&self) -> Option<&str> {
         Some(RULESET)
@@ -284,6 +286,14 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
                 .as_deref()
                 .unwrap_or("matches a live key format, not a placeholder");
             println!("     {}  {}", glyph::WARN.yellow(), why.dimmed());
+        }
+        // RM-71: the value as written is encoded; what matched is inside it.
+        if let Some(enc) = &finding.encoded {
+            println!(
+                "     {}  {}",
+                glyph::INFO.dimmed(),
+                format!("found inside a {enc}-encoded value, decoded once").dimmed()
+            );
         }
         // ⚠️ Printed before the revoke link on purpose. For a variable the
         // bundler publishes, revoking is not the first thing to do and is not
@@ -509,12 +519,25 @@ fn print_accepted(results: &ScanResults) {
     if crate::utils::ui::is_quiet() || (results.allowed.is_empty() && results.known.is_empty()) {
         return;
     }
+    // SCAN-REASONS: "3 allowed inline (2 used-in-tests, 1 false-positive)".
+    let counted = |label: &str, set: &[Finding]| {
+        let by = results.reason_counts(set.iter());
+        if by.is_empty() {
+            return format!("{} {label}", set.len());
+        }
+        let coded: usize = by.values().sum();
+        let mut each: Vec<String> = by.iter().map(|(c, n)| format!("{n} {c}")).collect();
+        if coded < set.len() {
+            each.push(format!("{} no reason", set.len() - coded));
+        }
+        format!("{} {label} ({})", set.len(), each.join(", "))
+    };
     let mut parts = Vec::new();
     if !results.allowed.is_empty() {
-        parts.push(format!("{} allowed inline", results.allowed.len()));
+        parts.push(counted("allowed inline", &results.allowed));
     }
     if !results.known.is_empty() {
-        parts.push(format!("{} known (baseline)", results.known.len()));
+        parts.push(counted("known (baseline)", &results.known));
     }
     println!(
         "  {}  {}{}",
@@ -860,7 +883,12 @@ fn sarif_document(results: &ScanResults) -> serde_json::Value {
     let mut rules: Vec<serde_json::Value> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
 
-    for f in &results.findings {
+    for f in results
+        .findings
+        .iter()
+        .chain(&results.allowed)
+        .chain(&results.known)
+    {
         let id = f.rule_id.clone();
         if seen.contains(&id) {
             continue;
@@ -886,6 +914,8 @@ fn sarif_document(results: &ScanResults) -> serde_json::Value {
     let sarif_results: Vec<serde_json::Value> = results
         .findings
         .iter()
+        .chain(&results.allowed)
+        .chain(&results.known)
         .map(|f| {
             let level = sarif_level(f.severity);
 
@@ -932,6 +962,27 @@ fn sarif_document(results: &ScanResults) -> serde_json::Value {
             // Where to revoke it, when the pattern knows.
             if let Some(url) = &f.action_url {
                 result["hostedViewerUri"] = serde_json::json!(url);
+            }
+            // SCAN-REASONS: an allowed or known finding is a suppressed
+            // result, with its reason as the justification, so GitHub shows
+            // it closed and why instead of open again.
+            let kind = match f.status {
+                super::models::Status::Allowed => Some("inSource"),
+                super::models::Status::Known => Some("external"),
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                let justification = match (&f.reason_code, &f.reason) {
+                    (Some(c), Some(r)) => format!("{c}: {r}"),
+                    (Some(c), None) => c.clone(),
+                    (None, Some(r)) => r.clone(),
+                    (None, None) => String::new(),
+                };
+                result["suppressions"] = serde_json::json!([{
+                    "kind": kind,
+                    "status": "accepted",
+                    "justification": justification,
+                }]);
             }
             result
         })
@@ -983,8 +1034,8 @@ mod tests {
         let (res, docs) = crate::core::json::capture(|| render(&results, OutputFormat::Json, &[]));
         res.unwrap();
         let v: serde_json::Value = serde_json::from_str(&docs[0]).unwrap();
-        assert_eq!(v["run"]["schema_version"], 2);
-        assert_eq!(v["schema_version"], 2);
+        assert_eq!(v["run"]["schema_version"], 3);
+        assert_eq!(v["schema_version"], 3);
         assert!(
             v["run"]["ruleset"]
                 .as_str()

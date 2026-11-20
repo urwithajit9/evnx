@@ -20,6 +20,12 @@
 #               never on text with no name; where it and an unconstrained rule
 #               match the same value, it wins. For a provider that reuses
 #               another's prefix (Clerk and UploadThing use Stripe's `sk_live_`).
+#   keywords    the lowercase literals that every match contains. The scan tries
+#               the rule only on text containing one of them (one Aho-Corasick
+#               pass), instead of running its regex everywhere. Every built-in
+#               rule has them, or is named with a reason in `KEYWORD_EXEMPT`
+#               (`rules::tests` fails otherwise); a test also checks that every
+#               keyword occurs in every positive fixture.
 #   entropy     optional: a match whose Shannon entropy is below this is dropped
 #
 # Severity, by kind: critical = direct access to money, cloud accounts, AI
@@ -50,6 +56,7 @@ name = "AWS Access Key"
 provider = "AWS"
 category = "cloud"
 regex = 'AKIA[0-9A-Z]{16}'
+keywords = ["akia"]
 confidence = "high"
 severity = "critical"
 url = "https://console.aws.amazon.com/iam"
@@ -64,6 +71,7 @@ name = "AWS Temporary Access Key (STS)"
 provider = "AWS"
 category = "cloud"
 regex = 'ASIA[0-9A-Z]{16}'
+keywords = ["asia"]
 confidence = "high"
 severity = "critical"
 url = "https://console.aws.amazon.com/iam"
@@ -76,6 +84,7 @@ name = "GitHub Fine-grained PAT"
 provider = "GitHub"
 category = "source-ci"
 regex = 'github_pat_[A-Za-z0-9_]{40,}'
+keywords = ["github_pat_"]
 confidence = "high"
 severity = "high"
 url = "https://github.com/settings/personal-access-tokens"
@@ -88,6 +97,7 @@ name = "Slack Token"
 provider = "Slack"
 category = "messaging-email"
 regex = 'xox[abprs]-[0-9A-Za-z-]{10,}|xapp-[0-9]-[A-Za-z0-9-]{10,}'
+keywords = ["xox", "xapp-"]
 confidence = "high"
 severity = "high"
 url = "https://api.slack.com/apps"
@@ -103,6 +113,7 @@ name = "Google API Key"
 provider = "Google"
 category = "cloud"
 regex = 'AIza[0-9A-Za-z_\-]{35}'
+keywords = ["aiza"]
 confidence = "high"
 severity = "low"
 url = "https://console.cloud.google.com/apis/credentials"
@@ -116,6 +127,7 @@ name = "JSON Web Token"
 provider = "JWT"
 category = "keys-certificates"
 regex = 'eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}'
+keywords = ["eyj"]
 confidence = "medium"
 severity = "medium"
 
@@ -125,6 +137,7 @@ name = "Stripe Secret Key (LIVE)"
 provider = "Stripe"
 category = "payments"
 regex = 'sk_live_[0-9a-zA-Z]{24,}'
+keywords = ["sk_live_"]
 confidence = "high"
 severity = "critical"
 url = "https://dashboard.stripe.com/apikeys"
@@ -140,6 +153,7 @@ name = "Clerk Secret Key (LIVE)"
 provider = "Clerk"
 category = "auth"
 regex = 'sk_live_[0-9a-zA-Z]{24,}'
+keywords = ["sk_live_"]
 names = ['(?i)^(NEXT_)?CLERK_(SECRET_KEY|API_KEY)$']
 confidence = "high"
 severity = "critical"
@@ -151,6 +165,7 @@ name = "UploadThing Secret Key"
 provider = "UploadThing"
 category = "saas"
 regex = 'sk_live_[0-9a-zA-Z]{24,}'
+keywords = ["sk_live_"]
 names = ['(?i)^UPLOADTHING_(SECRET|SECRET_KEY|TOKEN)$']
 confidence = "high"
 severity = "critical"
@@ -162,6 +177,7 @@ name = "Stripe Secret Key (test)"
 provider = "Stripe"
 category = "payments"
 regex = 'sk_test_[0-9a-zA-Z]{24,}'
+keywords = ["sk_test_"]
 confidence = "medium"
 severity = "low"
 url = "https://dashboard.stripe.com/apikeys"
@@ -178,6 +194,7 @@ name = "GitHub Token"
 provider = "GitHub"
 category = "source-ci"
 regex = '\b(?:(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,40}\b|ghs_[0-9]+_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)'
+keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
 confidence = "high"
 severity = "high"
 url = "https://github.com/settings/tokens"
@@ -191,6 +208,7 @@ name = "OpenAI API Key"
 provider = "OpenAI"
 category = "ai"
 regex = 'sk-(?:(?:proj|svcacct|admin)-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})'
+keywords = ["sk-"]
 confidence = "high"
 severity = "critical"
 url = "https://platform.openai.com/api-keys"
@@ -201,6 +219,7 @@ name = "Anthropic API Key"
 provider = "Anthropic"
 category = "ai"
 regex = 'sk-ant-api[0-9]{2}-[0-9a-zA-Z\-_]{95}'
+keywords = ["sk-ant-api"]
 confidence = "high"
 severity = "critical"
 url = "https://console.anthropic.com/settings/keys"
@@ -213,6 +232,7 @@ name = "OpenSSH Private Key"
 provider = "OpenSSH"
 category = "keys-certificates"
 regex = '-----BEGIN OPENSSH PRIVATE KEY-----'
+keywords = ["-----begin openssh private key-----"]
 confidence = "high"
 severity = "critical"
 
@@ -224,6 +244,7 @@ name = "Private Key"
 provider = "PEM"
 category = "keys-certificates"
 regex = '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----'
+keywords = ["private key-----"]
 confidence = "high"
 severity = "critical"
 
@@ -242,6 +263,7 @@ name = "Credentials in a connection string"
 provider = "Generic"
 category = "databases-backends"
 regex = '[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/?#@]+:[^\s/?#@]+@[^\s/?#]+'
+keywords = ["://"]
 confidence = "high"
 severity = "high"
 
@@ -253,6 +275,7 @@ name = "Stripe Restricted Key (LIVE)"
 provider = "Stripe"
 category = "payments"
 regex = '\brk_live_[0-9a-zA-Z]{24,}'
+keywords = ["rk_live_"]
 confidence = "high"
 severity = "high"
 url = "https://dashboard.stripe.com/apikeys"
@@ -264,6 +287,7 @@ name = "Azure Storage Account Key"
 provider = "Azure"
 category = "cloud"
 regex = 'AccountKey=[A-Za-z0-9+/]{86}=='
+keywords = ["accountkey="]
 confidence = "high"
 severity = "critical"
 url = "https://portal.azure.com/"
@@ -275,6 +299,7 @@ name = "Azure SAS Token"
 provider = "Azure"
 category = "cloud"
 regex = '''[?&]sv=[0-9]{4}-[0-9]{2}-[0-9]{2}&[^\s"'<>]*?\bsig=[A-Za-z0-9%+/]{30,}'''
+keywords = ["sig="]
 confidence = "high"
 severity = "high"
 url = "https://portal.azure.com/"
@@ -287,6 +312,7 @@ name = "Twilio API Key"
 provider = "Twilio"
 category = "messaging-email"
 regex = '\bSK[0-9a-fA-F]{32}\b'
+keywords = ["sk"]
 confidence = "medium"
 severity = "high"
 url = "https://console.twilio.com/"
@@ -297,6 +323,7 @@ name = "SendGrid API Key"
 provider = "SendGrid"
 category = "messaging-email"
 regex = '\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b'
+keywords = ["sg."]
 confidence = "high"
 severity = "high"
 url = "https://app.sendgrid.com/settings/api_keys"
@@ -308,6 +335,7 @@ name = "Mailgun API Key"
 provider = "Mailgun"
 category = "messaging-email"
 regex = '\bkey-[0-9a-zA-Z]{32}\b'
+keywords = ["key-"]
 confidence = "medium"
 severity = "high"
 url = "https://app.mailgun.com/settings/api_security"
@@ -319,6 +347,7 @@ name = "DigitalOcean Token"
 provider = "DigitalOcean"
 category = "cloud"
 regex = '\bdo[opr]_v1_[a-f0-9]{64}\b'
+keywords = ["dop_v1_", "doo_v1_", "dor_v1_"]
 confidence = "high"
 severity = "critical"
 url = "https://cloud.digitalocean.com/account/api/tokens"
@@ -329,6 +358,7 @@ name = "npm Access Token"
 provider = "npm"
 category = "source-ci"
 regex = '\bnpm_[A-Za-z0-9]{36}\b'
+keywords = ["npm_"]
 confidence = "high"
 severity = "high"
 url = "https://docs.npmjs.com/revoking-access-tokens"
@@ -340,6 +370,7 @@ name = "PyPI API Token"
 provider = "PyPI"
 category = "source-ci"
 regex = '\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}'
+keywords = ["pypi-"]
 confidence = "high"
 severity = "high"
 url = "https://pypi.org/manage/account/token/"
@@ -350,6 +381,7 @@ name = "Docker Hub Access Token"
 provider = "Docker Hub"
 category = "source-ci"
 regex = '\bdckr_pat_[A-Za-z0-9_-]{27}\b'
+keywords = ["dckr_pat_"]
 confidence = "high"
 severity = "high"
 url = "https://app.docker.com/settings/personal-access-tokens"
@@ -362,6 +394,7 @@ name = "Shopify Access Token"
 provider = "Shopify"
 category = "saas"
 regex = '\bshp(?:at|ca|pa|ss)_[a-fA-F0-9]{32}\b'
+keywords = ["shpat_", "shpca_", "shppa_", "shpss_"]
 confidence = "high"
 severity = "high"
 url = "https://help.shopify.com/en/manual/apps/app-types/custom-apps"
@@ -373,6 +406,7 @@ name = "HashiCorp Vault Token"
 provider = "HashiCorp"
 category = "infra-secrets"
 regex = '\bhv[sb]\.[A-Za-z0-9_-]{24,}'
+keywords = ["hvs.", "hvb."]
 confidence = "high"
 severity = "critical"
 
@@ -382,6 +416,7 @@ name = "GitLab Personal Access Token"
 provider = "GitLab"
 category = "source-ci"
 regex = '\bglpat-[A-Za-z0-9_-]{20}\b'
+keywords = ["glpat-"]
 confidence = "high"
 severity = "high"
 url = "https://gitlab.com/-/user_settings/personal_access_tokens"
@@ -392,6 +427,7 @@ name = "Hugging Face Token"
 provider = "Hugging Face"
 category = "ai"
 regex = '\bhf_[A-Za-z]{34}\b'
+keywords = ["hf_"]
 confidence = "high"
 severity = "high"
 url = "https://huggingface.co/settings/tokens"
@@ -403,6 +439,7 @@ name = "Heroku API Key"
 provider = "Heroku"
 category = "cloud"
 regex = '\bHRKU-AA[0-9a-zA-Z_-]{58}\b'
+keywords = ["hrku-aa"]
 confidence = "high"
 severity = "high"
 url = "https://dashboard.heroku.com/account/applications"
@@ -415,6 +452,7 @@ name = "Sentry DSN"
 provider = "Sentry"
 category = "observability"
 regex = 'https://[0-9a-f]{32}@o[0-9]+\.ingest(?:\.[a-z]{2})?\.sentry\.io/[0-9]+'
+keywords = [".sentry.io"]
 confidence = "high"
 severity = "low"
 url = "https://docs.sentry.io/concepts/key-terms/dsn-explainer/"
@@ -426,6 +464,7 @@ name = "Sentry Auth Token"
 provider = "Sentry"
 category = "observability"
 regex = '\bsntry[su]_[A-Za-z0-9+/=_-]{40,}'
+keywords = ["sntrys_", "sntryu_"]
 confidence = "high"
 severity = "high"
 url = "https://sentry.io/settings/account/api/auth-tokens/"
@@ -436,6 +475,7 @@ name = "Linear API Key"
 provider = "Linear"
 category = "saas"
 regex = '\blin_api_[A-Za-z0-9]{40}\b'
+keywords = ["lin_api_"]
 confidence = "high"
 severity = "high"
 url = "https://linear.app/settings/api"
@@ -458,6 +498,7 @@ name = "Telegram Bot Token"
 provider = "Telegram"
 category = "messaging-email"
 regex = '\b[0-9]{8,10}:AA[0-9A-Za-z_-]{33}\b'
+keywords = [":aa"]
 confidence = "high"
 severity = "high"
 url = "https://core.telegram.org/bots#how-do-i-create-a-bot"
@@ -469,6 +510,7 @@ name = "Slack Webhook URL"
 provider = "Slack"
 category = "messaging-email"
 regex = 'https://hooks\.slack\.com/services/T[A-Z0-9]{8,}/B[A-Z0-9]{8,}/[A-Za-z0-9]{24}'
+keywords = ["hooks.slack.com"]
 confidence = "high"
 severity = "medium"
 url = "https://api.slack.com/apps"
@@ -479,6 +521,7 @@ name = "Google OAuth Client Secret"
 provider = "Google"
 category = "auth"
 regex = '\bGOCSPX-[A-Za-z0-9_-]{28}\b'
+keywords = ["gocspx-"]
 confidence = "high"
 severity = "high"
 url = "https://console.cloud.google.com/apis/credentials"
@@ -495,6 +538,7 @@ name = "GitLab Runner Authentication Token"
 provider = "GitLab"
 category = "source-ci"
 regex = '\bglrt-[A-Za-z0-9_-]{20,}'
+keywords = ["glrt-"]
 confidence = "high"
 severity = "high"
 url = "https://docs.gitlab.com/ci/runners/runners_scope/"
@@ -506,6 +550,7 @@ name = "GitLab Deploy Token"
 provider = "GitLab"
 category = "source-ci"
 regex = '\bgldt-[A-Za-z0-9_-]{20,}'
+keywords = ["gldt-"]
 confidence = "high"
 severity = "high"
 url = "https://docs.gitlab.com/user/project/deploy_tokens/"
@@ -517,6 +562,7 @@ name = "GitLab Pipeline Trigger Token"
 provider = "GitLab"
 category = "source-ci"
 regex = '\bglptt-[0-9a-f]{40}\b'
+keywords = ["glptt-"]
 confidence = "high"
 severity = "high"
 url = "https://docs.gitlab.com/ci/triggers/"
@@ -528,6 +574,7 @@ name = "Groq API Key"
 provider = "Groq"
 category = "ai"
 regex = '\bgsk_[A-Za-z0-9]{48,}\b'
+keywords = ["gsk_"]
 confidence = "high"
 severity = "critical"
 url = "https://console.groq.com/keys"
@@ -540,6 +587,7 @@ name = "xAI API Key"
 provider = "xAI"
 category = "ai"
 regex = '\bxai-[A-Za-z0-9]{40,}\b'
+keywords = ["xai-"]
 confidence = "high"
 severity = "critical"
 url = "https://console.x.ai"
@@ -551,6 +599,7 @@ name = "Replicate API Token"
 provider = "Replicate"
 category = "ai"
 regex = '\br8_[A-Za-z0-9]{37}\b'
+keywords = ["r8_"]
 confidence = "high"
 severity = "critical"
 url = "https://replicate.com/account/api-tokens"
@@ -562,6 +611,7 @@ name = "Perplexity API Key"
 provider = "Perplexity"
 category = "ai"
 regex = '\bpplx-[A-Za-z0-9]{48}\b'
+keywords = ["pplx-"]
 confidence = "high"
 severity = "critical"
 url = "https://www.perplexity.ai/account/api/keys"
@@ -574,6 +624,7 @@ name = "Stripe Webhook Signing Secret"
 provider = "Stripe"
 category = "payments"
 regex = '\bwhsec_[A-Za-z0-9+/]{32,}'
+keywords = ["whsec_"]
 confidence = "high"
 severity = "high"
 url = "https://dashboard.stripe.com/webhooks"
@@ -586,6 +637,7 @@ name = "Databricks Personal Access Token"
 provider = "Databricks"
 category = "databases-backends"
 regex = '\bdapi[a-f0-9]{32}(?:-[0-9])?\b'
+keywords = ["dapi"]
 confidence = "high"
 severity = "high"
 url = "https://docs.databricks.com/admin/access-control/tokens.html"
@@ -598,6 +650,7 @@ name = "Atlassian API Token"
 provider = "Atlassian"
 category = "saas"
 regex = '\bAT[AC]TT3xFfG[A-Za-z0-9_=-]{100,}'
+keywords = ["atatt3xffg", "atctt3xffg"]
 confidence = "high"
 severity = "high"
 url = "https://id.atlassian.com/manage-profile/security/api-tokens"
@@ -610,6 +663,7 @@ name = "Bitbucket App Password"
 provider = "Bitbucket"
 category = "source-ci"
 regex = '\bATBB[A-Za-z0-9]{28,}\b'
+keywords = ["atbb"]
 confidence = "medium"
 severity = "high"
 url = "https://bitbucket.org/account/settings/app-passwords/"
@@ -622,6 +676,7 @@ name = "HCP Terraform API Token"
 provider = "HashiCorp"
 category = "infra-secrets"
 regex = '\b[A-Za-z0-9]{14}\.atlasv1\.[A-Za-z0-9_=-]{60,70}'
+keywords = [".atlasv1."]
 confidence = "high"
 severity = "critical"
 url = "https://app.terraform.io/app/settings/tokens"
@@ -634,6 +689,7 @@ name = "Pulumi Access Token"
 provider = "Pulumi"
 category = "infra-secrets"
 regex = '\bpul-[a-f0-9]{40}\b'
+keywords = ["pul-"]
 confidence = "high"
 severity = "critical"
 url = "https://app.pulumi.com/account/tokens"
@@ -646,6 +702,7 @@ name = "Doppler Token"
 provider = "Doppler"
 category = "infra-secrets"
 regex = '\bdp\.(?:st|pt|ct|sa)\.(?:[A-Za-z0-9_-]{1,64}\.)?[A-Za-z0-9]{40,}'
+keywords = ["dp."]
 confidence = "high"
 severity = "critical"
 url = "https://dashboard.doppler.com"
@@ -657,6 +714,7 @@ name = "Supabase Personal Access Token"
 provider = "Supabase"
 category = "databases-backends"
 regex = '\bsbp_[A-Za-z0-9]{40,}\b'
+keywords = ["sbp_"]
 confidence = "high"
 severity = "critical"
 url = "https://supabase.com/dashboard/account/tokens"
@@ -669,6 +727,7 @@ name = "Supabase Secret Key"
 provider = "Supabase"
 category = "databases-backends"
 regex = '\bsb_secret_[A-Za-z0-9_-]{20,}'
+keywords = ["sb_secret_"]
 confidence = "high"
 severity = "critical"
 url = "https://supabase.com/dashboard/project/_/settings/api-keys"
@@ -681,6 +740,7 @@ name = "age Secret Key"
 provider = "age"
 category = "keys-certificates"
 regex = 'AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}'
+keywords = ["age-secret-key-1"]
 confidence = "high"
 severity = "critical"
 
@@ -692,6 +752,7 @@ name = "New Relic User API Key"
 provider = "New Relic"
 category = "observability"
 regex = '\bNRAK-[A-Z0-9]{27}\b'
+keywords = ["nrak-"]
 confidence = "high"
 severity = "high"
 url = "https://one.newrelic.com/api-keys"
@@ -704,6 +765,7 @@ name = "Grafana Service Account Token"
 provider = "Grafana"
 category = "observability"
 regex = '\bglsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}\b'
+keywords = ["glsa_"]
 confidence = "high"
 severity = "high"
 
@@ -715,6 +777,7 @@ name = "Grafana Cloud Access Policy Token"
 provider = "Grafana"
 category = "observability"
 regex = '\bglc_[A-Za-z0-9+/]{32,400}'
+keywords = ["glc_"]
 confidence = "high"
 severity = "high"
 url = "https://grafana.com/orgs"
@@ -727,6 +790,7 @@ name = "Postman API Key"
 provider = "Postman"
 category = "saas"
 regex = '\bPMAK-[a-f0-9]{24}-[a-f0-9]{34}\b'
+keywords = ["pmak-"]
 confidence = "high"
 severity = "high"
 url = "https://go.postman.co/settings/me/api-keys"
@@ -739,6 +803,7 @@ name = "Notion Integration Token"
 provider = "Notion"
 category = "saas"
 regex = '\bntn_[0-9]{11}[A-Za-z0-9]{35}\b'
+keywords = ["ntn_"]
 confidence = "high"
 severity = "high"
 url = "https://www.notion.so/my-integrations"
@@ -783,7 +848,108 @@ name = "Azure DevOps Personal Access Token"
 provider = "Azure DevOps"
 category = "source-ci"
 regex = '\b(?:[A-Za-z0-9]{75}AZDO[A-Za-z0-9]{5}|[A-Za-z0-9]{76}AZDO[A-Za-z0-9]{4})\b'
-keywords = ["AZDO"]
+keywords = ["azdo"]
 confidence = "high"
 severity = "high"
 url = "https://dev.azure.com/_usersSettings/tokens"
+
+# ── GitLab tokens with no earlier rule (SCAN-GITLAB) ─────────────────────────
+# ⚠️ TO BE VERIFIED AGAINST GITLAB'S DOCUMENTATION BY THE OWNER. These seven
+# prefixes are the ones GitLab's "Token overview" lists
+# (https://docs.gitlab.com/security/tokens/) and nothing else about their format
+# was checked: no length or charset is documented that this file could cite. So,
+# as for `glcbt-` above, the body is any 20+ characters of the URL-safe set, and
+# confidence is medium until the owner has confirmed each prefix, length and
+# charset. A prefix that turns out not to be documented is to be deleted, with
+# its fixture file, as C12 did.
+
+# Reads the feeds (RSS and calendar) of everything its owner can see, including private issues.
+# Format: to be verified against GitLab docs (prefix `glft-`, body unverified).
+[[rules]]
+id = "gitlab-feed-token"
+name = "GitLab Feed Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglft-[A-Za-z0-9_-]{20,}'
+keywords = ["glft-"]
+confidence = "medium"
+severity = "medium"
+url = "https://docs.gitlab.com/user/profile/personal_access_tokens/#feed-token"
+
+# Lets whoever holds it create issues and merge requests as its owner by email.
+# Format: to be verified against GitLab docs (prefix `glimt-`, body unverified).
+[[rules]]
+id = "gitlab-incoming-mail-token"
+name = "GitLab Incoming Email Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglimt-[A-Za-z0-9_-]{20,}'
+keywords = ["glimt-"]
+confidence = "medium"
+severity = "medium"
+url = "https://docs.gitlab.com/administration/incoming_email/"
+
+# Authenticates a cluster's agent to GitLab.
+# Format: to be verified against GitLab docs (prefix `glagent-`, body unverified).
+[[rules]]
+id = "gitlab-agent-token"
+name = "GitLab Agent for Kubernetes Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglagent-[A-Za-z0-9_-]{20,}'
+keywords = ["glagent-"]
+confidence = "medium"
+severity = "high"
+url = "https://docs.gitlab.com/user/clusters/agent/"
+
+# A secret that authenticates webhook calls.
+# Format: to be verified against GitLab docs (prefix `glwt-`, body unverified).
+[[rules]]
+id = "gitlab-webhook-token"
+name = "GitLab Webhook Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglwt-[A-Za-z0-9_-]{20,}'
+keywords = ["glwt-"]
+confidence = "medium"
+severity = "medium"
+url = "https://docs.gitlab.com/user/project/integrations/webhooks/"
+
+# Provisions and removes users in a group through SCIM.
+# Format: to be verified against GitLab docs (prefix `glsoat-`, body unverified).
+[[rules]]
+id = "gitlab-scim-token"
+name = "GitLab SCIM Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglsoat-[A-Za-z0-9_-]{20,}'
+keywords = ["glsoat-"]
+confidence = "medium"
+severity = "high"
+url = "https://docs.gitlab.com/user/group/saml_sso/scim_setup/"
+
+# Read-only token an application uses to fetch its feature flags; designed to ship in a client.
+# Format: to be verified against GitLab docs (prefix `glffct-`, body unverified).
+[[rules]]
+id = "gitlab-feature-flag-token"
+name = "GitLab Feature Flags Client Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglffct-[A-Za-z0-9_-]{20,}'
+keywords = ["glffct-"]
+confidence = "medium"
+severity = "low"
+url = "https://docs.gitlab.com/operations/feature_flags/"
+
+# The secret of an OAuth application: with the application id it can request tokens for users who authorised it.
+# Format: to be verified against GitLab docs (prefix `gloas-`, body unverified).
+[[rules]]
+id = "gitlab-oauth-secret"
+name = "GitLab OAuth Application Secret"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bgloas-[A-Za-z0-9_-]{20,}'
+keywords = ["gloas-"]
+confidence = "medium"
+severity = "high"
+url = "https://docs.gitlab.com/integration/oauth_provider/"

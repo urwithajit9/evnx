@@ -3621,6 +3621,15 @@ pub struct ScanArgs {
     #[arg(long)]
     pub update_baseline: bool,
 
+    /// Why the findings `--update-baseline` adds are accepted: `used-in-tests`,
+    /// `false-positive` or `fix-later`.
+    ///
+    /// Stored in the baseline for the entries added by this run; entries
+    /// already there keep their reason. The summary counts allowed and known
+    /// findings by it. Inline, write `evnx:allow <rule> reason=used-in-tests`.
+    #[arg(long, value_name = "CODE", requires = "update_baseline")]
+    pub reason: Option<String>,
+
     /// Lowest confidence worth reporting: high, medium or low.
     ///
     /// Confidence is how sure evnx is that a match is a real credential of

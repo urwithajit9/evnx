@@ -11,7 +11,9 @@
 //! then a crate of their own, is SC-WP1 and SC-WP9.
 
 pub mod assign;
+pub mod checksum;
 mod confidence;
+pub mod decode;
 pub mod detector;
 pub mod engine;
 pub mod heuristic;

@@ -10,31 +10,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
-- **A "no" at a confirmation prompt now exits 4.** These commands printed
-  "Cancelled" and exited 0 when you answered no: `vault delete`, `vault leave`,
-  `vault revoke`, `vault rekey`, `org seats`, `org remove`, `org delete`,
-  `org leave`, `cloud push` (the shrink question and the production-file
-  question), `cloud delete-version`, `auth rotate-master-password`,
-  `auth token revoke`, `auth sessions revoke`, `auth sessions revoke-others`
-  and `auth devices disavow`. They now exit 4 after the same message, like
-  `set`, `remove` and `platform`. A script that treated a "no" as success
-  should accept 4 or pass `--yes`.
+- **Classic GitHub tokens that fail their checksum are no longer findings.** A
+  value that starts `ghp_`, `gho_`, `ghu_` or `ghr_` and has 36 characters after
+  it carries a checksum in its last six. A value whose checksum does not match
+  was never issued by GitHub, so it is dropped like a placeholder, whatever the
+  variable is called. A value that matches is reported with high confidence.
+  `ghs_` tokens and other lengths are not judged. CI that gated on made-up
+  `ghp_` values in test files now passes; real tokens are unaffected.
+
+- **Scan JSON is `schema_version` 3.** Findings that are allowed or in the
+  baseline carry `reason_code`, and `summary.by_reason` counts them. The
+  `run` header is unchanged. The SARIF output now lists allowed and baseline
+  findings as suppressed results, with the reason as the justification.
 
 ### Added
 
-- **The SBOM is attached to each release archive** as a signed CycloneDX
-  attestation: `gh attestation verify <archive> -R urwithajit9/evnx
-  --predicate-type https://cyclonedx.org/bom`.
-
-- **`evnx add custom NAME --from-file <path|->` and `evnx set NAME --from-file
-  <path|->`** read one value from a file or from standard input: a certificate,
-  a private key, a service-account JSON. Several lines are fine; the value is
-  written double-quoted with `\n` escapes, so `evnx get` and every dotenv
-  reader get it back exactly. At most 64 KiB; one final line break is dropped
-  (`--keep-trailing-newline` keeps it); a binary file needs `--base64`; the
-  command takes exactly one NAME and no `NAME=value`. The value is never
-  printed: a dry run says `118 bytes, 4 lines`. A source file inside a git
-  repository that is tracked or not ignored gets a warning.
 
 ### Changed
 
@@ -45,6 +35,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   token does not leave the machine.
 - `doctor --help` says that `--all` validates a project that has only a
   `[vars]` contract in `.evnx.toml` and no template.
+
+- **Every built-in scan rule declares keywords.** The scan tries a rule only on
+  text that contains one of its literal prefixes (one pass for all rules),
+  instead of running every expression everywhere. Findings do not change. A
+  test fails for a rule with no keywords unless it is listed with a reason.
 
 ### Fixed
 
@@ -64,7 +59,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A tracked source file with secrets gets a warning to untrack it and rotate
   them. `web.config` is not supported yet.
 
-### Fixed
 
 - **`add custom NAME=value` now writes the value to `.env` when the template
   lists NAME with another value** (such as an empty `NAME=`). It used to report

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "overall": {
-    "tp": 57,
+    "tp": 68,
     "fp": 0,
     "fn": 0,
     "precision": 1.0,
@@ -29,8 +29,22 @@
       "precision": 1.0,
       "recall": 1.0
     },
+    "context": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
     "database": {
       "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "decode": {
+      "tp": 4,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,
@@ -72,7 +86,7 @@
       "recall": 1.0
     },
     "vcs": {
-      "tp": 6,
+      "tp": 10,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,
@@ -88,7 +102,7 @@
       "recall": 1.0
     },
     "dotenv": {
-      "tp": 28,
+      "tp": 35,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,
@@ -102,14 +116,14 @@
       "recall": 1.0
     },
     "json": {
-      "tp": 5,
+      "tp": 6,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,
       "recall": 1.0
     },
     "shell": {
-      "tp": 6,
+      "tp": 8,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,
@@ -123,7 +137,7 @@
       "recall": 1.0
     },
     "yaml": {
-      "tp": 9,
+      "tp": 10,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,

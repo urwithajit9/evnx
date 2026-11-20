@@ -101,7 +101,7 @@ fn read() -> (Vec<String>, Vec<Row>) {
         rows.push(Row {
             line: i + 1,
             name: f[0].to_string(),
-            value: unescape(f[1]),
+            value: unescape(&f[1].replace("{{ghp_}}", "ghp_")),
             expect: [f[2], f[3], f[4], f[5]].map(unescape),
             note: f[6].to_string(),
         });

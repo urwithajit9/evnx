@@ -53,6 +53,14 @@ pub fn catalogue_ids() -> Vec<String> {
         .collect()
 }
 
+/// Built-in rules that declare no `keywords`, each with the reason. A rule
+/// belongs here only when no literal text is common to every match; anything
+/// with a fixed prefix or infix declares it (SCAN-KEYWORDS).
+pub const KEYWORD_EXEMPT: &[(&str, &str)] = &[(
+    "discord-bot-token",
+    "three dot-separated base64 parts with only a leading-character class; no fixed literal",
+)];
+
 /// `src/assets/rules.toml` as it is compiled in (C2, RM-50).
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -367,6 +375,42 @@ mod tests {
         PatternSet::compile(&rules).expect("the built-in rules compile");
     }
 
+    /// SCAN-KEYWORDS: every built-in rule declares keywords for the prefilter,
+    /// unless it is named in `KEYWORD_EXEMPT` with a reason; keywords are
+    /// lowercase; and the exemption list holds no stale or unexplained entry.
+    #[test]
+    fn every_builtin_rule_declares_keywords_or_is_exempt_with_a_reason() {
+        let rules = builtin_rules();
+        for r in &rules {
+            let id = r.id.as_deref().unwrap();
+            let kws = r.keywords.as_deref().unwrap_or(&[]);
+            let exempt = KEYWORD_EXEMPT.iter().find(|(e, _)| *e == id);
+            match exempt {
+                Some((_, reason)) => {
+                    assert!(kws.is_empty(), "{id} is exempt but declares keywords");
+                    assert!(!reason.trim().is_empty(), "{id} is exempt with no reason");
+                }
+                None => assert!(
+                    !kws.is_empty(),
+                    "{id} has no `keywords`: add the literal every match contains, \
+                     or list it in KEYWORD_EXEMPT with a reason"
+                ),
+            }
+            for k in kws {
+                assert!(
+                    !k.is_empty() && *k == k.to_ascii_lowercase(),
+                    "{id}: keyword {k:?} must be non-empty and lowercase"
+                );
+            }
+        }
+        for (id, _) in KEYWORD_EXEMPT {
+            assert!(
+                rules.iter().any(|r| r.id.as_deref() == Some(*id)),
+                "KEYWORD_EXEMPT names {id}, which is not a built-in rule"
+            );
+        }
+    }
+
     /// RM-90: every built-in names its provider and a category.
     #[test]
     fn every_builtin_rule_has_a_provider_and_category() {
@@ -479,7 +523,11 @@ mod tests {
                 "sk_test_51H1234567890abcdefghijk",
                 "Stripe Secret Key (test)",
             ),
-            ("ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8", "GitHub Token"),
+            (
+                "ghp_\
+A1b2C3d4E5f6G7h8I9j0K1l2M3n4Fx3dtsr8",
+                "GitHub Token",
+            ),
             ("-----BEGIN PRIVATE KEY-----", "Private Key"),
             ("-----BEGIN RSA PRIVATE KEY-----", "Private Key"),
         ] {

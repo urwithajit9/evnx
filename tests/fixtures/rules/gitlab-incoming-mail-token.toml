@@ -1,0 +1,16 @@
+# Fixtures for `gitlab-incoming-mail-token` (SCAN-GITLAB). Values are written as parts joined at test time, so this
+# file never holds a whole token. Format: to be verified against GitLab docs by the owner.
+
+expect_severity = "medium"
+
+positive = [
+  ["glimt-", "syHd1nFfpB9JtO6Z5XCi"],
+  ["glimt-", "CqpZmUegq80yrp10EOUGtFiHPA_ZoC61Hvr-D82wZJ"],
+]
+
+near_miss = [
+  # Too short a body.
+  ["glimt-", "5osQPLlAPhP6"],
+  # Not at a word boundary.
+  ["x", "glimt-", "HGpJRYaCZd4uddQCDBtMbqQ7"],
+]
