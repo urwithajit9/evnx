@@ -333,6 +333,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--project`, `--team`, `--token-file`, `--git-branch` and `--env` when they
   were given. The last line reads "No verdict: Vercel holds a newer value"
   instead of "the server holds a newer version". Exit code 14 is unchanged.
+- **`cloud run --min-version` names a command when it refuses.** Its footer
+  says "Run one of the commands above", and there was none. The refusal now
+  ends "See its versions with `evnx cloud history --vault <vault>`", one per
+  vault below the minimum.
 
 ---
 
