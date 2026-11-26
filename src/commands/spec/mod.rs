@@ -633,12 +633,12 @@ fn write_into_with(
 
     let has_vars = config::has_vars_section(&existing);
     if has_vars && !merge {
-        bail!(
+        return Err(crate::core::verdict::stopped(format!(
             "{} already has a [vars] section.\n\
              \x20 Pass --merge to add only the variables it does not declare yet;\n\
              \x20 existing entries are kept as they are.",
             ui::short_path(path)
-        );
+        )));
     }
 
     let new: Vec<&Entry> = entries

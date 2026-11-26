@@ -11,7 +11,7 @@ Error: .evnx.toml already has a [vars] section.
   Pass --merge to add only the variables it does not declare yet;
   existing entries are kept as they are.
 
-No verdict: evnx stopped at the error above. This is not a clean result.
+evnx stopped before making changes (exit 2). Run one of the commands above.
 [exit 2]
   ok: existing [vars]: refused (exit 2)
   ok: the file is untouched, byte for byte
@@ -56,7 +56,7 @@ Error: .evnx.toml already has a [vars] section.
   Pass --merge to add only the variables it does not declare yet;
   existing entries are kept as they are.
 
-No verdict: evnx stopped at the error above. This is not a clean result.
+evnx stopped before making changes (exit 2). Run one of the commands above.
 [exit 2]
   ok: FIXED I-179 (U8d): an inline vars table is seen and refused (exit 2)
 

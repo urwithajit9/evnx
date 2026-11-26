@@ -218,7 +218,7 @@ impl MigrationDestination for GitHubDestination {
         // ── What GitHub would refuse, before anything else (I-267) ────────────
         let refused = refused_by_github(secrets);
         if !refused.is_empty() {
-            anyhow::bail!(
+            return Err(crate::core::verdict::stopped(format!(
                 "GitHub would refuse {}:\n  {}\n\n\
                  Rename them in the .env, add a prefix with --add-prefix, or leave \
                  them out with --exclude. Nothing was uploaded.",
@@ -228,7 +228,7 @@ impl MigrationDestination for GitHubDestination {
                     "these secrets"
                 },
                 refused.join("\n  ")
-            );
+            )));
         }
 
         opts.out.status(format!(

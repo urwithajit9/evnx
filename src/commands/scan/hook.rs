@@ -245,7 +245,7 @@ pub fn install(cwd: &Path, kind: Kind) -> Result<PathBuf> {
         Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
     };
     if let Some(name) = existing.as_deref().and_then(manager) {
-        bail!(
+        return Err(crate::core::verdict::stopped(format!(
             "{name} manages {}; two managers on one hook fight. Add evnx to \
              .pre-commit-config.yaml instead (prek reads the same file):\n\n\
              - repo: https://github.com/urwithajit9/evnx\n  \
@@ -257,7 +257,7 @@ pub fn install(cwd: &Path, kind: Kind) -> Result<PathBuf> {
             env!("CARGO_PKG_VERSION"),
             kind.manager_hook(),
             kind.manager_install(),
-        );
+        )));
     }
     let text = match &existing {
         Some(t) => {

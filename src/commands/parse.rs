@@ -57,10 +57,10 @@ struct ProblemOut {
 /// the file has problems; returns an error only when it could not be read.
 pub fn run(env: &str, json: bool, values: bool, show_values: bool) -> Result<Verdict> {
     if values && !show_values && std::io::IsTerminal::is_terminal(&std::io::stdout()) {
-        anyhow::bail!(
+        return Err(crate::core::verdict::stopped(
             "--values prints every value in plain text, and stdout is a terminal, \
-             where it stays in the scrollback. Pipe it, or pass --show-values."
-        );
+             where it stays in the scrollback. Pipe it, or pass --show-values.",
+        ));
     }
 
     let (file, content) = if env == "-" {

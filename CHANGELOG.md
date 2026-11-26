@@ -263,6 +263,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   evnx's block in `.gitignore`, beside `.env*`, and makes the copies
   owner-only: mode 600, or on Windows, where doctor checks no modes, an
   owner-only ACL. evnx's own `*.bak` entry is unchanged.
+- **Refusals that name the next command end with "evnx stopped before making
+  changes (exit 2). Run one of the commands above."** instead of "No verdict:
+  evnx stopped at the error above. This is not a clean result.", which read as
+  a crash: `scan hook install` where pre-commit or prek manages the hook,
+  `spec init` when `.evnx.toml` already has `[vars]`, `parse --values` on a
+  terminal, and `migrate --to github` with names GitHub reserves. The exit code
+  (2), the message and JSON output are unchanged.
 
 ### Fixed
 
