@@ -290,6 +290,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names. `init --yes` keeps the template, writes `.env` from it and adds the
   `.gitignore` lines and the contract. For `doctor DIR` it is
   `evnx init --yes --dir DIR`.
+- **`parse --show-values` implies `--values`.** On its own it was a usage
+  error asking for `--values`; it now prints the values, also to a terminal.
 
 ### Fixed
 

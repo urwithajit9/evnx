@@ -17,7 +17,7 @@ Options:
           Refused when stdout is a terminal, unless --show-values: a value printed there stays in the scrollback.
 
       --show-values
-          Print --values to a terminal anyway
+          Print the values to a terminal anyway. Implies --values
 
       --no-color
           Disable colored output

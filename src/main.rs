@@ -1442,7 +1442,8 @@ fn run() -> Result<Verdict, EvnxError> {
             commands::parse::run(
                 &env,
                 output.resolved() == evnx::cli::args::Format::Json,
-                values,
+                // `--show-values` alone was a usage error asking for `--values`.
+                values || show_values,
                 show_values,
             )
         }
