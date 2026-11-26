@@ -1323,6 +1323,33 @@ struct RevokeReport<'a> {
     /// False with `--no-rekey`.
     rekey: bool,
     vaults: Vec<VaultOutcome>,
+    /// Rotate at the source: the credentials the member could read, by name,
+    /// with who issued each and where to replace it. Empty in a dry run.
+    rotate: Vec<super::checklist::RotateEntry>,
+    /// The other names they could read, which do not look like credentials.
+    other_names: Vec<String>,
+    /// What the names cover, one line per vault.
+    rotate_notes: Vec<String>,
+}
+
+impl<'a> RevokeReport<'a> {
+    fn new(
+        user: &'a str,
+        dry_run: bool,
+        rekey: bool,
+        vaults: Vec<VaultOutcome>,
+        list: &super::checklist::Checklist,
+    ) -> Self {
+        RevokeReport {
+            user,
+            dry_run,
+            rekey,
+            vaults,
+            rotate: list.rotate.clone(),
+            other_names: list.other.clone(),
+            rotate_notes: list.notes.clone(),
+        }
+    }
 }
 
 /// A line of the revoke's own text: on stdout, or on stderr when stdout
@@ -1560,23 +1587,48 @@ fn plan_all(
     Ok((planned, skipped))
 }
 
+/// What one vault's revoke did: versions re-encrypted (`None` with
+/// `--no-rekey`), and the names the member could read there.
+struct Done {
+    versions: Option<usize>,
+    names: Option<super::checklist::VaultNames>,
+}
+
 /// Remove `p.leaving` from one vault: a bare removal with `--no-rekey`
-/// (`unlocked` is `None`), otherwise the re-key that removes them. Returns the
-/// number of versions re-encrypted.
+/// (`unlocked` is `None`), otherwise the re-key that removes them.
 fn revoke_planned(
     client: &Client,
     p: &Planned,
     unlocked: Option<&auth::Unlocked>,
     verbose: bool,
-) -> Result<Option<usize>> {
+) -> Result<Done> {
+    use super::checklist::{NameSource, VaultNames};
+
     let Some(unlocked) = unlocked else {
+        // Nothing is decrypted without a re-key, so the names are the ones the
+        // server recorded at each push. Read before the removal, while this is
+        // still a vault the caller can list; a failure only loses the checklist.
+        let names = api_path(&["vaults", &p.vault.id, "versions"])
+            .ok()
+            .and_then(|path| client.get::<super::sync::VersionList>(&path).ok())
+            .map(|list| {
+                let mut v = VaultNames::new(&p.label, NameSource::ServerRecorded);
+                v.versions = list.versions.len();
+                for version in list.versions {
+                    v.names.extend(version.key_names);
+                }
+                v
+            });
         client.delete(&api_path(&[
             "vaults",
             &p.vault.id.to_string(),
             "members",
             &p.leaving.user_id.to_string(),
         ])?)?;
-        return Ok(None);
+        return Ok(Done {
+            versions: None,
+            names,
+        });
     };
     // The rotation itself lives in `rotate_vault_key` so that `evnx vault rekey`
     // can do the same thing without removing anyone. `remove_user_id` is what
@@ -1585,16 +1637,20 @@ fn revoke_planned(
     // a member of a vault whose key has already moved, nor one where they are
     // gone but it has not.
     let refs: Vec<&MemberSummary> = p.remaining.iter().collect();
+    let mut names = VaultNames::new(&p.label, NameSource::Decrypted);
     let total = rotate_vault_key(
         client,
         &p.vault,
-        &p.label,
         unlocked,
         &refs,
         Some(&p.leaving.user_id),
+        Some(&mut names),
         verbose,
     )?;
-    Ok(Some(total))
+    Ok(Done {
+        versions: Some(total),
+        names: Some(names),
+    })
 }
 
 /// The master password, read and proven once, unless `--no-rekey` needs none.
@@ -1660,12 +1716,13 @@ fn revoke_one_vault(
     if opts.dry_run {
         if json {
             crate::core::json::emit(
-                &RevokeReport {
-                    user: user_email,
-                    dry_run: true,
-                    rekey: !opts.no_rekey,
-                    vaults: vec![VaultOutcome::new(&p.vault, "would_revoke")],
-                },
+                &RevokeReport::new(
+                    user_email,
+                    true,
+                    !opts.no_rekey,
+                    vec![VaultOutcome::new(&p.vault, "would_revoke")],
+                    &Default::default(),
+                ),
                 1,
                 None,
             )?;
@@ -1715,18 +1772,14 @@ fn revoke_one_vault(
     }
 
     let unlocked = unlock_once(client, opts.no_rekey, opts.password_stdin)?;
-    let total = revoke_planned(client, &p, unlocked.as_ref(), opts.verbose)?;
+    let done = revoke_planned(client, &p, unlocked.as_ref(), opts.verbose)?;
+    let list = super::checklist::build(done.names.as_slice());
 
     if json {
-        let mut done = VaultOutcome::new(&p.vault, "revoked");
-        done.versions_reencrypted = total;
+        let mut outcome = VaultOutcome::new(&p.vault, "revoked");
+        outcome.versions_reencrypted = done.versions;
         crate::core::json::emit(
-            &RevokeReport {
-                user: user_email,
-                dry_run: false,
-                rekey: !opts.no_rekey,
-                vaults: vec![done],
-            },
+            &RevokeReport::new(user_email, false, !opts.no_rekey, vec![outcome], &list),
             1,
             None,
         )?;
@@ -1734,12 +1787,13 @@ fn revoke_one_vault(
     }
 
     // ── The simple path ──────────────────────────────────────────────────────
-    let Some(total) = total else {
+    let Some(total) = done.versions else {
         crate::say!("  {} removed {user_email} from {label}", "✓".green());
         println!(
             "  {}",
             "The vault key was NOT rotated. Rotate the secrets themselves.".yellow()
         );
+        print_checklist(&list, done.names.is_some(), false);
         return Ok(Verdict::Clean);
     };
 
@@ -1762,8 +1816,23 @@ fn revoke_one_vault(
         "They may still hold copies of what they could already read —".yellow()
     );
     println!("  {}", "rotate those secrets at their source.".yellow());
+    print_checklist(&list, true, false);
 
     Ok(Verdict::Clean)
+}
+
+/// The "rotate at the source" checklist, or why there is none (the names
+/// could not be listed). Names only.
+fn print_checklist(list: &super::checklist::Checklist, have_names: bool, several: bool) {
+    if have_names {
+        super::checklist::print(list, several);
+    } else {
+        println!(
+            "  {}",
+            "The names they could read could not be listed; check them with `evnx cloud history`."
+                .dimmed()
+        );
+    }
 }
 
 /// `evnx vault revoke --all-vaults --user <email>`: offboarding in one command.
@@ -1790,16 +1859,14 @@ fn revoke_all_vaults(client: &Client, user_email: &str, opts: &RevokeOptions) ->
     } else {
         Verdict::Findings
     };
-    let report = |vaults: Vec<VaultOutcome>, dry_run: bool| RevokeReport {
-        user: user_email,
-        dry_run,
-        rekey: !opts.no_rekey,
-        vaults,
+    let none = super::checklist::Checklist::default();
+    let report = |vaults: Vec<VaultOutcome>, dry_run: bool, list: &super::checklist::Checklist| {
+        RevokeReport::new(user_email, dry_run, !opts.no_rekey, vaults, list)
     };
 
     if planned.is_empty() && skipped.is_empty() {
         if json {
-            crate::core::json::emit(&report(Vec::new(), opts.dry_run), 1, None)?;
+            crate::core::json::emit(&report(Vec::new(), opts.dry_run, &none), 1, None)?;
         } else {
             println!("  {user_email} is not a member of any vault you can see. Nothing to do.");
         }
@@ -1852,7 +1919,7 @@ fn revoke_all_vaults(client: &Client, user_email: &str, opts: &RevokeOptions) ->
 
     if planned.is_empty() {
         if json {
-            crate::core::json::emit(&report(skipped_outcomes(), opts.dry_run), 1, None)?;
+            crate::core::json::emit(&report(skipped_outcomes(), opts.dry_run, &none), 1, None)?;
         }
         tell(
             json,
@@ -1868,7 +1935,7 @@ fn revoke_all_vaults(client: &Client, user_email: &str, opts: &RevokeOptions) ->
                 .map(|p| VaultOutcome::new(&p.vault, "would_revoke"))
                 .collect();
             vaults.extend(skipped_outcomes());
-            crate::core::json::emit(&report(vaults, true), 1, None)?;
+            crate::core::json::emit(&report(vaults, true, &none), 1, None)?;
         }
         tell(json, "  Dry run: nothing was changed.");
         return Ok(verdict);
@@ -1894,6 +1961,8 @@ fn revoke_all_vaults(client: &Client, user_email: &str, opts: &RevokeOptions) ->
 
     let mut outcomes = Vec::with_capacity(planned.len() + skipped.len());
     let mut failure: Option<anyhow::Error> = None;
+    let mut read = Vec::new();
+    let mut unnamed = Vec::new();
     for p in &planned {
         if failure.is_some() {
             outcomes.push(VaultOutcome::new(&p.vault, "not_attempted"));
@@ -1902,7 +1971,8 @@ fn revoke_all_vaults(client: &Client, user_email: &str, opts: &RevokeOptions) ->
         crate::say!();
         crate::say!("  {}", p.label.bold());
         match revoke_planned(client, p, unlocked.as_ref(), opts.verbose) {
-            Ok(total) => {
+            Ok(done) => {
+                let total = done.versions;
                 match total {
                     Some(n) => crate::say!(
                         "  {} removed {user_email} from {} and rotated the vault key ({n} version(s) re-encrypted)",
@@ -1915,9 +1985,13 @@ fn revoke_all_vaults(client: &Client, user_email: &str, opts: &RevokeOptions) ->
                         p.label
                     ),
                 }
-                let mut done = VaultOutcome::new(&p.vault, "revoked");
-                done.versions_reencrypted = total;
-                outcomes.push(done);
+                let mut outcome = VaultOutcome::new(&p.vault, "revoked");
+                outcome.versions_reencrypted = total;
+                outcomes.push(outcome);
+                match done.names {
+                    Some(n) => read.push(n),
+                    None => unnamed.push(p.label.clone()),
+                }
             }
             Err(e) => {
                 outcomes.push(VaultOutcome::new(&p.vault, "failed").because(e.to_string()));
@@ -1927,9 +2001,16 @@ fn revoke_all_vaults(client: &Client, user_email: &str, opts: &RevokeOptions) ->
     }
     outcomes.extend(skipped_outcomes());
 
+    let mut list = super::checklist::build(&read);
+    for label in &unnamed {
+        list.notes.push(format!(
+            "{label}: the names could not be listed; check them with `evnx cloud history --vault {label}`."
+        ));
+    }
+
     // ── Summary ──────────────────────────────────────────────────────────────
     if json {
-        crate::core::json::emit(&report(outcomes, false), 1, None)?;
+        crate::core::json::emit(&report(outcomes, false, &list), 1, None)?;
     } else {
         let names = |result: &str| -> Vec<String> {
             outcomes
@@ -1971,6 +2052,7 @@ fn revoke_all_vaults(client: &Client, user_email: &str, opts: &RevokeOptions) ->
                 );
                 println!("  {}", "rotate those secrets at their source.".yellow());
             }
+            print_checklist(&list, true, read.len() + unnamed.len() > 1);
         }
     }
 
@@ -2117,7 +2199,7 @@ pub fn rekey(
     // `None` — nobody is being removed, which is the whole difference from
     // `revoke`. The field is omitted from the request entirely, and the server
     // treats an absent `remove_user_id` as a pure rotation.
-    let total = rotate_vault_key(&client, &vault, &label, &unlocked, &everyone, None, verbose)?;
+    let total = rotate_vault_key(&client, &vault, &unlocked, &everyone, None, None, verbose)?;
 
     crate::say!();
     crate::say!("  {} rotated the key for {label}", "\u{2713}".green());
@@ -2185,10 +2267,10 @@ pub fn rekey(
 fn rotate_vault_key(
     client: &Client,
     vault: &VaultSummary,
-    label: &str,
     unlocked: &auth::Unlocked,
     wrap_for: &[&MemberSummary],
     remove_user_id: Option<&str>,
+    mut names: Option<&mut super::checklist::VaultNames>,
     verbose: bool,
 ) -> Result<usize> {
     use evnx_crypto::{
@@ -2197,6 +2279,8 @@ fn rotate_vault_key(
         wrap_vault_key_for_user, wrap_vault_key_with_master_key,
     };
 
+    let label = format!("{}/{}", vault.name, vault.environment);
+    let label = label.as_str();
     let my_key: MyWrappedKey =
         client.get(&api_path(&["vaults", &vault.id.to_string(), "my-key"])?)?;
 
@@ -2264,6 +2348,24 @@ fn rotate_vault_key(
         // ⚠️ The same AAD on both sides. `vault_aad` binds a blob to
         // (vault_id, version), so version `n` must stay version `n`'s.
         let aad = vault_aad(&vault.id, n as u32);
+
+        // REVOKE-CHECKLIST: the names this version holds, for "rotate at the
+        // source". Only names leave this block; the plaintext is wiped when it
+        // drops. A blob that does not open fails just below, with its own
+        // message.
+        if let Some(names) = names.as_deref_mut() {
+            names.versions += 1;
+            if let Ok(plain) = evnx_crypto::decrypt_vault(&old_blob, &old_key, &aad) {
+                let plain = zeroize::Zeroizing::new(plain);
+                let (found, note) = super::sync::read_key_names(&plain);
+                if note.is_some() {
+                    names.unreadable.push(n);
+                } else {
+                    names.names.extend(found);
+                }
+            }
+        }
+
         let fresh = reencrypt_vault(&old_blob, &old_key, &new_key, &aad)
             .map_err(|_| anyhow!("could not re-encrypt version {n} — is your key current?"))?;
 

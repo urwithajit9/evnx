@@ -185,6 +185,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `vault revoke <vault>` takes `--dry-run` and `--json` too. Your own address
   is refused: use `evnx vault leave`.
 
+- **`evnx vault revoke` ends with a "rotate at the source" checklist.**
+  Revoking cannot recall what the person could already read, so it lists the
+  names of the credentials in the vault, grouped by who issued them, with the
+  page where each is replaced when evnx knows one (`STRIPE_SECRET_KEY` under
+  Stripe, `AWS_SECRET_ACCESS_KEY` under AWS); names it cannot place are listed
+  as "provider not known", and names that do not look like credentials are
+  listed on one line. Only names are shown, never a value. The names come from
+  every version in the vault, read while it is re-keyed, so no second password
+  is asked; with `--no-rekey` they are the names the server recorded at each
+  push, and the output says they were not checked. A version deleted earlier
+  is not covered, and the output says so. `--json` carries the list as
+  `rotate` (name, provider, url, vaults), with `other_names` and
+  `rotate_notes`.
+
 ### Changed
 
 - The `evnx-scan-push` hook in `.pre-commit-hooks.yaml` now scans the commits

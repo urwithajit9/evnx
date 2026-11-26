@@ -1184,7 +1184,7 @@ fn unwrap_shared_vault_key(
 /// Returns the names plus an optional note when the file could not be parsed. A
 /// parse failure is not fatal: the ciphertext carries the exact bytes either way,
 /// and refusing to push a file the user explicitly named would be unhelpful.
-fn read_key_names(plaintext: &[u8]) -> (Vec<String>, Option<String>) {
+pub(crate) fn read_key_names(plaintext: &[u8]) -> (Vec<String>, Option<String>) {
     let Ok(text) = std::str::from_utf8(plaintext) else {
         return (
             Vec::new(),

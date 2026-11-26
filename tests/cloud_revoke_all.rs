@@ -525,6 +525,8 @@ fn n14_1_json_shape() {
         out.stdout
     );
     let doc: serde_json::Value = serde_json::from_str(&out.stdout).expect(&out.stdout);
+    assert_eq!(doc["run"]["tool"], "evnx");
+    assert_eq!(doc["run"]["schema_version"], 1);
     assert_eq!(doc["user"], BOB);
     assert_eq!(doc["dry_run"], false);
     assert_eq!(doc["rekey"], true);
@@ -549,6 +551,22 @@ fn n14_1_json_shape() {
         ]
     );
     assert_eq!(doc["vaults"][0]["versions_reencrypted"], 2);
+    // REVOKE-CHECKLIST in JSON: names, provider, url, vaults.
+    let rotate = doc["rotate"].as_array().unwrap();
+    let stripe = rotate
+        .iter()
+        .find(|e| e["name"] == "STRIPE_SECRET_KEY")
+        .expect("STRIPE_SECRET_KEY in rotate");
+    assert_eq!(stripe["provider"], "Stripe");
+    assert_eq!(stripe["url"], "https://dashboard.stripe.com/apikeys");
+    assert_eq!(
+        stripe["vaults"],
+        serde_json::json!(["app/production", "api/staging"])
+    );
+    let db = rotate.iter().find(|e| e["name"] == "DATABASE_URL").unwrap();
+    assert!(db["provider"].is_null() && db["url"].is_null(), "{db}");
+    assert_eq!(doc["other_names"], serde_json::json!(["PORT"]));
+    assert_eq!(doc["rotate_notes"].as_array().unwrap().len(), 2);
     assert!(
         doc["vaults"][2]["reason"]
             .as_str()
@@ -694,5 +712,120 @@ fn n14_1_one_vault_dry_run_json_sends_no_change() {
     posts.assert();
     for (_, m) in f.swaps {
         assert!(!m.matched());
+    }
+}
+
+/// REVOKE-CHECKLIST for one vault: the names its versions hold (read while
+/// re-keying, with no second password), by provider, and never a value.
+#[test]
+fn revoke_checklist_after_one_vault() {
+    let f = fixture(Options {
+        fail_app: false,
+        with_web: false,
+    });
+    let out = signed_in(
+        &Project::new(),
+        &f.server.url(),
+        &[
+            "vault",
+            "revoke",
+            "app",
+            "--user",
+            BOB,
+            "-y",
+            "--password-stdin",
+        ],
+        Some(&password()),
+    );
+    out.assert_code(0);
+    let o = &out.stdout;
+    assert!(
+        o.contains("removed bob@example.com from app/production and rotated the vault key"),
+        "{o}"
+    );
+    assert!(
+        o.contains("    Stripe  https://dashboard.stripe.com/apikeys\n      STRIPE_SECRET_KEY\n"),
+        "{o}"
+    );
+    assert!(o.contains("      AWS_SECRET_ACCESS_KEY\n"), "{o}");
+    assert!(o.contains("      DATABASE_URL\n"), "{o}");
+    assert!(
+        !o.contains("(app/production)"),
+        "one vault names no vaults per line:\n{o}"
+    );
+    assert!(
+        o.contains("A version deleted earlier may have held more."),
+        "{o}"
+    );
+    assert_no_value(&out);
+}
+
+/// With `--no-rekey` nothing is decrypted: the checklist uses the names the
+/// server recorded, and says they were not checked.
+#[test]
+fn revoke_checklist_without_rekey_uses_the_recorded_names() {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(r#"{{"vaults":[{}]}}"#, vault_row(APP, 1)))
+        .create();
+    s.mock("GET", format!("/api/v1/vaults/{}/members", APP.0).as_str())
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"members":[{},{}]}}"#,
+            member("u-me", "me@example.com", "owner", true),
+            member("u-bob", BOB, "developer", false)
+        ))
+        .create();
+    s.mock("GET", format!("/api/v1/vaults/{}/versions", APP.0).as_str())
+        .with_status(200)
+        .with_body(
+            r#"{"versions":[{"version_num":1,"key_count":2,"key_names":["STRIPE_SECRET_KEY","PORT"],
+            "blob_hash":"h1","blob_size_bytes":40,"pushed_by":"u-me","pushed_at":"2026-10-20T09:00:00Z"}]}"#,
+        )
+        .create();
+    let delete = s
+        .mock(
+            "DELETE",
+            format!("/api/v1/vaults/{}/members/u-bob", APP.0).as_str(),
+        )
+        .with_status(204)
+        .expect(1)
+        .create();
+    let never = [
+        s.mock("GET", mockito::Matcher::Regex("/my-key$".into()))
+            .expect(0)
+            .create(),
+        s.mock("GET", "/api/v1/auth/me").expect(0).create(),
+    ];
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "vault",
+            "revoke",
+            "app",
+            "--user",
+            BOB,
+            "-y",
+            "--no-rekey",
+            "--json",
+        ],
+        None,
+    );
+    out.assert_code(0);
+    let doc: serde_json::Value = serde_json::from_str(&out.stdout).expect(&out.stdout);
+    assert_eq!(doc["rekey"], false);
+    assert_eq!(doc["rotate"][0]["name"], "STRIPE_SECRET_KEY");
+    assert!(
+        doc["rotate_notes"][0]
+            .as_str()
+            .unwrap()
+            .contains("not checked against the contents"),
+        "{doc}"
+    );
+    delete.assert();
+    for m in never {
+        m.assert();
     }
 }

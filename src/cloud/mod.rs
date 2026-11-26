@@ -46,6 +46,7 @@
 pub mod audit;
 pub mod auth;
 pub mod binding;
+pub(crate) mod checklist;
 pub mod client;
 pub mod config;
 pub mod creds;
