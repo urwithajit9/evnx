@@ -102,6 +102,8 @@ What a folder walk reads:\n\
 \x20 1 MiB (--max-file-size). A file named on the command line is always read.\n\
 \x20 In a git repository, findings in files git ignores and does not track\n\
 \x20 are summarised, not counted (--include-ignored counts them).\n\
+\x20 Lockfiles (package-lock.json, pnpm-lock.yaml, yarn.lock, Cargo.lock, go.sum\n\
+\x20 and the like) get the key-format rules only, not name or entropy checks.\n\
 \n\
 Encoded values:\n\
 \x20 a value of 16 to 4096 characters that is base64, hex or percent-encoded\n\

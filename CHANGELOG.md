@@ -244,6 +244,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reason=used-in-tests`, or `evnx scan --update-baseline`), and is said to be
   in a test folder when it is. When both kinds are found, the rewrite steps
   name only the files with a key match.
+- **Lockfiles get the key-format rules only.** In `package-lock.json`,
+  `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`,
+  `Cargo.lock`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, `composer.lock`,
+  `Gemfile.lock` and `go.sum`, in any folder, `scan` no longer judges a key by
+  its name or a value by its entropy: a package such as
+  `@radix-ui/react-password-toggle-field` was reported as a high "Sensitive
+  config key". Every format rule still runs, so a password in a `resolved`
+  registry URL or a real key is still found. JSON `files[]` gives such a file
+  the note "lockfile: only key-format rules, no name or entropy checks", and
+  `-v` prints it.
 - **`doctor` says "git would commit it" for an env file git does not
   ignore**, instead of "NOT in .gitignore": the answer is git's own, so a
   global excludes file or `.git/info/exclude` counts. The line reads

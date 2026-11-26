@@ -144,6 +144,7 @@ fn every_positive_is_found_in_a_dotenv_and_in_yaml() {
                     document: None,
                     leaves: None,
                     registry: &registry,
+                    rules_only: false,
                 };
                 if !engine::scan_text(&text, &ctx)
                     .iter()

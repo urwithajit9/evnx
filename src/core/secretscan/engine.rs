@@ -70,6 +70,36 @@ pub struct Context<'a> {
     pub leaves: Option<&'a [Leaf]>,
     /// The detectors, with their rules, disabled set and `[vars]` spec.
     pub registry: &'a DetectorRegistry,
+    /// Format rules only: no name, declaration or entropy guess
+    /// ([`super::detector::is_guess`]). A lockfile is read this way: its
+    /// keys are package names (`@radix-ui/react-password-toggle-field`) and
+    /// its values checksums, which those guesses misread.
+    pub rules_only: bool,
+}
+
+impl Context<'_> {
+    fn kept(&self, mut found: Vec<Detection>) -> Vec<Detection> {
+        if self.rules_only {
+            found.retain(|d| !super::detector::is_guess(d));
+        }
+        found
+    }
+
+    fn scan_kv(&self, key: &str, value: &str, location: &str) -> Vec<Detection> {
+        self.kept(self.registry.scan_kv(key, value, location))
+    }
+
+    fn scan_token(&self, token: &str, location: &str) -> Vec<Detection> {
+        self.kept(self.registry.scan_token(token, location))
+    }
+
+    fn scan_line(&self, line: &str, location: &str) -> Vec<Detection> {
+        self.kept(self.registry.scan_line(line, location))
+    }
+
+    fn scan_decoded(&self, text: &str) -> Vec<Detection> {
+        self.kept(self.registry.scan_decoded(text))
+    }
 }
 
 /// One detection, where it was found.
@@ -112,7 +142,7 @@ fn scan_decoded(text: &str, ctx: &Context, out: &mut Vec<Found>) {
             budget -= 1;
             let mut hit = false;
             for (encoding, decoded) in decode::decode(token) {
-                for detection in one_finding_per_value(ctx.registry.scan_decoded(&decoded)) {
+                for detection in one_finding_per_value(ctx.scan_decoded(&decoded)) {
                     if out.iter().any(|f| {
                         f.line == line_num
                             && f.encoded == Some(encoding.as_str())
@@ -222,7 +252,7 @@ fn scan_lines(text: &str, ctx: &Context) -> Vec<Found> {
         let mut detections: Vec<Detection> = Vec::new();
 
         for token in extract_tokens(line) {
-            detections.extend(ctx.registry.scan_token(&token, &location));
+            detections.extend(ctx.scan_token(&token, &location));
         }
 
         // ...and the whole line, for what a token cannot carry.
@@ -236,7 +266,7 @@ fn scan_lines(text: &str, ctx: &Context) -> Vec<Found> {
         // so a format shorter than that is reachable only from here. An
         // AWS access key is `AKIA` plus sixteen characters — exactly 20
         // — and so arrives by this path alone.
-        detections.extend(ctx.registry.scan_line(line, &location));
+        detections.extend(ctx.scan_line(line, &location));
 
         // ...and each `NAME = literal`, by name and value. Detections about
         // the same value are one finding below, so a key the value rules
@@ -246,7 +276,7 @@ fn scan_lines(text: &str, ctx: &Context) -> Vec<Found> {
             .map(|a| a.line(line))
             .unwrap_or_default();
         for (key, value) in &named {
-            detections.extend(ctx.registry.scan_kv(key, value, &location));
+            detections.extend(ctx.scan_kv(key, value, &location));
         }
 
         block.line(line, &mut detections);
@@ -282,7 +312,7 @@ fn scan_env(doc: &Document, ctx: &Context, out: &mut Vec<Found>) {
     for (key, value) in &vars {
         let line_num = lines.get(key).copied().unwrap_or(1);
         let location = format!("{}:{} ({})", ctx.path, line_num, key);
-        if let Some(detection) = best(ctx.registry.scan_kv(key, value.expose(), &location)) {
+        if let Some(detection) = best(ctx.scan_kv(key, value.expose(), &location)) {
             out.push(Found {
                 line: line_num,
                 variable: Some(key.clone()),
@@ -341,7 +371,7 @@ fn scan_env(doc: &Document, ctx: &Context, out: &mut Vec<Found>) {
             continue;
         }
         let location = format!("{}:{} ({})", ctx.path, line_num, key);
-        if let Some(detection) = best(ctx.registry.scan_kv(key, value, &location)) {
+        if let Some(detection) = best(ctx.scan_kv(key, value, &location)) {
             let variable = (!key.is_empty()).then(|| key.to_string());
             out.push(Found {
                 line: line_num,
@@ -510,7 +540,7 @@ fn scan_structured(text: &str, format: Format, ctx: &Context) -> Vec<Found> {
         let location = format!("{}:{} ({})", ctx.path, leaf.line, leaf.path);
         // A sentence or a script is not judged by entropy as a whole:
         // `heuristic::looks_like_key_material` refuses whitespace (C4).
-        let detections = ctx.registry.scan_kv(&leaf.key, &leaf.value, &location);
+        let detections = ctx.scan_kv(&leaf.key, &leaf.value, &location);
         if let Some(detection) = best(detections) {
             all.push(Found {
                 line: leaf.line,

@@ -1093,6 +1093,18 @@ impl ScanRunner {
                 ));
             }
         }
+        let lockfile = super::walk::is_lockfile(path);
+        if lockfile && self.verbose {
+            results.log.push((
+                false,
+                format!("{}: {}", display_portable(path), super::walk::LOCKFILE_NOTE),
+            ));
+        }
+        let note = match (note, lockfile) {
+            (Some(n), true) => Some(format!("{}; {n}", super::walk::LOCKFILE_NOTE)),
+            (None, true) => Some(super::walk::LOCKFILE_NOTE.to_string()),
+            (n, false) => n,
+        };
         results.files.push(super::models::ScannedFile {
             path: display_portable(path),
             read_as,
@@ -1109,6 +1121,7 @@ impl ScanRunner {
             document: None,
             leaves: leaves.as_deref(),
             registry: &self.registry,
+            rules_only: lockfile,
         };
         // Detection is the engine's; what a detection becomes is the report's.
         let lines: Vec<&str> = content.lines().collect();
@@ -1145,6 +1158,7 @@ impl ScanRunner {
                 document: None,
                 leaves: None,
                 registry: &self.registry,
+                rules_only: false,
             };
             let lines: Vec<&str> = chunk.text.lines().collect();
             for f in engine::scan_text(&chunk.text, &ctx) {

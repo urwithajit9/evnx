@@ -1,7 +1,7 @@
 {
   "version": 1,
   "overall": {
-    "tp": 68,
+    "tp": 69,
     "fp": 0,
     "fn": 0,
     "precision": 1.0,
@@ -37,7 +37,7 @@
       "recall": 1.0
     },
     "database": {
-      "tp": 2,
+      "tp": 3,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,
@@ -116,7 +116,7 @@
       "recall": 1.0
     },
     "json": {
-      "tp": 6,
+      "tp": 7,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,

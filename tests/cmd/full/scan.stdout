@@ -179,6 +179,8 @@ What a folder walk reads:
   1 MiB (--max-file-size). A file named on the command line is always read.
   In a git repository, findings in files git ignores and does not track
   are summarised, not counted (--include-ignored counts them).
+  Lockfiles (package-lock.json, pnpm-lock.yaml, yarn.lock, Cargo.lock, go.sum
+  and the like) get the key-format rules only, not name or entropy checks.
 
 Encoded values:
   a value of 16 to 4096 characters that is base64, hex or percent-encoded
