@@ -232,6 +232,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on the same line: `scanning ./.gitignore, ./leak-test.txt · git-ignored
   (summarised only): ./.env`. Each list still ends "and N other files" when it
   is long. With `--include-ignored` they are counted and listed with the rest.
+- **`scan` advises a history rewrite only for a real key match.** Revoke,
+  `git filter-repo` and force push are now given only for a finding in a file
+  git has committed (or outside a repository) that a format rule matched by
+  its value with high confidence. A committed finding flagged by a variable
+  name, by entropy or with lower confidence gets "Check <file>" instead, with
+  how to accept it if it is not a secret (`evnx:allow <rule-id>
+  reason=used-in-tests`, or `evnx scan --update-baseline`), and is said to be
+  in a test folder when it is. When both kinds are found, the rewrite steps
+  name only the files with a key match.
 
 ### Fixed
 

@@ -670,16 +670,49 @@ fn filter_repo(paths: &[String]) -> String {
     }
 }
 
+/// Whether a finding is worth rewriting history for: a format rule matched
+/// its value (not a variable's name, the entropy fallback or a declaration)
+/// with high confidence, before any context hint moved it.
+fn warrants_rewrite(f: &super::models::Finding) -> bool {
+    let heuristic = super::detector::HEURISTIC_NAMES
+        .iter()
+        .any(|h| f.pattern.starts_with(h));
+    f.judged_value
+        && !heuristic
+        && f.pattern != super::detector::DECLARED_SECRET
+        && f.confidence_before_context.unwrap_or(f.confidence) == Confidence::High
+}
+
+/// [`may_be_committed`] and [`warrants_rewrite`].
+fn rewrite_in_history(f: &super::models::Finding) -> bool {
+    may_be_committed(f) && warrants_rewrite(f)
+}
+
+/// [`may_be_committed`], and not [`warrants_rewrite`]: check it first.
+fn check_in_history(f: &super::models::Finding) -> bool {
+    may_be_committed(f) && !warrants_rewrite(f)
+}
+
 /// The steps for findings with no public prefix, by what git knows (I-286).
 ///
-/// * May be in history (tracked, or no repository): revoke, rewrite the
-///   history of exactly those files, force push — the old advice.
+/// * May be in history (tracked, or no repository), and a format rule matched
+///   the value with high confidence: revoke, rewrite the history of exactly
+///   those files, force push — the old advice.
+/// * May be in history, and matched by a name, entropy or with less
+///   confidence: check it; allow or baseline what is not a secret. A history
+///   rewrite is a lot of work, and for a sample value in a test it is none
+///   that was needed.
 /// * Not ignored and not tracked: nothing is committed yet, so keep it so.
 /// * Ignored and not tracked (a file named on the command line, or
 ///   `--include-ignored`): nothing was committed.
 fn git_steps(results: &ScanResults) -> Vec<String> {
     use super::models::GitState;
-    let history = paths_where(results.findings.iter(), may_be_committed);
+    let history = paths_where(results.findings.iter(), rewrite_in_history);
+    let to_check: Vec<&super::models::Finding> = results
+        .findings
+        .iter()
+        .filter(|f| check_in_history(f))
+        .collect();
     let uncommitted = shown_in(results, GitState::Unignored);
     let ignored = shown_in(results, GitState::Ignored);
     let names = |v: &[String]| name_files(&v.iter().map(String::as_str).collect::<Vec<_>>());
@@ -693,12 +726,59 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
         );
     }
     if !history.is_empty() {
-        steps.push("Revoke or rotate the keys above — assume they are compromised".to_string());
+        if to_check.is_empty() {
+            steps.push("Revoke or rotate the keys above — assume they are compromised".to_string());
+        } else {
+            let mut shown: Vec<String> = Vec::new();
+            for f in results.findings.iter().filter(|f| rewrite_in_history(f)) {
+                let file = split_location(&f.location).0.to_string();
+                if !shown.contains(&file) {
+                    shown.push(file);
+                }
+            }
+            steps.push(format!(
+                "Revoke or rotate the keys in {} — assume they are compromised",
+                names(&shown)
+            ));
+        }
         steps.push(format!(
             "Remove them from history: {}",
             filter_repo(&history)
         ));
         steps.push("Force push, after coordinating with everyone who has a clone".to_string());
+    }
+    if !to_check.is_empty() {
+        let mut shown: Vec<String> = Vec::new();
+        let mut in_tests: Vec<String> = Vec::new();
+        for f in &to_check {
+            let file = split_location(&f.location).0.to_string();
+            if f.context.iter().any(|c| c == super::context::TEST_PATH) && !in_tests.contains(&file)
+            {
+                in_tests.push(file.clone());
+            }
+            if !shown.contains(&file) {
+                shown.push(file);
+            }
+        }
+        steps.push(format!(
+            "Check {}: it is committed, but only a variable name, an entropy guess or a \
+             lower-confidence match flagged it, so it may not be a secret",
+            names(&shown)
+        ));
+        if !in_tests.is_empty() {
+            steps.push(format!(
+                "{} {} in a test folder, where sample values are usual",
+                names(&in_tests),
+                if in_tests.len() == 1 { "is" } else { "are" }
+            ));
+        }
+        steps.push(
+            "Not a secret: mark its line evnx:allow <rule-id> reason=used-in-tests (or \
+             false-positive), or accept it with evnx scan --update-baseline"
+                .to_string(),
+        );
+        steps
+            .push("If one is a real secret, revoke or rotate it: it is in git history".to_string());
     }
     if !uncommitted.is_empty() {
         // ⚠️ Two remedies: an env file is gitignored; a source file is not —
@@ -723,7 +803,7 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
                 names(&source)
             ));
         }
-        if history.is_empty() {
+        if history.is_empty() && to_check.is_empty() {
             steps.push("If one was pushed or shared before, revoke or rotate it".to_string());
         }
     }
@@ -749,7 +829,7 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
             names(&ignored),
             if ignored.len() == 1 { "it" } else { "them" }
         ));
-        if history.is_empty() && uncommitted.is_empty() {
+        if history.is_empty() && to_check.is_empty() && uncommitted.is_empty() {
             steps.push(
                 "Rotate a key only if the file was shared another way — a copy, an \
                  archive, a container image"

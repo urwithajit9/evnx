@@ -424,3 +424,66 @@ fn the_walk_line_shortens_both_lists() {
         "{stdout}"
     );
 }
+
+// ── History rewriting only for a committed, high-confidence format match ───
+
+/// A committed `PASSWORD=` in `tests/fixtures/`, flagged by its name alone,
+/// came with revoke, `git filter-repo` and force push. It now gets "check it,
+/// and if it is not a secret, allow it or baseline it"; the test folder is
+/// named. A committed AWS key beside it keeps the rewrite steps, which name
+/// only its file.
+#[test]
+fn history_rewrite_is_only_for_committed_format_matches() {
+    let Some(d) = repo(
+        &[
+            ("tests/fixtures/app.env", "PASSWORD=hunter2x\n"),
+            ("src/main.py", &format!("k = \"{AWS}\"\n")),
+        ],
+        &["tests/fixtures/app.env", "src/main.py"],
+    ) else {
+        return;
+    };
+    let (code, stdout, _) = scan(&d, &[]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(
+        stdout.contains("git filter-repo --path src/main.py --invert-paths"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("--path tests/fixtures/app.env"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Check ./tests/fixtures/app.env"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("./tests/fixtures/app.env is in a test folder"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("evnx:allow"), "{stdout}");
+    assert!(stdout.contains("--update-baseline"), "{stdout}");
+}
+
+/// Only the name-matched file: no revoke, no rewrite, no force push.
+#[test]
+fn a_committed_name_match_alone_gets_no_rewrite_steps() {
+    let Some(d) = repo(
+        &[("tests/fixtures/app.env", "PASSWORD=hunter2x\n")],
+        &["tests/fixtures/app.env"],
+    ) else {
+        return;
+    };
+    let (_, stdout, _) = scan(&d, &[]);
+    assert!(!stdout.contains("filter-repo --path"), "{stdout}");
+    assert!(!stdout.contains("Force push"), "{stdout}");
+    assert!(!stdout.contains("compromised"), "{stdout}");
+    assert!(
+        stdout.contains("Check ./tests/fixtures/app.env"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("If one is a real secret, revoke or rotate it"),
+        "{stdout}"
+    );
+}
