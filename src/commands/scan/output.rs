@@ -178,7 +178,7 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
             let shown = list
                 .iter()
                 .take(3)
-                .map(|f| f.display().to_string())
+                .map(|f| crate::utils::fs::display_portable(f))
                 .collect::<Vec<_>>()
                 .join(", ");
             match list.len().saturating_sub(3) {

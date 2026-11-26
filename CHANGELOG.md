@@ -304,6 +304,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The `scanning` line writes paths with `/` on Windows too, as finding locations already do.
+
 - A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own
   environment while it is read (that needed `unsafe`); `run` still keeps every
   `EVNX_*` variable out of the command it starts.
