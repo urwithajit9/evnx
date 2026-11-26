@@ -607,14 +607,29 @@ fn name_files(paths: &[&str]) -> String {
     }
 }
 
-/// Whether the file a finding is in may be in git history: tracked, or
-/// nothing is known (outside a repository the old advice stands).
+/// Whether the file a finding is in may be in git history: a commit holds
+/// it, or nothing is known (outside a repository the old advice stands).
+///
+/// ⚠️ Tracked is not committed. A file that is only staged — the hook blocked
+/// the commit, or none was made yet — is in no commit, and was told to run
+/// `git filter-repo` and force push. A walk and `--staged` both ask git
+/// which files some commit holds (`in_commit`); a tracked file git could not
+/// answer for keeps the history advice.
 fn may_be_committed(f: &super::models::Finding) -> bool {
+    use super::models::GitState;
     !from_stdin(f)
-        && matches!(
-            f.git,
-            None | Some(super::models::GitState::Tracked | super::models::GitState::History)
-        )
+        && match f.git {
+            None | Some(GitState::History) => true,
+            Some(GitState::Tracked) => f.in_commit != Some(false),
+            Some(GitState::Staged) => f.in_commit == Some(true),
+            Some(GitState::Unignored | GitState::Ignored) => false,
+        }
+}
+
+/// In the index and in no commit: unstaging it is the whole fix.
+fn only_staged(f: &super::models::Finding) -> bool {
+    use super::models::GitState;
+    matches!(f.git, Some(GitState::Tracked | GitState::Staged)) && !may_be_committed(f)
 }
 
 /// Found in what `evnx scan -` read (RM-48): no file, so no history to rewrite.
@@ -718,6 +733,7 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
     let names = |v: &[String]| name_files(&v.iter().map(String::as_str).collect::<Vec<_>>());
 
     let mut steps = Vec::new();
+    let mut rotate_said = false;
     if results.findings.iter().any(from_stdin) {
         steps.push(
             "Keep the keys found in <stdin> out of wherever that text was going \
@@ -805,23 +821,56 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
         }
         if history.is_empty() && to_check.is_empty() {
             steps.push("If one was pushed or shared before, revoke or rotate it".to_string());
+            rotate_said = true;
         }
     }
     // C9: nothing is committed yet, so the fix is to unstage, never to
-    // rewrite history.
-    let staged = shown_in(results, GitState::Staged);
+    // rewrite history. The same for a walk's tracked file that no commit
+    // holds yet.
+    let mut staged: Vec<String> = Vec::new();
+    for f in results.findings.iter().filter(|f| only_staged(f)) {
+        let file = split_location(&f.location).0.to_string();
+        if !staged.contains(&file) {
+            staged.push(file);
+        }
+    }
     if !staged.is_empty() {
-        let list = staged.join(" ");
+        let list = staged
+            .iter()
+            .map(|p| p.strip_prefix("./").unwrap_or(p))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let it = if staged.len() == 1 { "it" } else { "them" };
         steps.push(format!(
-            "Unstage {}: git restore --staged {list} (or git rm --cached {list} to stop tracking it)",
+            "Unstage {}: git restore --staged {list} (git rm --cached {list} before the \
+             first commit). No commit holds {it}, so there is no history to rewrite",
             names(&staged)
         ));
-        steps.push(
-            "Move the values out of the file, into one git ignores such as .env, then stage it again"
-                .to_string(),
-        );
-        steps
-            .push("If one was committed, pushed or shared before, revoke or rotate it".to_string());
+        let (env, source): (Vec<String>, Vec<String>) = staged
+            .iter()
+            .cloned()
+            .partition(|p| super::walk::named_like_dotenv(std::path::Path::new(p)));
+        if !env.is_empty() {
+            steps.push(format!(
+                "Keep {} out of commits: values belong there, so leave {} git-ignored",
+                names(&env),
+                if env.len() == 1 { "it" } else { "them" }
+            ));
+        }
+        if !source.is_empty() {
+            steps.push(format!(
+                "Before you stage {} again, move the values into .env (or another file \
+                 git ignores), read at run time",
+                names(&source)
+            ));
+        }
+        if !rotate_said {
+            steps.push(
+                "If a key was shared another way (copied, sent, pushed from another \
+                 clone), rotate it"
+                    .to_string(),
+            );
+        }
     }
     if !ignored.is_empty() {
         steps.push(format!(

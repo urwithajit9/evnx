@@ -323,3 +323,27 @@ fn the_hook_blocks_when_evnx_is_missing() {
         "{err}"
     );
 }
+
+/// `--staged` follows the same rule as a walk: a staged change to a file that
+/// is already in a commit keeps the history steps; a file no commit holds
+/// gets "unstage it".
+#[test]
+fn staged_advice_follows_whether_the_file_is_in_a_commit() {
+    let Some(d) = repo() else { return };
+    fs::write(d.path().join("app.py"), "x = 1\n").unwrap();
+    assert!(git(d.path(), &["add", "app.py"]));
+    assert!(git(d.path(), &["commit", "-qm", "x"]));
+    fs::write(d.path().join("app.py"), format!("k = \"{}\"\n", aws())).unwrap();
+    fs::write(d.path().join("new.py"), format!("k = \"{}\"\n", aws())).unwrap();
+    assert!(git(d.path(), &["add", "app.py", "new.py"]));
+    let out = evnx(d.path(), &["scan", "--staged"]);
+    assert_eq!(out.status.code(), Some(1));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("git filter-repo --path app.py --invert-paths"),
+        "{text}"
+    );
+    assert!(text.contains("git restore --staged new.py"), "{text}");
+    assert!(!text.contains("--staged app.py"), "{text}");
+    assert!(!text.contains("--path new.py"), "{text}");
+}

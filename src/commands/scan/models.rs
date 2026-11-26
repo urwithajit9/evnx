@@ -40,6 +40,7 @@
 //!     // What git says about the file, inside a repository (I-285).
 //!     git: None,
 //!     repo_path: None,
+//!     in_commit: None,
 //!     note: None,
 //!     line: 15,
 //!     commit: None,
@@ -185,6 +186,12 @@ pub struct Finding {
     /// --path` (I-286). Display only.
     #[serde(skip)]
     pub repo_path: Option<String>,
+
+    /// Whether a commit holds the file (any branch or tag): `Some(false)` for
+    /// a file that is staged and in no commit, which gets "unstage it", not a
+    /// history rewrite. `None` when nothing is known. Display only.
+    #[serde(skip)]
+    pub in_commit: Option<bool>,
 
     /// What to say about a value match in place of the generic "matches a
     /// live key format" line — `a password in a postgres:// URL` (I-052).
@@ -392,6 +399,7 @@ impl Finding {
             public_prefix: None,
             git: None,
             repo_path: None,
+            in_commit: None,
             note: None,
             line: 0,
             key_path: None,

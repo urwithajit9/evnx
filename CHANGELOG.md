@@ -290,6 +290,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `remove --all`, and of the environments `--env-name` lists. `validate` names
   them once instead, as plaintext backups of the file it checks ("delete them
   or keep them git-ignored"), unless git ignores every one.
+- **`scan` no longer tells you to rewrite history for a file that is only
+  staged.** A key in a file that was added but never committed (a hook blocked
+  the commit, or the repository has no commits yet) came with revoke,
+  `git filter-repo` and force push. Those steps are now given only when a commit
+  on some branch or tag holds the file. A staged-only file gets "Unstage
+  <file>: git restore --staged <file> (git rm --cached <file> before the first
+  commit)", then "move the values into .env", and "rotate it" only if the key
+  was shared another way. `scan --staged` follows the same rule: a staged
+  change to a file that is already in a commit keeps the history steps.
 
 ---
 

@@ -580,6 +580,9 @@ impl ScanRunner {
                     for finding in &mut local.findings {
                         finding.git = Some(view.exposure.into());
                         finding.repo_path = Some(view.repo_path.clone());
+                        if view.exposure == crate::core::gitignore::Exposure::Tracked {
+                            finding.in_commit = Some(view.committed);
+                        }
                     }
                 }
                 outcome.map(|()| (local, read, held))
@@ -619,7 +622,7 @@ impl ScanRunner {
             ));
         }
         let cwd = std::env::current_dir()?;
-        super::git_blobs::toplevel(&cwd, "--staged")?;
+        let top = super::git_blobs::toplevel(&cwd, "--staged")?;
         let paths: Vec<String> = paths.into_iter().filter(|p| p != ".").collect();
         let named = named_in_repo(&cwd, &paths);
         let mut staged = super::staged::staged(&cwd, &paths, self.filter.max_bytes())?;
@@ -636,6 +639,11 @@ impl ScanRunner {
             }
             return self.finish(results, format, &[]);
         }
+        // The same rule as a walk: a file some commit holds keeps the history
+        // advice, one in no commit gets "unstage it". No answer from git
+        // leaves `in_commit` unknown.
+        let names: Vec<String> = staged.iter().map(|f| f.path.clone()).collect();
+        let committed = crate::core::gitignore::committed_among(&top, &names);
         let mut read = Vec::with_capacity(staged.len());
         for file in staged {
             let Some(first) =
@@ -649,6 +657,7 @@ impl ScanRunner {
             for finding in &mut results.findings[first..] {
                 finding.git = Some(super::models::GitState::Staged);
                 finding.repo_path = Some(file.path.clone());
+                finding.in_commit = committed.as_ref().map(|c| c.contains(&file.path));
             }
         }
         self.finish(results, format, &read)

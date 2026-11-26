@@ -487,3 +487,80 @@ fn a_committed_name_match_alone_gets_no_rewrite_steps() {
         "{stdout}"
     );
 }
+
+// ── History rewriting only for a file that is in a commit ──────────────────
+
+/// Stage `paths` in `d` (forced), without committing.
+fn stage(d: &TempDir, paths: &[&str]) {
+    let mut args = vec!["add", "-f", "--"];
+    args.extend_from_slice(paths);
+    assert!(git(d.path(), &args));
+}
+
+/// The quick-start run: `leak-test.txt` was staged, the hook blocked the
+/// commit, and a full scan said "git filter-repo --path leak-test.txt" about a
+/// file no commit holds. In a repository with no commits at all.
+#[test]
+fn a_staged_only_file_gets_unstage_steps_not_a_history_rewrite() {
+    let Some(d) = repo(&[("leak-test.txt", &format!("{AWS}\n"))], &[]) else {
+        return;
+    };
+    stage(&d, &["leak-test.txt"]);
+    let (code, stdout, _) = scan(&d, &[]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(!stdout.contains("filter-repo"), "{stdout}");
+    assert!(!stdout.contains("Force push"), "{stdout}");
+    assert!(!stdout.contains("compromised"), "{stdout}");
+    assert!(
+        stdout.contains("git restore --staged leak-test.txt"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("git rm --cached leak-test.txt"), "{stdout}");
+    assert!(stdout.contains("move the values into .env"), "{stdout}");
+    assert!(stdout.contains("rotate"), "{stdout}");
+}
+
+/// The same with earlier commits of other files: still not in a commit.
+#[test]
+fn a_newly_staged_file_beside_committed_ones_gets_unstage_steps() {
+    let Some(d) = repo(
+        &[
+            ("README.md", "hello\n"),
+            ("src/main.py", &format!("k = \"{AWS}\"\n")),
+        ],
+        &["README.md"],
+    ) else {
+        return;
+    };
+    stage(&d, &["src/main.py"]);
+    let (code, stdout, _) = scan(&d, &[]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(!stdout.contains("filter-repo"), "{stdout}");
+    assert!(
+        stdout.contains("git restore --staged src/main.py"),
+        "{stdout}"
+    );
+}
+
+/// A file committed once, deleted, and staged again is in history: the
+/// rewrite steps stay.
+#[test]
+fn a_file_in_an_older_commit_keeps_the_history_rewrite() {
+    let Some(d) = repo(
+        &[("src/main.py", &format!("k = \"{AWS}\"\n"))],
+        &["src/main.py"],
+    ) else {
+        return;
+    };
+    assert!(git(d.path(), &["rm", "-q", "src/main.py"]));
+    assert!(git(d.path(), &["commit", "-qm", "rm"]));
+    fs::create_dir_all(d.path().join("src")).unwrap();
+    fs::write(d.path().join("src/main.py"), format!("k = \"{AWS}\"\n")).unwrap();
+    stage(&d, &["src/main.py"]);
+    let (_, stdout, _) = scan(&d, &[]);
+    assert!(
+        stdout.contains("git filter-repo --path src/main.py --invert-paths"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("git restore --staged"), "{stdout}");
+}
