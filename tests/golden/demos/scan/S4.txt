@@ -31,6 +31,8 @@ $ evnx scan . --format json
       "severity": "critical",
       "value_preview": "AKIA…EY",
       "location": "./.env:1 (AWS_ACCESS_KEY_ID)",
+      "file": "./.env",
+      "line": 1,
       "variable": "AWS_ACCESS_KEY_ID",
       "action_url": "https://console.aws.amazon.com/iam",
       "matched_by": "value"
@@ -44,6 +46,8 @@ $ evnx scan . --format json
       "severity": "critical",
       "value_preview": "sk_live_…jk",
       "location": "./.env:2 (STRIPE_SECRET_KEY)",
+      "file": "./.env",
+      "line": 2,
       "variable": "STRIPE_SECRET_KEY",
       "action_url": "https://dashboard.stripe.com/apikeys",
       "matched_by": "value"
@@ -57,6 +61,8 @@ $ evnx scan . --format json
       "severity": "high",
       "value_preview": "ghp_…r8",
       "location": "./.env:3 (GITHUB_TOKEN)",
+      "file": "./.env",
+      "line": 3,
       "variable": "GITHUB_TOKEN",
       "action_url": "https://github.com/settings/tokens",
       "matched_by": "value"
@@ -70,6 +76,8 @@ $ evnx scan . --format json
       "severity": "high",
       "value_preview": "<48 chars>",
       "location": "./.env:4 (DATABASE_URL)",
+      "file": "./.env",
+      "line": 4,
       "variable": "DATABASE_URL",
       "action_url": null,
       "matched_by": "value"

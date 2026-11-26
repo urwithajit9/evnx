@@ -149,3 +149,41 @@ fn prose_and_scripts_are_not_judged_by_entropy_as_a_whole() {
     let d = project(&[("config.yml", "password: \"correct horse battery staple\"\n")]);
     assert_eq!(scan(&d, &[])["summary"]["total"], 1);
 }
+
+/// Scan JSON gave a finding's place only as the `location` string, which a
+/// script had to split. Each finding now has `file`, `line` and, in a
+/// structured file, `key_path`; `location` is unchanged.
+#[test]
+fn json_findings_carry_file_line_and_key_path() {
+    let p = password();
+    let d = project(&[
+        ("config.yml", &format!("app:\n  db:\n    password: {p}\n")),
+        (".env", &format!("STRIPE_KEY={}\n", stripe())),
+        ("notes.txt", &format!("key {}\n", stripe())),
+    ]);
+    let v = scan(&d, &[]);
+    let findings = v["findings"].as_array().unwrap();
+    let by_file = |f: &str| {
+        findings
+            .iter()
+            .find(|x| x["file"] == f)
+            .unwrap_or_else(|| panic!("{f}: {v:#}"))
+    };
+    let yml = by_file("./config.yml");
+    assert_eq!(yml["line"], 3, "{yml:#}");
+    assert_eq!(yml["key_path"], "app.db.password", "{yml:#}");
+    assert_eq!(
+        yml["location"], "./config.yml:3 (app.db.password)",
+        "{yml:#}"
+    );
+    let env = by_file("./.env");
+    assert_eq!(env["line"], 1, "{env:#}");
+    assert!(
+        env.get("key_path").is_none(),
+        "a variable, not a key path: {env:#}"
+    );
+    assert_eq!(env["variable"], "STRIPE_KEY", "{env:#}");
+    let txt = by_file("./notes.txt");
+    assert_eq!(txt["line"], 1, "{txt:#}");
+    assert!(txt.get("key_path").is_none(), "{txt:#}");
+}

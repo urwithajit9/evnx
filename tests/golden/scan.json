@@ -27,6 +27,8 @@
       "severity": "critical",
       "value_preview": "AKIA…EY",
       "location": "./.env:2 (AWS_KEY)",
+      "file": "./.env",
+      "line": 2,
       "variable": "AWS_KEY",
       "action_url": "https://console.aws.amazon.com/iam",
       "matched_by": "value"

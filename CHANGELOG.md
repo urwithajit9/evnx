@@ -55,8 +55,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `context` and the earlier level in `confidence_before_context`.
 
 - **Scan JSON is `schema_version` 3.** Findings that are allowed or in the
-  baseline carry `reason_code`, and `summary.by_reason` counts them. A finding
-  may also carry `encoded` (`base64`, `hex` or `url`), `context` and
+  baseline carry `reason_code`, and `summary.by_reason` counts them. Every
+  finding has `file` and `line` (a number, or `null` when it is not known)
+  beside `location`, so a script need not split that string, and a finding in
+  a YAML, JSON, TOML or notebook file has `key_path` (`app.db.password`). A
+  finding may also carry `encoded` (`base64`, `hex` or `url`), `context` and
   `confidence_before_context`, and under `--history` `commit`, `blob`,
   `commit_time` and `git: "history"`; `effective_config` has
   `rules_digest`. Each new field is left out when it does not apply. The `run`

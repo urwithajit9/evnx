@@ -981,6 +981,7 @@ impl ScanRunner {
                 encoded: None,
             },
             &[],
+            false,
         );
     }
 
@@ -1111,8 +1112,9 @@ impl ScanRunner {
         };
         // Detection is the engine's; what a detection becomes is the report's.
         let lines: Vec<&str> = content.lines().collect();
+        let structured = matches!(ctx.kind, engine::Kind::Structured(_));
         for f in engine::scan_text(content, &ctx) {
-            self.add_finding(results, path, f, &lines);
+            self.add_finding(results, path, f, &lines, structured);
         }
 
         Ok(())
@@ -1154,6 +1156,7 @@ impl ScanRunner {
                         ..f
                     },
                     &lines,
+                    true,
                 );
             }
         }
@@ -1175,6 +1178,7 @@ impl ScanRunner {
         path: &Path,
         found: crate::core::secretscan::engine::Found,
         lines: &[&str],
+        structured: bool,
     ) {
         let crate::core::secretscan::engine::Found {
             line,
@@ -1294,6 +1298,11 @@ impl ScanRunner {
         }
         finding.context = context.into_iter().map(str::to_string).collect();
         finding.line = line;
+        // The key path a structured file's `variable` is, kept apart from a
+        // `.env` variable's name so a script need not parse `location`.
+        if structured {
+            finding.key_path = finding.variable.clone();
+        }
 
         // C5: what the project has looked at. The fingerprint never holds the
         // value itself: the line's text goes through BLAKE3.
