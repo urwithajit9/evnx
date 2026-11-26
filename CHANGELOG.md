@@ -319,6 +319,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `sh FILE`", and the next steps say "Review FILE, then run it: `sh FILE`",
   for every destination that prints commands (AWS, GCP, Azure, Heroku, Vercel,
   Doppler, Infisical, Railway).
+- **A `platform push` conflict names the commands for the same target.** When
+  a variable had changed on Vercel, the advice was `evnx platform diff --to
+  vercel` and `evnx platform pull --to vercel`, which look at development
+  whatever the push used. Both now carry the push's `--target`, and its
+  `--project`, `--team`, `--token-file`, `--git-branch` and `--env` when they
+  were given. The last line reads "No verdict: Vercel holds a newer value"
+  instead of "the server holds a newer version". Exit code 14 is unchanged.
 
 ---
 

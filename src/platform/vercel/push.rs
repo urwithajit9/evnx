@@ -836,7 +836,12 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
     let file_name = shown(&path);
 
     // D4: before anything is written, has Vercel moved since the last pull/push?
-    check_state(&session, &plan, &remote)?;
+    check_state(
+        &session,
+        &plan,
+        &remote,
+        &retry_flags(&args.common, &session),
+    )?;
 
     let nothing_to_say =
         crate::utils::ui::is_quiet() && args.confirm.yes && !args.dry.dry_run && !args.json();
@@ -1044,7 +1049,32 @@ fn report_failures(failed: &[Failed], plan: &PushPlan) {
 
 /// Stop (exit 14) when an entry about to change is not as the state file says.
 /// No state file, or one for another project or environment, is a warning.
-fn check_state(session: &Session, plan: &PushPlan, remote: &[Remote]) -> Result<()> {
+/// The flags of this push that pick what `diff` and `pull` look at, each with
+/// a leading space and quoted for a shell: the project, team and token file
+/// when given, the target always, the branch and the file when given.
+fn retry_flags(common: &crate::cli::PlatformCommon, session: &Session) -> String {
+    use crate::core::shell::word;
+    let mut out = String::new();
+    if let Some(p) = &common.project {
+        out.push_str(&format!(" --project {}", word(p)));
+    }
+    if let Some(t) = &common.team {
+        out.push_str(&format!(" --team {}", word(t)));
+    }
+    if let Some(f) = &common.token_file {
+        out.push_str(&format!(" --token-file {}", word(&f.to_string_lossy())));
+    }
+    out.push_str(&format!(" --target {}", word(session.environment.name())));
+    if let Some(b) = &common.git_branch {
+        out.push_str(&format!(" --git-branch {}", word(b)));
+    }
+    if let Some(e) = &common.env {
+        out.push_str(&format!(" --env {}", word(&e.to_string_lossy())));
+    }
+    out
+}
+
+fn check_state(session: &Session, plan: &PushPlan, remote: &[Remote], flags: &str) -> Result<()> {
     let touched: Vec<(&str, &str)> = plan.touched().collect();
     if touched.is_empty() {
         return Ok(());
@@ -1080,7 +1110,11 @@ fn check_state(session: &Session, plan: &PushPlan, remote: &[Remote]) -> Result<
     if changed.is_empty() {
         Ok(())
     } else {
-        Err(PlatformError::Changed { keys: changed }.into())
+        Err(PlatformError::Changed {
+            keys: changed,
+            flags: flags.to_string(),
+        }
+        .into())
     }
 }
 
