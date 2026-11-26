@@ -303,16 +303,100 @@ pub fn uninstall(cwd: &Path, kind: Kind) -> Result<()> {
     Ok(())
 }
 
+/// The file pre-commit and prek read their hooks from, at the top folder.
+const MANAGER_CONFIG: &str = ".pre-commit-config.yaml";
+
+/// The evnx scan hooks for `kind` that `.pre-commit-config.yaml` at `root`
+/// runs, each with its repo's `rev` (`None` for a `local` repo or no rev).
+/// Read through `core::yaml`; a missing or unreadable file is none.
+fn configured(root: &Path, kind: Kind) -> Vec<(String, Option<String>)> {
+    use crate::core::yaml::{self, Duplicates, Value};
+    let Ok(text) = std::fs::read_to_string(root.join(MANAGER_CONFIG)) else {
+        return Vec::new();
+    };
+    let Ok(doc) = yaml::document(&text, Duplicates::LastWins) else {
+        return Vec::new();
+    };
+    let ids: &[&str] = match kind {
+        Kind::PreCommit => &["evnx-scan", "evnx-scan-installed"],
+        Kind::PrePush => &["evnx-scan-push"],
+    };
+    let mut out = Vec::new();
+    for repo in doc.get("repos").and_then(Value::as_seq).unwrap_or_default() {
+        let rev = match repo.get("rev") {
+            Some(Value::String(r) | Value::Number(r)) => Some(r.clone()),
+            _ => None,
+        };
+        for hook in repo
+            .get("hooks")
+            .and_then(Value::as_seq)
+            .unwrap_or_default()
+        {
+            if let Some(id) = hook.get("id").and_then(Value::as_str) {
+                if ids.contains(&id) {
+                    out.push((id.to_string(), rev.clone()));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `(major, minor, patch)` of `v0.11.0`, `0.11` or `0.16.0-rc.1`; `None` for
+/// a commit id or anything else.
+fn version_of(rev: &str) -> Option<(u64, u64, u64)> {
+    let core = rev.strip_prefix('v').unwrap_or(rev);
+    let core = core.split(['-', '+']).next()?;
+    let mut parts = core.split('.').map(|p| p.parse::<u64>());
+    let major = parts.next()?.ok()?;
+    let minor = parts.next().unwrap_or(Ok(0)).ok()?;
+    let patch = parts.next().unwrap_or(Ok(0)).ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
 pub fn status(cwd: &Path, kind: Kind) -> Result<()> {
     let path = hook_path(cwd, kind)?;
+    let root = super::git_blobs::toplevel(cwd, "scan hook")?;
     let text = std::fs::read_to_string(&path).unwrap_or_default();
+    // ⚠️ A hook a manager runs from `.pre-commit-config.yaml` is installed:
+    // the quick-start run had pre-commit running `evnx-scan` and was told
+    // "not installed". Read only; this never writes the file.
+    let configured = configured(&root, kind);
+    let runs = configured
+        .iter()
+        .map(|(id, rev)| match rev {
+            Some(rev) => format!("{id} (rev {rev})"),
+            None => format!("{id} (no rev)"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     if without_block(&text).1 {
         println!("installed: {}", path.display());
+        if !configured.is_empty() {
+            println!("also: {MANAGER_CONFIG} runs {runs}");
+        }
     } else if let Some(name) = manager(&text) {
+        if configured.is_empty() {
+            println!(
+                "not installed: {name} manages {}; add the {} hook there",
+                path.display(),
+                kind.manager_hook()
+            );
+        } else {
+            println!(
+                "installed through {name}: {MANAGER_CONFIG} runs {runs}, from {}",
+                path.display()
+            );
+        }
+    } else if !configured.is_empty() {
+        println!("not installed: {}", path.display());
         println!(
-            "not installed: {name} manages {}; add the {} hook there",
-            path.display(),
-            kind.manager_hook()
+            "{MANAGER_CONFIG} runs {runs}, but no manager has installed the git hook: \
+             run `pre-commit install{0}` (or `prek install{0}`)",
+            kind.manager_install()
         );
     } else {
         println!(
@@ -320,6 +404,20 @@ pub fn status(cwd: &Path, kind: Kind) -> Result<()> {
             path.display(),
             kind.flag()
         );
+    }
+    let ours = env!("CARGO_PKG_VERSION");
+    let mut said: Vec<&str> = Vec::new();
+    for (_, rev) in &configured {
+        let Some(rev) = rev.as_deref() else { continue };
+        let older = version_of(rev)
+            .zip(version_of(ours))
+            .is_some_and(|(theirs, mine)| theirs < mine);
+        if older && !said.contains(&rev) {
+            said.push(rev);
+            println!(
+                "rev {rev} is older than this evnx ({ours}): set rev: v{ours} in {MANAGER_CONFIG}"
+            );
+        }
     }
     let off = Command::new("git")
         .args(["config", "--bool", "hooks.evnx-scan"])
@@ -337,6 +435,15 @@ mod tests {
     use super::*;
 
     /// WP-16: the message in the hook names the one install URL.
+    #[test]
+    fn versions_are_read_from_a_rev_and_a_commit_id_is_none() {
+        assert_eq!(version_of("v0.11.0"), Some((0, 11, 0)));
+        assert_eq!(version_of("0.16"), Some((0, 16, 0)));
+        assert_eq!(version_of("v0.16.0-rc.1"), Some((0, 16, 0)));
+        assert_eq!(version_of("4f2a9c1"), None);
+        assert_eq!(version_of("v1.2.3.4"), None);
+    }
+
     #[test]
     fn wp16_hook_message_uses_the_install_url() {
         assert!(BLOCK.contains(&format!("({})", crate::core::build::INSTALL_URL)));

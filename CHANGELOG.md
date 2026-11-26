@@ -270,6 +270,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `spec init` when `.evnx.toml` already has `[vars]`, `parse --values` on a
   terminal, and `migrate --to github` with names GitHub reserves. The exit code
   (2), the message and JSON output are unchanged.
+- **`scan hook status` reads `.pre-commit-config.yaml`.** When pre-commit or
+  prek runs `evnx-scan`, `evnx-scan-installed` (or, with `--pre-push`,
+  `evnx-scan-push`) from it, the status says so with the `rev`, such as
+  "installed through pre-commit: .pre-commit-config.yaml runs evnx-scan (rev
+  v0.11.0)", instead of "not installed". A rev older than the running evnx
+  gets "rev v0.11.0 is older than this evnx (X.Y.Z): set rev: vX.Y.Z in
+  .pre-commit-config.yaml"; a hook in the file that no manager has installed
+  gets "run `pre-commit install` (or `prek install`)". The file is only read.
 
 ### Fixed
 
