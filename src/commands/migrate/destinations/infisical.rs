@@ -123,8 +123,8 @@ impl MigrationDestination for InfisicalDestination {
             .map(|e| format!("--env {} ", shell::word(e)))
             .unwrap_or_default();
 
-        out.status(format!("\n{}", "Upload secrets with:".bold()));
-        out.status("");
+        out.heading(format!("\n{}", "Upload secrets with:".bold()));
+        out.heading("");
         for (key, value) in secrets {
             out.command(format!(
                 "infisical secrets set {}{}{}",
@@ -142,10 +142,11 @@ impl MigrationDestination for InfisicalDestination {
     }
 
     fn print_next_steps(&self, out: Out) {
-        out.status(format!("\n{}", "Next steps:".bold()));
-        out.status("  1. Authenticate with `infisical login`.");
-        out.status("  2. Run the printed `infisical secrets set` commands.");
-        out.status("  3. Replace your app's .env with `infisical run -- <command>`.");
+        out.next_steps(&[
+            "Authenticate with `infisical login`.".into(),
+            out.run_step("Run the printed `infisical secrets set` commands.", ""),
+            "Replace your app's .env with `infisical run -- <command>`.".into(),
+        ]);
     }
 }
 

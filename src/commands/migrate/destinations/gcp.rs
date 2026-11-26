@@ -76,11 +76,11 @@ impl MigrationDestination for GcpDestination {
             });
         }
 
-        out.status(format!(
+        out.heading(format!(
             "\n{}",
             "Run these commands (each value goes to gcloud on stdin):".bold()
         ));
-        out.status("");
+        out.heading("");
         out.command(UPSERT_COMMENT.dimmed());
         out.command(upsert_function(&self.project).trim_end());
         out.command("");
@@ -95,10 +95,11 @@ impl MigrationDestination for GcpDestination {
     }
 
     fn print_next_steps(&self, out: Out) {
-        out.status(format!("\n{}", "Next steps:".bold()));
-        out.status("  1. Run the printed commands (`gcloud auth login` first).");
-        out.status("  2. Grant service accounts `secretmanager.secretAccessor` on each secret.");
-        out.status("  3. Update your app to call `secretmanager.googleapis.com`.");
+        out.next_steps(&[
+            out.run_step("Run the printed commands", " (`gcloud auth login` first)."),
+            "Grant service accounts `secretmanager.secretAccessor` on each secret.".into(),
+            "Update your app to call `secretmanager.googleapis.com`.".into(),
+        ]);
     }
 }
 

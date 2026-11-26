@@ -67,7 +67,7 @@ impl MigrationDestination for AzureDestination {
         // Azure Key Vault secret names must use only alphanumerics and hyphens.
         // Underscores are not allowed — we convert them automatically, by the
         // rule `convert --to azure-keyvault` uses.
-        out.status(format!("\n{}", "Run these commands:".bold()));
+        out.heading(format!("\n{}", "Run these commands:".bold()));
         out.command(
             "# Note: underscores in keys are converted to hyphens for AKV compatibility".dimmed(),
         );
@@ -103,10 +103,11 @@ impl MigrationDestination for AzureDestination {
     }
 
     fn print_next_steps(&self, out: Out) {
-        out.status(format!("\n{}", "Next steps:".bold()));
-        out.status("  1. Ensure you are logged in: `az login`.");
-        out.status("  2. Run the printed `az keyvault secret set` commands.");
-        out.status("  3. Grant your app a Managed Identity with Key Vault Secrets User role.");
+        out.next_steps(&[
+            "Ensure you are logged in: `az login`.".into(),
+            out.run_step("Run the printed `az keyvault secret set` commands.", ""),
+            "Grant your app a Managed Identity with Key Vault Secrets User role.".into(),
+        ]);
     }
 }
 

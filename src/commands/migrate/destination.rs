@@ -37,6 +37,8 @@ pub struct Out {
 thread_local! {
     /// The commands of a `--output` run, in order, until the caller takes them.
     static COMMANDS: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    /// The `--output` file, for the next steps to name.
+    static FILE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
 impl Out {
@@ -56,6 +58,63 @@ impl Out {
     /// The commands collected by [`command`](Out::command) under `to_file`.
     pub fn take_commands() -> String {
         COMMANDS.with(|c| std::mem::take(&mut *c.borrow_mut()))
+    }
+
+    /// The `--output` file the commands go to, for [`run_step`](Out::run_step).
+    pub fn set_file(path: Option<&str>) {
+        FILE.with(|f| *f.borrow_mut() = path.map(str::to_string));
+    }
+
+    fn file(&self) -> Option<String> {
+        if self.to_file {
+            FILE.with(|f| f.borrow().clone())
+        } else {
+            None
+        }
+    }
+
+    /// The heading over the commands ("Run these commands:"), or the blank
+    /// line under it. Not printed under `--output`, where no command follows
+    /// it: the cloud tutorial run showed "Run these commands:" over nothing.
+    pub fn heading(&self, line: impl Display) {
+        if !self.to_file {
+            self.status(line);
+        }
+    }
+
+    /// The next step that runs the commands: `printed` (and `after`) when they
+    /// were printed, or the `--output` file and how to run it.
+    pub fn run_step(&self, printed: &str, after: &str) -> String {
+        match self.file() {
+            Some(f) => {
+                let after = if after.is_empty() { "." } else { after };
+                format!("{}{after}", Self::file_step(&f))
+            }
+            None => format!("{printed}{after}"),
+        }
+    }
+
+    fn file_step(file: &str) -> String {
+        let f = crate::core::shell::word(file);
+        format!("Review {f}, then run it: `sh {f}`")
+    }
+
+    /// "Next steps:" and `steps`, numbered. Under `--output`, a list with no
+    /// [`run_step`](Out::run_step) gets one first, so the file is named.
+    pub fn next_steps(&self, steps: &[String]) {
+        use colored::Colorize;
+        self.status(format!("\n{}", "Next steps:".bold()));
+        let mut all: Vec<String> = Vec::new();
+        if let Some(f) = self.file() {
+            let step = Self::file_step(&f);
+            if !steps.iter().any(|s| s.starts_with(&step)) {
+                all.push(format!("{step}."));
+            }
+        }
+        all.extend(steps.iter().cloned());
+        for (i, step) in all.iter().enumerate() {
+            self.status(format!("  {}. {step}", i + 1));
+        }
     }
 
     /// A line about the run — what is being done, what to install, what was

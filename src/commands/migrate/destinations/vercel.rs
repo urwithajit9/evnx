@@ -163,11 +163,11 @@ impl MigrationDestination for VercelDestination {
             });
         }
 
-        out.status(format!(
+        out.heading(format!(
             "\n{}",
             "Run these commands (each value goes to vercel on stdin):".bold()
         ));
-        out.status("");
+        out.heading("");
 
         for (key, value) in secrets {
             // ⚠️ `printf '%s'`, not `echo "…"`: double quotes expanded `$5`
@@ -189,10 +189,11 @@ impl MigrationDestination for VercelDestination {
     }
 
     fn print_next_steps(&self, out: Out) {
-        out.status(format!("\n{}", "Next steps:".bold()));
-        out.status("  1. Run `vercel env pull .env.local` to verify secrets were set.");
-        out.status("  2. Redeploy your project: `vercel --prod`.");
-        out.status("  3. Remove .env from your working directory.");
+        out.next_steps(&[
+            "Run `vercel env pull .env.local` to verify secrets were set.".into(),
+            "Redeploy your project: `vercel --prod`.".into(),
+            "Remove .env from your working directory.".into(),
+        ]);
     }
 }
 

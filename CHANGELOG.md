@@ -312,6 +312,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`auth sessions list` and `auth devices list` line up again.** Their time
   columns were narrower than a time such as `2026-11-23 03:05 UTC`, so every
   column after the first sat to the right of its header.
+- **`migrate -o FILE` says where the commands went and how to run them.** It
+  printed a heading such as "Run these commands:" with nothing under it, and
+  next steps that said "Run the printed commands". With `-o` the heading is
+  gone, the line reads "Commands written to FILE: review them, then run
+  `sh FILE`", and the next steps say "Review FILE, then run it: `sh FILE`",
+  for every destination that prints commands (AWS, GCP, Azure, Heroku, Vercel,
+  Doppler, Infisical, Railway).
 
 ---
 
