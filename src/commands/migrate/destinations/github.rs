@@ -399,7 +399,7 @@ impl MigrationDestination for GitHubDestination {
             pb.inc(1);
         }
 
-        pb.finish_with_message("Done");
+        crate::utils::ui::finish_line(&pb, "Done");
         Ok(result)
     }
 

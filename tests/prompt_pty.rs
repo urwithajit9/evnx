@@ -110,3 +110,25 @@ fn t_i265_enter_after_y_answers_only_one_question() {
         "no comment was added"
     );
 }
+
+// ── A finished progress line ends its line ─────────────────────────────────
+
+/// The quick-start run: on a terminal, validate's "Files parsed ✓" and the
+/// next line ran together, because the finished spinner left the cursor at
+/// the end of its line.
+#[test]
+fn validate_progress_line_ends_before_the_next_line() {
+    let p = Project::new()
+        .env("A=1\nDATABASE_URL=postgres://u:p@localhost/db\n")
+        .example("A=\nDATABASE_URL=\n");
+    let (out, _) = Pty::spawn(p.path(), &["validate"]).finish();
+    let after = out
+        .split("Files parsed ✓")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no progress line:\n{out:?}"));
+    let rest = after.trim_start_matches(' ');
+    assert!(
+        rest.starts_with("\r\n") || rest.starts_with('\n'),
+        "the next line follows on the same line:\n{out:?}"
+    );
+}

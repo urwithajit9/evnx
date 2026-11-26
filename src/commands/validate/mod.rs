@@ -742,7 +742,7 @@ pub fn run(opts: Options) -> Result<Verdict> {
         }
     };
 
-    pb.finish_with_message("Files parsed ✓");
+    ui::finish_line(&pb, "Files parsed ✓");
 
     if opts.verbose {
         ui::info(format!(
@@ -811,7 +811,7 @@ pub fn run(opts: Options) -> Result<Verdict> {
     }
     if let Some(pb) = pb {
         let n = result.fixed.len() + result.needs_input.len();
-        pb.finish_with_message(format!("Applied {n} fix(es) ✓"));
+        ui::finish_line(&pb, format!("Applied {n} fix(es) ✓"));
     }
 
     if let Some((env_vars, changed)) = write {

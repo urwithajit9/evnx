@@ -345,6 +345,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   says "Run one of the commands above", and there was none. The refusal now
   ends "See its versions with `evnx cloud history --vault <vault>`", one per
   vault below the minimum.
+- **`validate` on a terminal ends its progress line.** "Files parsed ✓" (and
+  "Applied N fix(es) ✓") ran together with the next line. The same for the
+  "Done" line of `migrate --to github`.
 
 ---
 
