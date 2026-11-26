@@ -81,6 +81,7 @@ $ evnx validate --fix --dry-run
 
   evnx validate  Check environment configuration
 
+! .env.bak is a plaintext backup of .env, left out of the comparison between env files: delete it or keep it git-ignored
   ✗  Missing required variable: STRIPE_KEY
      ./.env
      →  Add STRIPE_KEY=<value> to ./.env
@@ -144,6 +145,7 @@ $ evnx validate --fix
 
   evnx validate  Check environment configuration
 
+! .env.bak is a plaintext backup of .env, left out of the comparison between env files: delete it or keep it git-ignored
   ✗  STRIPE_KEY looks like a placeholder
      ./.env
      →  Get from Stripe Dashboard

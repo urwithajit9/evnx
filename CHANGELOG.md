@@ -262,6 +262,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   still checked against their sha256 in `rules.lock`. Other files under
   `.evnx/` are scanned. A file named on the command line is read, as always;
   `--include-ignored` does not change this.
+- **`validate` no longer compares backups as environments.** A dated copy
+  such as `.env.bak-20261120` was read as an environment file, so `validate`
+  warned "B is in .env but not in .env.bak-20261120" and suggested
+  `evnx remove B --all`, which would have edited the backup. Backups
+  (`.env.bak`, `.env.bak-*`, `.env.bak.<n>`, and any file recorded in
+  `.evnx/backups.json`) are now left out of that comparison, of
+  `remove --all`, and of the environments `--env-name` lists. `validate` names
+  them once instead, as plaintext backups of the file it checks ("delete them
+  or keep them git-ignored"), unless git ignores every one.
 
 ---
 

@@ -762,6 +762,35 @@ pub fn run(opts: Options) -> Result<Verdict> {
     if stdin || input_format == InputFormat::Json {
         // Not a file among the others: nothing to compare it with.
         surroundings.environments.clear();
+    } else if !ui::is_quiet() {
+        // Backups are not environments (`env_name::available` leaves them
+        // out); said once, because a plaintext copy is a second copy of the
+        // secrets.
+        // Not when git ignores every one: `evnx validate --fix` keeps a
+        // `.env.bak` and has git ignore it, and that is already the advice.
+        let backups = crate::core::backups::backups_of(Path::new(&env_path));
+        let paths: Vec<std::path::PathBuf> = backups
+            .iter()
+            .map(|b| folder_of(&env_path).join(b))
+            .collect();
+        let exposed = crate::core::gitignore::exposures(&paths).iter().any(|v| {
+            v.as_ref().map(|v| v.exposure) != Some(crate::core::gitignore::Exposure::Protected)
+        });
+        if exposed {
+            let file = Path::new(&env_path)
+                .file_name()
+                .map_or(env_path.clone(), |f| f.to_string_lossy().into_owned());
+            let (are, them) = if backups.len() == 1 {
+                ("is a plaintext backup", "it")
+            } else {
+                ("are plaintext backups", "them")
+            };
+            ui::warning(format!(
+                "{} {are} of {file}, left out of the comparison between env files: \
+                 delete {them} or keep {them} git-ignored",
+                backups.join(", ")
+            ));
+        }
     }
     let input = Input {
         doc,
