@@ -199,6 +199,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `rotate` (name, provider, url, vaults), with `other_names` and
   `rotate_notes`.
 
+- **A server that refuses an old evnx is explained.** An evnx server can answer
+  HTTP 426 Upgrade Required when the CLI is older than it accepts (every
+  request already names the version in its `User-Agent`). evnx then says
+  which version is running, the minimum when the server gives one
+  (`minimum_version` in the error body), and that `evnx update` prints the
+  upgrade command for the way it was installed, and exits 11.
+
 ### Changed
 
 - The `evnx-scan-push` hook in `.pre-commit-hooks.yaml` now scans the commits
