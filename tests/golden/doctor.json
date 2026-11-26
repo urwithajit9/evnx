@@ -20,8 +20,8 @@
     {
       "name": "env_example",
       "description": "Check .env.example exists and is Git-tracked",
-      "severity": "warning",
-      "details": ".env.example is not tracked in Git — run: git add .env.example",
+      "severity": "info",
+      "details": "Not a git repository: whether .env.example is tracked was not checked",
       "fixable": false,
       "fixed": false,
       "ran": true
@@ -75,9 +75,9 @@
   "summary": {
     "total": 7,
     "errors": 1,
-    "warnings": 2,
+    "warnings": 1,
     "passed": 1,
-    "info": 3,
+    "info": 4,
     "fixable": 2
   },
   "timestamp": "<normalised>"

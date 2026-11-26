@@ -914,6 +914,17 @@ impl DiagnosticCheck for EnvExampleCheck {
             ));
         }
 
+        // Outside a repository nothing can be tracked, and "run: git add" was
+        // advice for a repository that does not exist.
+        if !gitignore::in_work_tree(project_root) {
+            return Ok(self.result(
+                Severity::Info,
+                Some(format!(
+                    "Not a git repository: whether {name} is tracked was not checked"
+                )),
+            ));
+        }
+
         if !gitignore::is_tracked(project_root, name) {
             // ⚠️ Not `fixable`. It was, with a `fix_action` that only printed
             // advice and returned `Ok(false)` — so the summary counted a fix

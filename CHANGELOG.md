@@ -299,6 +299,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   commit)", then "move the values into .env", and "rotate it" only if the key
   was shared another way. `scan --staged` follows the same rule: a staged
   change to a file that is already in a commit keeps the history steps.
+- **`doctor` outside a git repository no longer says "run: git add
+  .env.example".** The template check now reports, as information, "Not a git
+  repository: whether .env.example is tracked was not checked", instead of a
+  warning about tracking in a repository that does not exist.
 
 ---
 

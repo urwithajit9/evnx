@@ -137,3 +137,17 @@ fn t_i294_json_keeps_the_check_name_and_description() {
         "{check}"
     );
 }
+
+/// Outside a git repository there is nothing to track a template in: the
+/// quick-start run was told "run: git add .env.example" in a plain folder.
+#[test]
+fn outside_a_repository_tracking_is_not_checked() {
+    let p = Project::new()
+        .file("package.json", "{}\n")
+        .env("A=1\n")
+        .file(".env.example", "A=\n");
+
+    let out = run(p.path(), &["doctor", "--strict"]);
+    out.assert_not_contains("git add .env.example");
+    out.assert_contains("Not a git repository: whether .env.example is tracked was not checked");
+}
