@@ -417,6 +417,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (app.aws.encoded_key)` with `key_path` set. Its fingerprint is unchanged, so
   a baseline that accepted it still does.
 
+### Security
+
+- Dependencies updated: `url` 2.5.9 (RUSTSEC-2026-0592; reached through
+  `reqwest`, in builds with `cloud` or `migrate`), and the `wasm-bindgen` family,
+  whose versions in the lockfile had been yanked. `cargo audit` reports no
+  vulnerability; the accepted "unmaintained" notices (`chrono`, `pin-utils`,
+  and `humantime`, which only the tests use) are listed with reasons in
+  `.cargo/audit.toml`.
+
 ---
 
 ## [0.15.0] - 2026-11-19
