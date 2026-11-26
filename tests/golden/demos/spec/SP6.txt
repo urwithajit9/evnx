@@ -16,7 +16,7 @@ Next steps:
   1. Keep them out of git: git would commit app.env — add it to .gitignore
   2. If one was pushed or shared before, revoke or rotate it
 [stderr]
-  config    .evnx.toml (vars.secret=false on 1 variable(s))
+  config    .evnx.toml (vars.secret=false on 1 variable)
 
   evnx scan  Checking for exposed secrets
 
@@ -40,7 +40,7 @@ Next steps:
   1. Keep them out of git: git would commit live.env — add it to .gitignore
   2. If one was pushed or shared before, revoke or rotate it
 [stderr]
-  config    .evnx.toml (vars.secret=false on 1 variable(s))
+  config    .evnx.toml (vars.secret=false on 1 variable)
 
   evnx scan  Checking for exposed secrets
 

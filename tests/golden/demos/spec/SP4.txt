@@ -3,7 +3,7 @@
 
 $ evnx spec init
 [stderr]
-  config    .evnx.toml (scan.severity=high)
+  config    .evnx.toml
 
   evnx spec  Generate the variable contract
 
@@ -18,7 +18,7 @@ evnx stopped before making changes (exit 2). Run one of the commands above.
 
 $ evnx spec init --force
 [stderr]
-  config    .evnx.toml (scan.severity=high)
+  config    .evnx.toml
 Error: --force was removed: it appended a second [vars] section that TOML refuses to read.
   Use --merge to add only the variables .evnx.toml does not declare yet;
   existing entries are kept as they are.
@@ -36,7 +36,7 @@ Next steps:
   2. Mark optional variables with `required = false`
   3. Commit .evnx.toml; it holds the contract
 [stderr]
-  config    .evnx.toml (scan.severity=high)
+  config    .evnx.toml
 
   evnx spec  Generate the variable contract
 

@@ -44,7 +44,7 @@ $ evnx add service redis --yes
 ✓ Created .env from .env.example
 ✓ Added 5 variables for Redis
 [stderr]
-  config    .evnx.toml (scan.severity=high)
+  config    .evnx.toml
   !  .evnx.toml has no [vars] section — the new variables are not under contract
      run `evnx spec init` to declare them
   Docs: https://docs.evnx.dev/cli/commands/add

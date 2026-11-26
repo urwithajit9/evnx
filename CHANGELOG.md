@@ -292,6 +292,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `evnx init --yes --dir DIR`.
 - **`parse --show-values` implies `--values`.** On its own it was a usage
   error asking for `--values`; it now prints the values, also to a terminal.
+- **The `config` line names `[scan]` settings only for `scan`.** Every command
+  printed `config .evnx.toml (scan.exclude=1 patterns)`; other commands now
+  print `config .evnx.toml` (with any `vars.secret=false` note). Counts read
+  "1 pattern", "1 built-in detector", "1 variable".
 
 ### Fixed
 
