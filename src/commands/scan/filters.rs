@@ -38,6 +38,8 @@ use walkdir::WalkDir;
 ///   `.next/`, `.nuxt/`, `.turbo/`, `__pycache__/`, and dependency `vendor/`
 ///   and virtualenv folders
 /// - `.env.example`, `.env.sample`, `.env.template`
+/// - evnx's own files in `.evnx/` ([`is_evnx_own_file`]); other files there
+///   are walked
 ///
 /// # Example
 ///
@@ -77,6 +79,35 @@ pub const ALWAYS_EXCLUDE_DIRS: &[&str] = &[
     ".turbo",
     "__pycache__",
 ];
+
+/// Is `path` one of evnx's own files: a rule file in `.evnx/rules/`,
+/// `.evnx/rules.lock`, the default baseline, the backup registry or a
+/// platform state file? A walk, `--staged` and `--history` leave them out: a
+/// rule pack is full of example keys, and it is checked by its sha256 in
+/// `rules.lock` rather than by the scan. Other files under `.evnx/` are
+/// scanned. Matched by path components at the end of `path`, wherever the
+/// `.evnx/` folder sits, so a package in a monorepo with its own is covered.
+pub fn is_evnx_own_file(path: &Path) -> bool {
+    use crate::core::secretscan::{packs, rules};
+    let have = names(path);
+    let ends_with = |own: &Path| ends_with_names(&have, own);
+    let rules_dir = Path::new(rules::PROJECT_RULES_DIR);
+    let in_rules = path.extension().is_some_and(|e| e == "toml")
+        && path
+            .parent()
+            .is_some_and(|dir| ends_with_names(&names(dir), rules_dir));
+    in_rules
+        || ends_with(&packs::lock_path(rules_dir))
+        || ends_with(Path::new(super::suppress::DEFAULT_BASELINE))
+        || ends_with(Path::new(crate::core::backups::REGISTRY))
+        || ends_with(Path::new(crate::core::project::VERCEL_STATE))
+}
+
+/// Do the names `have` end with `own`'s?
+fn ends_with_names(have: &[String], own: &Path) -> bool {
+    let want = names(own);
+    have.len() >= want.len() && have[have.len() - want.len()..] == want[..]
+}
 
 /// Of those, the ones every run has always skipped: not named in the note a
 /// walk prints about the folders it left out.
@@ -160,6 +191,8 @@ pub struct Collected {
     pub read_through: std::collections::HashMap<PathBuf, PathBuf>,
     /// Files named on the command line, read whatever the rules say.
     pub named: std::collections::HashSet<PathBuf>,
+    /// How many of evnx's own files a walk left out ([`is_evnx_own_file`]).
+    pub evnx_own: usize,
 }
 
 impl FileFilter {
@@ -404,6 +437,13 @@ impl FileFilter {
                     // The entry's own type: `Path::is_file` follows a link, so a
                     // link to a file outside the tree was read as if it were here.
                     let kind = entry.file_type();
+                    // A rule pack, the lock, the baseline, the backup registry
+                    // and platform state: evnx's own, not the project's. Named
+                    // on the command line, one is read like any other file.
+                    if !kind.is_dir() && is_evnx_own_file(entry_path) {
+                        collected.evnx_own += 1;
+                        continue;
+                    }
                     if kind.is_symlink() {
                         if self.excluded(entry_path, Some(path), &tracked_names.borrow())
                             || !self.walk_selects(entry_path)
@@ -834,6 +874,29 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    #[test]
+    fn evnx_own_files_are_the_listed_ones_only() {
+        for own in [
+            "./.evnx/rules/gitleaks.toml",
+            ".evnx/rules.lock",
+            ".evnx/baseline.json",
+            ".evnx/backups.json",
+            "pkg/api/.evnx/platform/vercel.json",
+        ] {
+            assert!(is_evnx_own_file(Path::new(own)), "{own}");
+        }
+        for project in [
+            ".evnx/notes.txt",
+            ".evnx/rules/sub/a.toml",
+            ".evnx/rules/a.txt",
+            "rules/a.toml",
+            "baseline.json",
+            ".evnx/platform/other.json",
+        ] {
+            assert!(!is_evnx_own_file(Path::new(project)), "{project}");
+        }
+    }
 
     /// ⚠️ `.env.swp` is binary editor state and `.env*` selects it, so once an
     /// unreadable file started failing the scan, a `.env` open in vim would

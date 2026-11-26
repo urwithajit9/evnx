@@ -17,7 +17,7 @@ use super::api::RemoteVar;
 use super::project::ProjectRef;
 
 /// Where it lives, from the project root.
-pub const PATH: &str = ".evnx/platform/vercel.json";
+pub const PATH: &str = crate::core::project::VERCEL_STATE;
 
 #[derive(Serialize)]
 struct Entry<'a> {

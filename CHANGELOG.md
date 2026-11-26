@@ -235,6 +235,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`add custom NAME=value` now writes the value to `.env` when the template
   lists NAME with another value** (such as an empty `NAME=`). It used to report
   a template conflict and write nothing.
+- **`scan` no longer reads evnx's own files.** A rule pack added with
+  `evnx scan rules add` holds example keys, so a scan of the project reported
+  them from `.evnx/rules/` and exited 1. A walk, `--staged` and `--history` now
+  leave out the rule files in `.evnx/rules/`, `.evnx/rules.lock`,
+  `.evnx/baseline.json`, `.evnx/backups.json` and `.evnx/platform/vercel.json`,
+  and say so once ("evnx's own files in .evnx/ are not scanned"). Packs are
+  still checked against their sha256 in `rules.lock`. Other files under
+  `.evnx/` are scanned. A file named on the command line is read, as always;
+  `--include-ignored` does not change this.
 
 ---
 

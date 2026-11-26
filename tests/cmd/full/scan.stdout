@@ -173,8 +173,9 @@ Output:
 
 What a folder walk reads:
   every file, except .git, node_modules, target, dist and build, the
-  .env.example family, editor swap files, binary files (except PKCS#12
-  keystores, found by their content), and files over
+  .env.example family, evnx's own files in .evnx/ (rule files, rules.lock,
+  the baseline, backups.json, platform state), editor swap files, binary
+  files (except PKCS#12 keystores, found by their content), and files over
   1 MiB (--max-file-size). A file named on the command line is always read.
   In a git repository, findings in files git ignores and does not track
   are summarised, not counted (--include-ignored counts them).

@@ -96,8 +96,9 @@ pub const SCAN: CommandDoc = CommandDoc {
     after_help: "\
 What a folder walk reads:\n\
 \x20 every file, except .git, node_modules, target, dist and build, the\n\
-\x20 .env.example family, editor swap files, binary files (except PKCS#12\n\
-\x20 keystores, found by their content), and files over\n\
+\x20 .env.example family, evnx's own files in .evnx/ (rule files, rules.lock,\n\
+\x20 the baseline, backups.json, platform state), editor swap files, binary\n\
+\x20 files (except PKCS#12 keystores, found by their content), and files over\n\
 \x20 1 MiB (--max-file-size). A file named on the command line is always read.\n\
 \x20 In a git repository, findings in files git ignores and does not track\n\
 \x20 are summarised, not counted (--include-ignored counts them).\n\

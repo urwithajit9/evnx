@@ -14,6 +14,12 @@
 
 use std::path::{Path, PathBuf};
 
+/// Where evnx records what Vercel looked like at the last `platform pull`,
+/// from the project root (`platform::vercel::state`). Here rather than there so a
+/// build without the network features still knows the file is evnx's own
+/// (`scan` leaves it out).
+pub const VERCEL_STATE: &str = ".evnx/platform/vercel.json";
+
 /// Files whose presence means the project runs in containers, in the order
 /// they are reported.
 pub const DOCKER_FILES: &[&str] = &[
