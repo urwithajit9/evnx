@@ -9,7 +9,7 @@ and in `exit_codes` of `evnx commands --json`.
 | Code | Id | Meaning | Commands |
 |---|---|---|---|
 | 0 | `ok` | Ran, nothing to report | every command |
-| 1 | `findings` | Ran, and found something: findings, problems, a difference, not in sync | `remove`, `get`, `validate`, `scan`, `scan rules test`, `diff`, `migrate`, `sync`, `align`, `cloud diff`, `platform diff`, `platform push`, `doctor`, `spec check`, `parse`, `update` |
+| 1 | `findings` | Ran, and found something: findings, problems, a difference, not in sync | `remove`, `get`, `validate`, `scan`, `scan rules test`, `diff`, `migrate`, `sync`, `align`, `vault revoke`, `cloud diff`, `platform diff`, `platform push`, `doctor`, `spec check`, `parse`, `update` |
 | 2 | `error` | Could not run: usage, config, I/O, or refused before any change | every command |
 | 4 | `declined` | Declined: answered no, or a confirmation was needed with no terminal and no --yes | `init`, `add` and its subcommands, `remove`, `set`, `get`, `scan rules update`, `migrate`, `sync`, `restore`, `auth token revoke`, `auth sessions revoke`, `auth sessions revoke-others`, `auth devices disavow`, `auth rotate-master-password`, `org seats`, `org remove`, `org delete`, `org leave`, `vault delete`, `vault revoke`, `vault rekey`, `vault leave`, `cloud push`, `cloud pull`, `cloud delete-version`, `platform pull`, `platform push`, `undo` |
 | 5 | `restored_aside` | restore wrote the result aside, to <output>.restored | `restore` |

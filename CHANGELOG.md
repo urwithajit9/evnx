@@ -171,6 +171,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and it is logged with the time and the commits to `.git/evnx/bypass.log`.
   `hook uninstall` and `hook status` take `--pre-push` too.
 
+- **`evnx vault revoke --all-vaults --user <email>`** removes someone from
+  every vault where you can see them, in one command. It lists the vaults
+  first, with the ones it must skip and why (your role does not allow it, they
+  are the owner or an admin like you, or a member who stays has no
+  post-quantum key yet), asks once, reads the master password once, then
+  revokes and re-keys each vault in turn. It stops at the first failure and
+  prints what was revoked, what failed and what was not attempted; the exit
+  code is the failure's. It exits 1 when a vault was skipped, because the
+  person still has access there, and 0 when they are in no vault you can see.
+  `--no-rekey`, `--yes`, `--password-stdin`, `--dry-run` (reads only, sends no
+  change) and `--json` (vault names and results) work as for one vault, and
+  `vault revoke <vault>` takes `--dry-run` and `--json` too. Your own address
+  is refused: use `evnx vault leave`.
+
 ### Changed
 
 - The `evnx-scan-push` hook in `.pre-commit-hooks.yaml` now scans the commits

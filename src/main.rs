@@ -1235,7 +1235,7 @@ fn run() -> Result<Verdict, EvnxError> {
 
         #[cfg(feature = "cloud")]
         Commands::Vault { command, server } => {
-            evnx::cloud::run_vault(command, server.as_deref(), cli.verbose).map(clean)
+            evnx::cloud::run_vault(command, server.as_deref(), cli.verbose)
         }
 
         #[cfg(feature = "cloud")]

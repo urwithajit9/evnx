@@ -35,6 +35,7 @@ const NETWORK: &[&str] = &[
     "org billing",
     "vault list",
     "vault members",
+    "vault revoke", // `tests/cloud_revoke_all.rs` checks its header
     "cloud history",
     "cloud diff",
     "cloud audit",
