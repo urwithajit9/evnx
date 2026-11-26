@@ -511,7 +511,7 @@ fn read(path: &str, named_by: Option<&str>) -> Result<Vars> {
             .vars),
         None if Path::new(path).exists() => Ok(parser
             .parse_file(path)
-            .with_context(|| format!("Failed to parse {path}"))?
+            .map_err(|e| crate::core::parser::with_bare_name_hint(path, e))?
             .vars),
         None => Ok(Default::default()),
     }

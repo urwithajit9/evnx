@@ -112,6 +112,30 @@ pub fn is_valid_key(key: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// `Failed to parse {path}: {e}`, and when the line `e` is about holds only
+/// a variable's name (a template's `TEST_VAR`), how to write it: `TEST_VAR=`.
+///
+/// ⚠️ A hint, not a reading: the line is still an error, as it always was.
+/// The name is repeated only when it is a valid key and does not look like a
+/// credential, so a value pasted alone on a line is never printed.
+pub fn with_bare_name_hint(path: &str, e: ParseError) -> anyhow::Error {
+    let name = match &e {
+        ParseError::InvalidFormat { line, message } if message == "missing '=' separator" => {
+            std::fs::read_to_string(path).ok().and_then(|text| {
+                let raw = text.lines().nth(line.checked_sub(1)?)?.trim().to_string();
+                (is_env_key(&raw) && !crate::core::classify::is_secret_shaped(&raw)).then_some(raw)
+            })
+        }
+        _ => None,
+    };
+    match name {
+        Some(name) => anyhow::anyhow!(
+            "Failed to parse {path}: {e}\n  To list a name with no value, write it as `{name}=`"
+        ),
+        None => anyhow::Error::from(e).context(format!("Failed to parse {path}")),
+    }
+}
+
 /// Is `key` a name the parser accepts: letters, digits, `_`, `.`, `-`, `[` and
 /// `]`, in any position (D12, 0.13.0)?
 ///
@@ -507,7 +531,7 @@ impl Parser {
             }
             // Says what to do by itself; "Failed to parse" would only precede it.
             e @ ParseError::Utf16 { .. } => crate::core::verdict::usage(e.to_string()),
-            other => anyhow::Error::from(other).context(format!("Failed to parse {path}")),
+            other => with_bare_name_hint(path, other),
         })
     }
 

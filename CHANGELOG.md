@@ -296,6 +296,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   printed `config .evnx.toml (scan.exclude=1 patterns)`; other commands now
   print `config .evnx.toml` (with any `vars.secret=false` note). Counts read
   "1 pattern", "1 built-in detector", "1 variable".
+- **A template line with only a name says how to write it.** `TEST_VAR` alone
+  on a line is still a parse error ("missing '=' separator"); the error now
+  adds "To list a name with no value, write it as `TEST_VAR=`", in `spec init`
+  and every command that reads a file the same way. The name is repeated only
+  when it is a valid key that does not look like a credential.
 
 ### Fixed
 
