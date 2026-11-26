@@ -536,7 +536,7 @@ impl ScanRunner {
         // warnings land in its own results. Notes are printed by `finish`, in
         // order, so stderr is as deterministic as stdout.
         use rayon::prelude::*;
-        let scanned: Vec<(ScanResults, bool)> = files
+        let scanned: Vec<(ScanResults, bool, bool)> = files
             .par_iter()
             .zip(git.par_iter())
             .map(|(file, view)| {
@@ -573,7 +573,8 @@ impl ScanRunner {
                 // is not "ignored". Each of those is reported exactly as before.
                 let ignored = view.as_ref().map(|v| v.exposure)
                     == Some(crate::core::gitignore::Exposure::Protected);
-                if walked && ignored && !self.include_ignored {
+                let held = walked && ignored && !self.include_ignored;
+                if held {
                     local.hold_back(0, display_portable(file));
                 } else if let Some(view) = view {
                     for finding in &mut local.findings {
@@ -581,7 +582,7 @@ impl ScanRunner {
                         finding.repo_path = Some(view.repo_path.clone());
                     }
                 }
-                outcome.map(|()| (local, read))
+                outcome.map(|()| (local, read, held))
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -590,12 +591,17 @@ impl ScanRunner {
         // The files actually read: `scanning …` must not name one that was
         // then set aside as binary.
         let mut read = Vec::with_capacity(files.len());
-        for (file, (local, was_read)) in files.iter().zip(scanned) {
+        let mut summarised = Vec::new();
+        for (file, (local, was_read, held)) in files.iter().zip(scanned) {
             if was_read {
                 read.push(file.clone());
+                if held {
+                    summarised.push(file.clone());
+                }
             }
             results.merge(local);
         }
+        results.summarised = summarised;
 
         if stdin {
             self.scan_stdin(&mut results)?;

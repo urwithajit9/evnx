@@ -417,6 +417,11 @@ pub struct ScanResults {
     /// outside a repository, and for files named on the command line.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub ignored_by_git: Vec<IgnoredFile>,
+    /// Of the files read, the ones held back that way, with findings or not:
+    /// the pretty output's `scanning …` line names them apart from the files
+    /// that are counted.
+    #[serde(skip)]
+    pub summarised: Vec<std::path::PathBuf>,
     pub secrets_found: usize,
     pub findings: Vec<Finding>,
     /// Findings silenced by an `evnx:allow` marker (C5). Not counted.
@@ -697,6 +702,7 @@ impl ScanResults {
             unreadable: Vec::new(),
             skipped: Vec::new(),
             ignored_by_git: Vec::new(),
+            summarised: Vec::new(),
             secrets_found: 0,
             findings: Vec::new(),
             allowed: Vec::new(),
@@ -717,6 +723,7 @@ impl ScanResults {
         self.unreadable.extend(other.unreadable);
         self.skipped.extend(other.skipped);
         self.ignored_by_git.extend(other.ignored_by_git);
+        self.summarised.extend(other.summarised);
         self.secrets_found += other.secrets_found;
         self.findings.extend(other.findings);
         self.allowed.extend(other.allowed);

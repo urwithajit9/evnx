@@ -367,3 +367,60 @@ fn t_i290_one_held_back_finding_is_it() {
     assert!(stdout.contains("1 finding there is"), "{stdout}");
     assert!(stdout.contains("(--include-ignored lists it)"), "{stdout}");
 }
+
+// ── The walk line: counted files first, git-ignored ones apart ─────────────
+
+/// `scanning ./.env, ./.gitignore, ./leak-test.txt` listed a git-ignored
+/// `.env` beside the files that are counted, with nothing to tell them apart.
+#[test]
+fn the_walk_line_names_git_ignored_files_apart() {
+    let Some(d) = repo(
+        &[
+            (".gitignore", ".env\n"),
+            (".env", &env_with_keys()),
+            ("leak-test.txt", &format!("key = {AWS}\n")),
+        ],
+        &[],
+    ) else {
+        return;
+    };
+    let (code, stdout, _) = scan(&d, &[]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(
+        stdout.contains(
+            "scanning ./.gitignore, ./leak-test.txt · git-ignored (summarised only): ./.env\n"
+        ),
+        "{stdout}"
+    );
+    // `--include-ignored` counts it, so it is listed with the rest.
+    let (_, stdout, _) = scan(&d, &["--include-ignored"]);
+    assert!(
+        stdout.contains("scanning ./.env, ./.gitignore, ./leak-test.txt\n"),
+        "{stdout}"
+    );
+}
+
+/// Long lists keep "and N other files", on each side.
+#[test]
+fn the_walk_line_shortens_both_lists() {
+    let mut files: Vec<(String, String)> = vec![(".gitignore".into(), "*.env\n".into())];
+    for i in 0..5 {
+        files.push((format!("f{i}.txt"), "x = 1\n".into()));
+        files.push((format!("e{i}.env"), "A=1\n".into()));
+    }
+    let refs: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(a, b)| (a.as_str(), b.as_str()))
+        .collect();
+    let Some(d) = repo(&refs, &[]) else {
+        return;
+    };
+    let (_, stdout, _) = scan(&d, &[]);
+    assert!(
+        stdout.contains(
+            "scanning ./.gitignore, ./f0.txt, ./f1.txt and 3 other files · git-ignored \
+             (summarised only): ./e0.env, ./e1.env, ./e2.env and 2 other files\n"
+        ),
+        "{stdout}"
+    );
+}

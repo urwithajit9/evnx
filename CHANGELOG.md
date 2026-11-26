@@ -226,6 +226,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unmaintained `number_prefix` crate. Output is unchanged.
 - The unsafe C port `unsafe-libyaml` is no longer in the build: YAML parsing
   is pure Rust. A YAML error names a line, a column and a fixed reason.
+- **`scan`'s `scanning …` line names git-ignored files apart.** It listed a
+  `.env` that git ignores beside the files that are counted. The counted files
+  now come first, and the ignored ones a walk read and only summarised follow
+  on the same line: `scanning ./.gitignore, ./leak-test.txt · git-ignored
+  (summarised only): ./.env`. Each list still ends "and N other files" when it
+  is long. With `--include-ignored` they are counted and listed with the rest.
 
 ### Fixed
 

@@ -169,19 +169,36 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
     // unreadable files and the summary under findings still print (G1).
     let quiet = crate::utils::ui::is_quiet();
     if !files.is_empty() && !quiet {
-        let shown = files
-            .iter()
-            .take(3)
-            .map(|f| f.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let rest = files.len().saturating_sub(3);
-        let suffix = if rest > 0 {
-            format!(" and {}", pluralize(rest, "other file", "other files"))
-        } else {
-            String::new()
+        // Counted files first; the git-ignored ones a walk read and only
+        // summarised are named apart, so the line does not present a `.env`
+        // that is not counted as one that is.
+        let (held, counted): (Vec<&PathBuf>, Vec<&PathBuf>) =
+            files.iter().partition(|f| results.summarised.contains(f));
+        let few = |list: &[&PathBuf]| {
+            let shown = list
+                .iter()
+                .take(3)
+                .map(|f| f.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            match list.len().saturating_sub(3) {
+                0 => shown,
+                rest => format!(
+                    "{shown} and {}",
+                    pluralize(rest, "other file", "other files")
+                ),
+            }
         };
-        println!("  scanning {}{}\n", shown.dimmed(), suffix.dimmed());
+        let line = match (counted.is_empty(), held.is_empty()) {
+            (_, true) => few(&counted),
+            (true, false) => format!("git-ignored (summarised only): {}", few(&held)),
+            (false, false) => format!(
+                "{} · git-ignored (summarised only): {}",
+                few(&counted),
+                few(&held)
+            ),
+        };
+        println!("  scanning {}\n", line.dimmed());
     }
 
     // ⛔ Before the all-clear, because an unread file makes the all-clear false.
