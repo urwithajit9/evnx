@@ -303,6 +303,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   .env.example".** The template check now reports, as information, "Not a git
   repository: whether .env.example is tracked was not checked", instead of a
   warning about tracking in a repository that does not exist.
+- **`auth token create` names one password variable in its CI example.** It
+  said "with EVNX_MASTER_PASSWORD and EVNX_KEY_BUNDLE", then piped
+  `$EVNX_PASSWORD` (the backup passphrase variable) into `--password-stdin`.
+  It now reads "Use it in CI, with EVNX_MASTER_PASSWORD and EVNX_KEY_BUNDLE (or
+  EVNX_KEY_BUNDLE_FILE) set as CI secrets:" followed by
+  `evnx cloud pull --vault <vault>`, which reads `EVNX_MASTER_PASSWORD` itself.
 
 ---
 
