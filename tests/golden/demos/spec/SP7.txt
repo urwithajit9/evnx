@@ -21,7 +21,8 @@ $ evnx validate
 
 Next steps:
   1. Review and fix the errors above
-  2. Use --ignore issue_type to suppress specific warnings
+  2. Fill in the placeholder values: evnx set --fill
+  3. Use --ignore issue_type to suppress specific warnings
 [stderr]
   config    .evnx.toml
 ! <dir>/scenes/SP7/.evnx.toml: unknown key `vars.A.requird` (ignored) — did you mean `required`?

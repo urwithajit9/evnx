@@ -278,6 +278,7 @@ pub fn run(options: InitOptions) -> Result<()> {
             .flatten()
             .is_none_or(|m| m.is_empty());
         print_next_steps_ui(
+            &target.root,
             target.template_name(),
             &target.env_file,
             !target.no_contract,
@@ -335,11 +336,14 @@ fn print_init_header() {
     );
 }
 
-fn print_next_steps_ui(template: &str, env_file: &str, contract: bool, empty: bool) {
+fn print_next_steps_ui(dir: &Path, template: &str, env_file: &str, contract: bool, empty: bool) {
     let edit = if empty {
         "Add variables: evnx add custom NAME=value (or evnx add for a menu)".to_string()
     } else {
-        format!("Edit {env_file} and replace placeholder values")
+        format!(
+            "Fill in the placeholder values in {env_file}: {}",
+            crate::commands::fill::command_for(Some(dir), env_file)
+        )
     };
     if !contract {
         let commit = format!("Commit {template}; never commit {env_file}");

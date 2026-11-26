@@ -54,6 +54,22 @@ fn needs_value(name: &str, value: &Secret) -> bool {
         || value.expose().trim().is_empty()
 }
 
+/// `evnx set --fill`, with `--dir DIR` when the project is not the current
+/// folder and `--env FILE` when `env_file` is not `.env`: the command a next
+/// step names for the placeholders in that file.
+pub fn command_for(dir: Option<&std::path::Path>, env_file: &str) -> String {
+    use crate::core::shell::word;
+    let mut cmd = "evnx set --fill".to_string();
+    if let Some(d) = dir.filter(|d| !d.as_os_str().is_empty() && *d != std::path::Path::new(".")) {
+        cmd.push_str(&format!(" --dir {}", word(&d.to_string_lossy())));
+    }
+    let bare = env_file.strip_prefix("./").unwrap_or(env_file);
+    if bare != ".env" {
+        cmd.push_str(&format!(" --env {}", word(bare)));
+    }
+    cmd
+}
+
 /// Run `evnx set --fill`.
 pub fn run(opts: Options) -> Result<()> {
     if opts.json {

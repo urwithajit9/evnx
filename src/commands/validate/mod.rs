@@ -1058,17 +1058,32 @@ fn output_pretty(result: &ValidationResult, env_path: &str) -> Result<()> {
                 && !(hidden.contains(i.variable.as_str())
                     && i.issue_type == IssueType::PlaceholderValue)
         });
+        // The quick-start run found five placeholders and never named the
+        // command that asks for each one.
+        let placeholders = result
+            .issues
+            .iter()
+            .any(|i| i.issue_type == IssueType::PlaceholderValue);
+        let fill = format!(
+            "Fill in the placeholder values: {}",
+            crate::commands::fill::command_for(None, env_path)
+        );
         let mut steps = vec!["Review and fix the errors above"];
+        if placeholders {
+            steps.push(&fill);
+        }
         if fixable {
             steps.push("Run with --fix to auto-correct common issues");
         }
         steps.push("Use --ignore issue_type to suppress specific warnings");
         ui::print_next_steps(&steps);
     } else if !hidden.is_empty() {
-        ui::print_next_steps(&[
-            "Fill in the values listed under \"Needs your input\" — evnx cannot invent them",
-            "Run evnx validate again",
-        ]);
+        let fill = format!(
+            "Fill in the values listed under \"Needs your input\" — evnx cannot invent \
+             them: {}",
+            crate::commands::fill::command_for(None, env_path)
+        );
+        ui::print_next_steps(&[&fill, "Run evnx validate again"]);
     }
 
     Ok(())

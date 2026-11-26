@@ -35,7 +35,7 @@ $ evnx init --with stripe --yes --dir multi
 · not changed: .env.production, .env.staging, .env.test — check one with: evnx validate --env-name production
 
 Next steps:
-  1. Edit .env and replace placeholder values
+  1. Fill in the placeholder values in .env: evnx set --fill --dir multi
   2. Commit .env.example and .evnx.toml; never commit .env
   3. .evnx.toml is the contract 'evnx validate' checks: safe to delete ('evnx init --no-contract' skips it)
   4. Run 'evnx validate' to check configuration

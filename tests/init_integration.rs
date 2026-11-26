@@ -1715,3 +1715,21 @@ fn i331_init_names_a_nested_env_file() {
     assert!(all.contains("deploy/compose/.env also exists"), "{all}");
     assert!(dir.path().join(".env").exists());
 }
+
+/// `init` writes placeholder values; its next steps name the command that
+/// fills them.
+#[test]
+fn init_next_steps_name_set_fill() {
+    let d = tempfile::TempDir::new().unwrap();
+    let out = assert_cmd::cargo::cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .env("NO_COLOR", "1")
+        .args(["init", "--yes", "--with", "postgresql"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("Fill in the placeholder values in .env: evnx set --fill"),
+        "{stdout}"
+    );
+}

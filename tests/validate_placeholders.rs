@@ -34,3 +34,29 @@ fn t_dec_g11_the_name_decides_for_context_words() {
         "ENVIRONMENT=development is a real value; test_db_pass stays real for --fix (DEC-G13)"
     );
 }
+
+/// The quick-start run: five placeholders, and the next steps never named the
+/// command that fills them.
+#[test]
+fn placeholders_point_to_set_fill() {
+    let p = Project::new()
+        .env("APP_NAME=YOUR_VALUE_HERE\nPORT=8080\n")
+        .example("APP_NAME=\nPORT=\n");
+    let out = run(p.path(), &["validate"]);
+    out.assert_code(1);
+    out.assert_contains("Fill in the placeholder values: evnx set --fill");
+
+    let p = Project::new()
+        .file(".env.staging", "APP_NAME=YOUR_VALUE_HERE\n")
+        .example("APP_NAME=\n");
+    let out = run(p.path(), &["validate", "--env", ".env.staging"]);
+    out.assert_contains("Fill in the placeholder values: evnx set --fill --env .env.staging");
+}
+
+/// No placeholder, no `set --fill`.
+#[test]
+fn no_placeholder_no_set_fill() {
+    let p = Project::new().env("PORT=8080\n").example("PORT=\nB=\n");
+    let out = run(p.path(), &["validate"]);
+    out.assert_not_contains("set --fill");
+}

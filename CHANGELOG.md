@@ -278,6 +278,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gets "rev v0.11.0 is older than this evnx (X.Y.Z): set rev: vX.Y.Z in
   .pre-commit-config.yaml"; a hook in the file that no manager has installed
   gets "run `pre-commit install` (or `prek install`)". The file is only read.
+- **`validate` and `init` name `evnx set --fill` for placeholder values.**
+  When `validate` finds a placeholder, its next steps add "Fill in the
+  placeholder values: evnx set --fill" (with `--env FILE` for a file other than
+  `.env`), and the "Needs your input" step ends with the same command. `init`'s
+  first next step is now "Fill in the placeholder values in .env: evnx set
+  --fill" (with `--dir DIR` when it wrote into another folder) instead of
+  "Edit .env and replace placeholder values".
 
 ### Fixed
 
