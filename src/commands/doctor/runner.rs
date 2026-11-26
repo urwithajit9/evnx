@@ -537,7 +537,7 @@ impl DiagnosticCheck for EnvFileCheck {
                                 ),
                                 format!(
                                     "→ create it from the template: {}",
-                                    create_from_template(project_root, template)
+                                    create_from_template(project_root)
                                 ),
                             ],
                             nested,
@@ -808,25 +808,20 @@ fn is_a_project(project_root: &Path) -> bool {
         || !crate::core::project::docker_files_in(project_root).is_empty()
 }
 
-/// The command that creates `.env` from `template` in `project_root`: the one
-/// `sync` names for the same case.
-fn create_from_template(project_root: &Path, template: &str) -> String {
-    use crate::core::shell::word;
-    let here = project_root == Path::new(".");
-    let mut cmd = String::from("evnx sync --direction reverse");
-    if !here {
+/// The command that sets `project_root` up from its template, `.env` first.
+fn create_from_template(project_root: &Path) -> String {
+    // ⚠️ `init`, not `sync --direction reverse`: sync copies the names into a
+    // new `.env` and stops, while `init --yes` keeps the template as it is,
+    // writes `.env` from it, and adds the `.gitignore` lines and the contract
+    // a set-up project has. It finds the template by the same rule doctor
+    // does (`[defaults] example`, else `.env.example`, `.env.sample`,
+    // `.env.template`), so the template needs no flag.
+    let mut cmd = String::from("evnx init --yes");
+    if project_root != Path::new(".") {
         cmd.push_str(&format!(
-            " --env {}",
-            word(&project_root.join(".env").to_string_lossy())
+            " --dir {}",
+            crate::core::shell::word(&project_root.to_string_lossy())
         ));
-    }
-    if !here || template != ".env.example" {
-        let path = if here {
-            template.to_string()
-        } else {
-            project_root.join(template).to_string_lossy().into_owned()
-        };
-        cmd.push_str(&format!(" --example {}", word(&path)));
     }
     cmd
 }

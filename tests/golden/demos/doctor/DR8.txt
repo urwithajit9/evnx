@@ -13,7 +13,7 @@ $ evnx doctor
 
   ✗  Validate .env file existence, security, and syntax
      .env not found, though .env.example is here: this project expects one
-     → create it from the template: evnx sync --direction reverse
+     → create it from the template: evnx init --yes
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -48,7 +48,7 @@ $ evnx doctor --strict
 
   ✗  Validate .env file existence, security, and syntax
      .env not found, though .env.example is here: this project expects one
-     → create it from the template: evnx sync --direction reverse
+     → create it from the template: evnx init --yes
 
   ✓  Check .env.example exists and is Git-tracked
 

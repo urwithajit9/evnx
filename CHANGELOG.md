@@ -285,6 +285,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   first next step is now "Fill in the placeholder values in .env: evnx set
   --fill" (with `--dir DIR` when it wrote into another folder) instead of
   "Edit .env and replace placeholder values".
+- **`doctor` suggests `evnx init --yes` for a missing `.env` beside a
+  template**, instead of `evnx sync --direction reverse`, which only copies the
+  names. `init --yes` keeps the template, writes `.env` from it and adds the
+  `.gitignore` lines and the contract. For `doctor DIR` it is
+  `evnx init --yes --dir DIR`.
 
 ### Fixed
 

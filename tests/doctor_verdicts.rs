@@ -101,7 +101,7 @@ fn t_i162_a_template_without_env_is_an_error() {
     let out = run(p.path(), &["doctor"]);
     out.assert_code(1);
     out.assert_contains(".env not found");
-    out.assert_contains("evnx sync --direction reverse");
+    out.assert_contains("evnx init --yes");
 }
 
 #[test]
