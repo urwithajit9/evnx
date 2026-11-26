@@ -70,8 +70,8 @@ $ evnx doctor
 $ evnx doctor
 
   ✗  Validate .env file existence, security, and syntax
-     .env.backup is NOT in .gitignore (security risk): a plaintext copy of an env file
-     .env.bak is NOT in .gitignore (security risk): a plaintext copy of an env file
+     .env.backup is not ignored: git would commit it (security risk): a plaintext copy of an env file
+     .env.bak is not ignored: git would commit it (security risk): a plaintext copy of an env file
 
   ✓  Check .env.example exists and is Git-tracked
 

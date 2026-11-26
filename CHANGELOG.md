@@ -244,6 +244,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reason=used-in-tests`, or `evnx scan --update-baseline`), and is said to be
   in a test folder when it is. When both kinds are found, the rewrite steps
   name only the files with a key match.
+- **`doctor` says "git would commit it" for an env file git does not
+  ignore**, instead of "NOT in .gitignore": the answer is git's own, so a
+  global excludes file or `.git/info/exclude` counts. The line reads
+  `.env is not ignored: git would commit it (security risk)`, also in
+  `doctor --format json` `details`. When a backup such as
+  `.env.bak-20261120` is one of them, `doctor --fix` adds `.env*.bak*` to
+  evnx's block in `.gitignore`, beside `.env*`, and makes the copies
+  owner-only: mode 600, or on Windows, where doctor checks no modes, an
+  owner-only ACL. evnx's own `*.bak` entry is unchanged.
 
 ### Fixed
 

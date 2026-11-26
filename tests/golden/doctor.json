@@ -12,7 +12,7 @@
       "name": "env_file",
       "description": "Validate .env file existence, security, and syntax",
       "severity": "error",
-      "details": ".env is NOT in .gitignore (security risk)",
+      "details": ".env is not ignored: git would commit it (security risk)",
       "fixable": true,
       "fixed": false,
       "ran": true

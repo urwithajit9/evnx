@@ -597,10 +597,12 @@ impl DiagnosticCheck for EnvFileCheck {
                 gitignore::Exposure::Unignored => {
                     severity = Severity::Error;
                     fixable = true;
-                    // Wording unchanged: `doctor --format json` carries it
-                    // and other programs parse that output.
+                    // Git's own answer (`git check-ignore`: every
+                    // `.gitignore`, `.git/info/exclude`, a global excludes
+                    // file), not whether one `.gitignore` names it, which is
+                    // what "NOT in .gitignore" claimed.
                     lines.push(format!(
-                        "✗ {name} is NOT in .gitignore (security risk){copy}"
+                        "✗ {name} is not ignored: git would commit it (security risk){copy}"
                     ));
                 }
                 gitignore::Exposure::Protected => {
@@ -829,6 +831,10 @@ fn create_from_template(project_root: &Path, template: &str) -> String {
     cmd
 }
 
+/// What `doctor --fix` adds for plaintext backups of env files git would
+/// commit: `.env.bak`, `.env.bak-<date>`, `.env.production.bak.2`.
+const BACKUP_ENTRY: &str = ".env*.bak*";
+
 fn fix_env_gitignore(project_root: &Path, _verbose: bool) -> Result<bool> {
     let gitignore_path = project_root.join(".gitignore");
 
@@ -840,11 +846,38 @@ fn fix_env_gitignore(project_root: &Path, _verbose: bool) -> Result<bool> {
     // so it decided what to add from the wrong question. It now adds the lines
     // the file lacks, and `run_check` asks git again about the real files. A
     // later `!.env` is the user's line and is reported, never edited (G8).
-    let added = gitignore::append_entries(&gitignore_path, gitignore::ENV_ENTRIES)?;
+    let mut entries: Vec<&str> = gitignore::ENV_ENTRIES.to_vec();
+    // A backup git would commit (`.env.bak-20261120`): one pattern for every
+    // such copy, in the same block, and the copies owner-only.
+    let backups: Vec<EnvFile> = env_files(project_root)
+        .into_iter()
+        .filter(|f| {
+            f.copy
+                && f.link.is_none()
+                && crate::core::backups::is_backup_name(&f.name)
+                && gitignore::exposure(project_root, &f.name) == gitignore::Exposure::Unignored
+        })
+        .collect();
+    if !backups.is_empty() {
+        entries.push(BACKUP_ENTRY);
+    }
+    let added = gitignore::append_entries(&gitignore_path, &entries)?;
     if !added.is_empty() {
         report_fix(format!(".gitignore: added {}", added.join(", ")));
     }
-    Ok(!added.is_empty())
+    // Mode 600 is the permission check's fix, which runs after this one. It
+    // is skipped where there are no modes (Windows), so the ACL is set here.
+    let mut restricted = false;
+    if !permissions::MODES_APPLY {
+        for file in &backups {
+            let path = project_root.join(&file.name);
+            if permissions::owner_only(&path, permissions::AclFailure::Warn)? {
+                report_fix(format!("{}: owner-only", file.name));
+                restricted = true;
+            }
+        }
+    }
+    Ok(!added.is_empty() || restricted)
 }
 
 /// Check: .env.example existence and Git tracking

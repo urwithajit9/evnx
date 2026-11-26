@@ -316,7 +316,7 @@ fn t_share_60_quiet_still_prints_findings() {
     std::fs::write(p.join(".gitignore"), "").unwrap();
     let out = run(p.path(), &["-q", "doctor"]);
     out.assert_code(1);
-    out.assert_contains(".gitignore");
+    out.assert_contains("git would commit it");
 
     // scan: a key-shaped value in a file git would commit. ⚠️ Not in `.env`:
     // this project's `.gitignore` covers it, and since DEC-SC1 (I-285) a walk
