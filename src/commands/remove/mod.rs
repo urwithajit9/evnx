@@ -571,9 +571,15 @@ fn resolve_env(
         if path.exists() {
             bail!("{} is not a file", label(&path.to_string_lossy()));
         }
+        // The names stay in the suggested command: `evnx remove --env-name
+        // prod` alone removes nothing.
+        let command = std::iter::once("remove".to_string())
+            .chain(opts.names.iter().map(|n| crate::core::shell::word(n)))
+            .collect::<Vec<_>>()
+            .join(" ");
         bail!(
             "{}\n  Nothing was removed.",
-            crate::core::resolve::not_found(project, &label(&path.to_string_lossy()), "remove")
+            crate::core::resolve::not_found(project, &label(&path.to_string_lossy()), &command)
         );
     }
     Ok((Some(path), source))

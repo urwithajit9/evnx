@@ -725,3 +725,23 @@ fn rem2_typing_the_count_removes_them_all() {
     assert_eq!(code, 0, "{rest}");
     assert_eq!(p.read(".env"), "");
 }
+
+/// An older run: with only `.env.prod` there, `remove A B` suggested
+/// `evnx remove --env-name prod`, which names nothing to remove.
+#[test]
+fn the_missing_env_hint_keeps_the_names() {
+    let d = tempfile::TempDir::new().unwrap();
+    std::fs::write(d.path().join(".env.prod"), "A=1\nB=2\n").unwrap();
+    let out = assert_cmd::cargo::cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .env("NO_COLOR", "1")
+        .args(["remove", "A", "B"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Use it once:    evnx remove A B --env-name prod"),
+        "{stderr}"
+    );
+}

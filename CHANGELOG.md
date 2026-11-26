@@ -371,6 +371,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`validate` on a terminal ends its progress line.** "Files parsed ✓" (and
   "Applied N fix(es) ✓") ran together with the next line. The same for the
   "Done" line of `migrate --to github`.
+- **`remove`'s hint for a missing `.env` keeps the names.** With only
+  `.env.prod` there, `evnx remove A B` suggested `evnx remove --env-name prod`;
+  it now suggests `evnx remove A B --env-name prod`.
 
 ---
 
