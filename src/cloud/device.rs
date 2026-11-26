@@ -75,7 +75,7 @@ pub fn list(server_override: Option<&str>, json: bool, verbose: bool) -> Result<
 
     println!();
     println!(
-        "  {:<14}  {:<17}  {:<17}  {:>7}  {}",
+        "  {:<14}  {:<20}  {:<20}  {:>7}  {}",
         "DEVICE".bold(),
         "FIRST SEEN".bold(),
         "LAST SEEN".bold(),
@@ -94,13 +94,14 @@ pub fn list(server_override: Option<&str>, json: bool, verbose: bool) -> Result<
         } else {
             String::new()
         };
+        // Padded before it is dimmed, for the same reason.
         let id = if d.unknown_origin {
-            "(unknown)".dimmed().to_string()
+            format!("{:<14}", "(unknown)").dimmed().to_string()
         } else {
             d.id.clone()
         };
         println!(
-            "  {:<14}  {:<17}  {:<17}  {:>7}  {}",
+            "  {:<14}  {:<20}  {:<20}  {:>7}  {}",
             id,
             super::when::stamp(&d.first_seen),
             super::when::stamp(&d.last_seen),

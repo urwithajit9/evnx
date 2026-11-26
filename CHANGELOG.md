@@ -309,6 +309,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   It now reads "Use it in CI, with EVNX_MASTER_PASSWORD and EVNX_KEY_BUNDLE (or
   EVNX_KEY_BUNDLE_FILE) set as CI secrets:" followed by
   `evnx cloud pull --vault <vault>`, which reads `EVNX_MASTER_PASSWORD` itself.
+- **`auth sessions list` and `auth devices list` line up again.** Their time
+  columns were narrower than a time such as `2026-11-23 03:05 UTC`, so every
+  column after the first sat to the right of its header.
 
 ---
 
