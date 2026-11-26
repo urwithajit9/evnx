@@ -141,7 +141,8 @@ fn spec(path: &[&str]) -> (Vec<u8>, bool) {
         ["cloud", "diff"] => (s(&[0, 1, 2], &[SERVER]), false),
         ["cloud", "unlink"] => (vec![0, 2], false),
         ["cloud", "push" | "pull" | "delete-version"] => (s(&[0, 2, 4], &[SERVER]), false),
-        ["auth" | "org" | "vault"] => (s(&[0, 2, 4], &[SERVER]), false),
+        ["auth" | "org"] => (s(&[0, 2, 4], &[SERVER]), false),
+        ["vault"] => (s(&[0, 1, 2, 4], &[SERVER]), false),
         ["org", "seats"] => (s(&[0, 2, 4], &[SERVER]), false),
         ["auth", "token"] | ["auth", "sessions"] | ["auth", "devices"] => {
             (s(&[0, 2, 4], &[SERVER]), false)
@@ -151,7 +152,10 @@ fn spec(path: &[&str]) -> (Vec<u8>, bool) {
         | ["auth", "devices", "disavow"]
         | ["auth", "rotate-master-password"]
         | ["org", "remove" | "delete" | "leave"]
-        | ["vault", "delete" | "revoke" | "rekey" | "leave"] => (s(&[0, 2, 4], &[SERVER]), false),
+        | ["vault", "delete" | "rekey" | "leave"] => (s(&[0, 2, 4], &[SERVER]), false),
+        // `vault revoke --all-vaults` exits 1 when it skipped a vault the
+        // member stays in (the caller's role, or theirs).
+        ["vault", "revoke"] => (s(&[0, 1, 2, 4], &[SERVER]), false),
         ["cloud", ..] | ["auth", ..] | ["org", ..] | ["vault", ..] => {
             (s(&[0, 2], &[SERVER]), false)
         }

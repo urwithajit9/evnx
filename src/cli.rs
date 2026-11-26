@@ -1707,9 +1707,22 @@ pub enum VaultCommands {
     /// What it achieves: the removed member can no longer read anything pushed
     /// from now on. What it cannot: recall copies of what they could already
     /// read. Rotate those secrets at their source.
+    ///
+    /// With --all-vaults instead of a vault: every vault where you can see the
+    /// member, after one confirmation that names them all and one master
+    /// password. Vaults where you cannot remove them (your role, or theirs) are
+    /// skipped and named before the question. It stops at the first failure
+    /// and says which vaults were done. Exits 1 when a vault was skipped, so
+    /// the member still has access there.
     Revoke {
-        /// Vault: `name`, `name/environment`, or an id.
-        target: String,
+        /// Vault: `name`, `name/environment`, or an id. Leave it out with
+        /// --all-vaults.
+        #[arg(required_unless_present = "all_vaults")]
+        target: Option<String>,
+
+        /// Every vault where you can see the member, instead of one.
+        #[arg(long, conflicts_with = "target")]
+        all_vaults: bool,
 
         /// Email address of the member to remove.
         ///
@@ -1732,6 +1745,12 @@ pub enum VaultCommands {
         /// Read the master password from stdin instead of prompting.
         #[arg(long)]
         password_stdin: bool,
+
+        #[command(flatten)]
+        dry_run: args::DryRunArgs,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 
     /// Rotate a vault's key without removing anyone.

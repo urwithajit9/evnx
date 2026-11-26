@@ -216,6 +216,19 @@ pub enum ApiError {
         reason: String,
     },
 
+    /// 426 Upgrade Required: the server refuses this version of evnx as too
+    /// old. A server may say which version it needs (`minimum_version`).
+    #[error("{}", upgrade_message(server, minimum.as_deref(), message.as_deref()))]
+    UpgradeRequired {
+        /// Server that refused.
+        server: String,
+        /// The oldest version it accepts, when it says (checked to look like a
+        /// version before it is printed).
+        minimum: Option<String>,
+        /// The server's own sentence, when it sent one.
+        message: Option<String>,
+    },
+
     /// A refusal with a code this build does not know, and a sentence that
     /// says what was wrong (I-306). The sentence is the message: the server
     /// writes it for the person reading, and a code added after this build was
@@ -290,6 +303,40 @@ fn retry_hint(retry_after: Option<u64>) -> String {
         Some(n) => format!(" Try again in {n} s."),
         None => String::new(),
     }
+}
+
+/// What a 426 says: the version running, the one needed when the server
+/// names it, and how to upgrade.
+fn upgrade_message(server: &str, minimum: Option<&str>, message: Option<&str>) -> String {
+    let running = env!("CARGO_PKG_VERSION");
+    let mut s = match minimum {
+        Some(min) => {
+            format!("{server} no longer accepts evnx {running}; it needs evnx {min} or later.")
+        }
+        None => format!("{server} no longer accepts evnx {running}; it needs a newer evnx."),
+    };
+    if let Some(m) = message {
+        s.push_str(&format!("\n  The server says: {m}"));
+    }
+    s.push_str(&format!(
+        "\n  Upgrade, then run the command again: `evnx update` prints the upgrade \
+         command for the way evnx was installed (or: {}).",
+        crate::core::build::INSTALL_COMMAND
+    ));
+    s
+}
+
+/// A server-supplied version, kept only when it looks like one: digits, dots
+/// and the characters of a pre-release tag, at most 32 characters. Anything
+/// else is dropped rather than printed.
+fn plausible_version(v: &str) -> Option<String> {
+    let v = v.trim().trim_start_matches('v');
+    let ok = !v.is_empty()
+        && v.len() <= 32
+        && v.starts_with(|c: char| c.is_ascii_digit())
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'));
+    ok.then(|| v.to_string())
 }
 
 /// One line saying what to do about a 403, by the server's `reason`.
@@ -389,7 +436,11 @@ impl ApiError {
             | ApiError::Unauthorized
             | ApiError::TokenRejected
             | ApiError::RefreshNotPersisted { .. } => Some(10),
-            ApiError::Forbidden { .. } | ApiError::EmailNotVerified => Some(11),
+            // A refusal that waiting will not fix and the person must act on,
+            // like an unverified email: 11, not 15 (transient) or 13 (reachable).
+            ApiError::Forbidden { .. }
+            | ApiError::EmailNotVerified
+            | ApiError::UpgradeRequired { .. } => Some(11),
             ApiError::PlanLimit { .. } => Some(12),
             ApiError::Transport { .. } | ApiError::NotEvnx { .. } => Some(13),
             ApiError::Conflict { .. } | ApiError::Locked { .. } => Some(14),
@@ -423,6 +474,9 @@ struct ServerError {
     /// With `ROLE_TOO_LOW`: the role needed.
     #[serde(default)]
     required_role: Option<String>,
+    /// With 426: the oldest evnx the server accepts, when it says.
+    #[serde(default)]
+    minimum_version: Option<String>,
 }
 
 /// `Retry-After` as seconds. An HTTP-date is treated as unknown.
@@ -932,6 +986,7 @@ impl Client {
             code: String::new(),
             reason: None,
             required_role: None,
+            minimum_version: None,
         });
         let retry_after = retry_after_secs(headers);
         // A real sentence from the server, as opposed to the placeholder below.
@@ -948,6 +1003,18 @@ impl Client {
         // code (the RM-56 envelope) as well as `code: PLAN_LIMIT`.
         if parsed.reason.as_deref() == Some("PLAN_LIMIT") {
             return ApiError::PlanLimit { message };
+        }
+        // N14-8: 426 Upgrade Required, the server refusing an old CLI. Any
+        // body that is evnx's (or none); a proxy's page stays `NotEvnx`.
+        if status.as_u16() == 426 && !not_evnx {
+            return ApiError::UpgradeRequired {
+                server: self.server.clone(),
+                minimum: parsed
+                    .minimum_version
+                    .as_deref()
+                    .and_then(plausible_version),
+                message: has_sentence.then_some(message),
+            };
         }
         match parsed.code.as_str() {
             "UNAUTHORIZED" => ApiError::Unauthorized,
@@ -1152,6 +1219,104 @@ mod tests {
         let client = Client::new(server.url()).unwrap();
         let _: Vec<serde_json::Value> = client.get("/api/v1/vaults").unwrap();
         m.assert();
+    }
+
+    /// A server that refuses an old CLI (426): the message names the running
+    /// version, the minimum when the body gives one, and how to upgrade; the
+    /// exit code is 11. Without a body it still says what to do.
+    #[test]
+    fn a_426_names_the_version_and_the_upgrade() {
+        let _g = ConfigDirGuard::new();
+        let mut server = mockito::Server::new();
+        signed_in(&server.url(), 4_000_000_000).save().unwrap();
+        let client = Client::new(server.url()).unwrap();
+        let running = env!("CARGO_PKG_VERSION");
+
+        let m = server
+            .mock("GET", "/api/v1/vaults")
+            .with_status(426)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"error":"This version of evnx is no longer supported","code":"X","minimum_version":"0.17.0"}"#,
+            )
+            .create();
+        let err = client
+            .get::<serde_json::Value>("/api/v1/vaults")
+            .unwrap_err();
+        assert!(
+            matches!(&err, ApiError::UpgradeRequired { minimum: Some(v), .. } if v == "0.17.0"),
+            "{err:?}"
+        );
+        assert_eq!(err.exit_code(), Some(11));
+        assert!(!err.is_transient());
+        let text = err.to_string();
+        assert!(
+            text.contains(&format!("no longer accepts evnx {running}")),
+            "{text}"
+        );
+        assert!(text.contains("it needs evnx 0.17.0 or later"), "{text}");
+        assert!(text.contains("`evnx update`"), "{text}");
+        assert!(text.contains(crate::core::build::INSTALL_COMMAND), "{text}");
+        assert!(
+            text.contains("The server says: This version of evnx"),
+            "{text}"
+        );
+        m.assert();
+        m.remove();
+
+        // No body at all.
+        let m = server
+            .mock("GET", "/api/v1/vaults")
+            .with_status(426)
+            .create();
+        let err = client
+            .get::<serde_json::Value>("/api/v1/vaults")
+            .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                ApiError::UpgradeRequired {
+                    minimum: None,
+                    message: None,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert_eq!(err.exit_code(), Some(11));
+        let text = err.to_string();
+        assert!(text.contains("it needs a newer evnx"), "{text}");
+        assert!(text.contains("`evnx update`"), "{text}");
+        m.assert();
+        m.remove();
+
+        // A minimum that does not look like a version is not printed.
+        let m = server
+            .mock("GET", "/api/v1/vaults")
+            .with_status(426)
+            .with_body(r#"{"error":"","code":"","minimum_version":"\u001b[2Jrun this"}"#)
+            .create();
+        let err = client
+            .get::<serde_json::Value>("/api/v1/vaults")
+            .unwrap_err();
+        assert!(
+            matches!(&err, ApiError::UpgradeRequired { minimum: None, .. }),
+            "{err:?}"
+        );
+        assert!(!err.to_string().contains("run this"), "{err}");
+        m.assert();
+    }
+
+    #[test]
+    fn plausible_versions_only() {
+        assert_eq!(plausible_version("0.17.0").as_deref(), Some("0.17.0"));
+        assert_eq!(
+            plausible_version(" v1.2.3-rc.1 ").as_deref(),
+            Some("1.2.3-rc.1")
+        );
+        for bad in ["", "latest", "1.0 now", &"9".repeat(40)] {
+            assert_eq!(plausible_version(bad), None, "{bad:?}");
+        }
     }
 
     #[test]

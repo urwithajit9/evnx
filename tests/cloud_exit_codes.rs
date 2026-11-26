@@ -147,3 +147,25 @@ fn the_message_is_printed_once() {
         out.stderr
     );
 }
+
+/// A server that refuses an old evnx (426) exits 11 and says how to upgrade,
+/// naming the version running and the minimum it was given.
+#[test]
+fn a_426_exits_11_and_names_the_upgrade() {
+    let out = list_with(
+        426,
+        &[("content-type", "application/json")],
+        r#"{"error":"","code":"","minimum_version":"99.0.0"}"#,
+    );
+    out.assert_code(11);
+    let e = &out.stderr;
+    assert!(
+        e.contains(&format!(
+            "no longer accepts evnx {}",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{e}"
+    );
+    assert!(e.contains("it needs evnx 99.0.0 or later"), "{e}");
+    assert!(e.contains("evnx update"), "{e}");
+}

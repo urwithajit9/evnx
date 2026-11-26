@@ -46,6 +46,7 @@
 pub mod audit;
 pub mod auth;
 pub mod binding;
+pub(crate) mod checklist;
 pub mod client;
 pub mod config;
 pub mod creds;
@@ -483,54 +484,97 @@ pub fn run_org(command: OrgCommands, server_override: Option<&str>, verbose: boo
 }
 
 /// Dispatch an `evnx vault …` subcommand.
+///
+/// `vault revoke --all-vaults` exits 1 when a vault was skipped (the person
+/// keeps access there); every other vault command is clean or an error.
 pub fn run_vault(
     command: VaultCommands,
     server_override: Option<&str>,
     verbose: bool,
-) -> Result<()> {
+) -> Result<crate::core::verdict::Verdict> {
+    use crate::core::verdict::Verdict;
+    let clean = |r: Result<()>| r.map(|()| Verdict::Clean);
     match command {
         VaultCommands::Create {
             name,
             environment,
             password_stdin,
-        } => vault::create(server_override, name, environment, password_stdin, verbose),
-        VaultCommands::List { output } => vault::list(server_override, is_json(&output), verbose),
+        } => clean(vault::create(
+            server_override,
+            name,
+            environment,
+            password_stdin,
+            verbose,
+        )),
+        VaultCommands::List { output } => {
+            clean(vault::list(server_override, is_json(&output), verbose))
+        }
         VaultCommands::Delete { target, yes } => {
-            vault::delete(server_override, target, yes, verbose)
+            clean(vault::delete(server_override, target, yes, verbose))
         }
         VaultCommands::Share {
             target,
             with,
             role,
             password_stdin,
-        } => vault::share(server_override, target, with, role, password_stdin, verbose),
-        VaultCommands::Members { target, output } => {
-            vault::members(server_override, target, is_json(&output), verbose)
-        }
-        VaultCommands::Role { target, user, role } => {
-            vault::set_role(server_override, target, user, role, verbose)
-        }
-        VaultCommands::Revoke {
+        } => clean(vault::share(
+            server_override,
             target,
-            user,
-            yes,
-            no_rekey,
+            with,
+            role,
             password_stdin,
-        } => vault::revoke(
+            verbose,
+        )),
+        VaultCommands::Members { target, output } => clean(vault::members(
+            server_override,
+            target,
+            is_json(&output),
+            verbose,
+        )),
+        VaultCommands::Role { target, user, role } => clean(vault::set_role(
             server_override,
             target,
             user,
+            role,
+            verbose,
+        )),
+        VaultCommands::Revoke {
+            target,
+            all_vaults,
+            user,
             yes,
             no_rekey,
             password_stdin,
-            verbose,
+            dry_run,
+            output,
+        } => vault::revoke(
+            server_override,
+            vault::RevokeOptions {
+                target,
+                all_vaults,
+                user_email: user,
+                assume_yes: yes,
+                no_rekey,
+                password_stdin,
+                dry_run: dry_run.dry_run,
+                json: is_json(&output),
+                verbose,
+            },
         ),
         VaultCommands::Rekey {
             target,
             yes,
             password_stdin,
-        } => vault::rekey(server_override, target, yes, password_stdin, verbose),
-        VaultCommands::Leave { target, yes } => vault::leave(server_override, target, yes, verbose),
+        } => clean(vault::rekey(
+            server_override,
+            target,
+            yes,
+            password_stdin,
+            verbose,
+        )),
+        VaultCommands::Leave { target, yes } => {
+            clean(vault::leave(server_override, target, yes, verbose))
+        }
     }
 }
 

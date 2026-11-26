@@ -171,6 +171,41 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and it is logged with the time and the commits to `.git/evnx/bypass.log`.
   `hook uninstall` and `hook status` take `--pre-push` too.
 
+- **`evnx vault revoke --all-vaults --user <email>`** removes someone from
+  every vault where you can see them, in one command. It lists the vaults
+  first, with the ones it must skip and why (your role does not allow it, they
+  are the owner or an admin like you, or a member who stays has no
+  post-quantum key yet), asks once, reads the master password once, then
+  revokes and re-keys each vault in turn. It stops at the first failure and
+  prints what was revoked, what failed and what was not attempted; the exit
+  code is the failure's. It exits 1 when a vault was skipped, because the
+  person still has access there, and 0 when they are in no vault you can see.
+  `--no-rekey`, `--yes`, `--password-stdin`, `--dry-run` (reads only, sends no
+  change) and `--json` (vault names and results) work as for one vault, and
+  `vault revoke <vault>` takes `--dry-run` and `--json` too. Your own address
+  is refused: use `evnx vault leave`.
+
+- **`evnx vault revoke` ends with a "rotate at the source" checklist.**
+  Revoking cannot recall what the person could already read, so it lists the
+  names of the credentials in the vault, grouped by who issued them, with the
+  page where each is replaced when evnx knows one (`STRIPE_SECRET_KEY` under
+  Stripe, `AWS_SECRET_ACCESS_KEY` under AWS); names it cannot place are listed
+  as "provider not known", and names that do not look like credentials are
+  listed on one line. Only names are shown, never a value. The names come from
+  every version in the vault, read while it is re-keyed, so no second password
+  is asked; with `--no-rekey` they are the names the server recorded at each
+  push, and the output says they were not checked. A version deleted earlier
+  is not covered, and the output says so. `--json` carries the list as
+  `rotate` (name, provider, url, vaults), with `other_names` and
+  `rotate_notes`.
+
+- **A server that refuses an old evnx is explained.** An evnx server can answer
+  HTTP 426 Upgrade Required when the CLI is older than it accepts (every
+  request already names the version in its `User-Agent`). evnx then says
+  which version is running, the minimum when the server gives one
+  (`minimum_version` in the error body), and that `evnx update` prints the
+  upgrade command for the way it was installed, and exits 11.
+
 ### Changed
 
 - The `evnx-scan-push` hook in `.pre-commit-hooks.yaml` now scans the commits

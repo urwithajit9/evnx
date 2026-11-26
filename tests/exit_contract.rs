@@ -650,6 +650,11 @@ fn render_doc() -> String {
          and `4` a secret read without `--reveal`. `set` exits `4` when it needs a value or \
          an answer and there is no terminal and nothing on stdin.\n",
     );
+    s.push_str(
+        "\nAn evnx server that refuses this version of evnx as too old (HTTP 426 Upgrade Required) \
+         exits `11`, like the other refusals a retry does not fix; the message names the \
+         version running, the minimum when the server gives one, and `evnx update`.\n",
+    );
     s
 }
 
