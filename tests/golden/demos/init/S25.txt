@@ -14,7 +14,7 @@ $ evnx init --with nextjs,postgresql --yes --dir old
   ✓ 10 names from .env.example → old/.evnx.toml (3 secret, 5 with a format)
 
 Next steps:
-  1. Edit .env and replace placeholder values
+  1. Fill in the placeholder values in .env: evnx set --fill --dir old
   2. Commit .env.example and .evnx.toml; never commit .env
   3. .evnx.toml is the contract 'evnx validate' checks: safe to delete ('evnx init --no-contract' skips it)
   4. Run 'evnx validate' to check configuration
@@ -35,7 +35,7 @@ $ evnx init --yes --dir clone
   ✓ 2 names from .env.example → clone/.evnx.toml (0 secret, 0 with a format)
 
 Next steps:
-  1. Edit .env and replace placeholder values
+  1. Fill in the placeholder values in .env: evnx set --fill --dir clone
   2. Commit .env.example and .evnx.toml; never commit .env
   3. .evnx.toml is the contract 'evnx validate' checks: safe to delete ('evnx init --no-contract' skips it)
   4. Run 'evnx validate' to check configuration

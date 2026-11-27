@@ -282,8 +282,21 @@ pub(crate) fn stale_message(stale: &[(String, i32)], min: i32) -> Option<String>
         .map(|(label, v)| format!("{label} is at version {v}"))
         .collect::<Vec<_>>()
         .join("; ");
+    // The footer says "Run one of the commands above": name one.
+    let history = below
+        .iter()
+        .map(|(label, _)| {
+            format!(
+                "`evnx cloud history --vault {}`",
+                crate::core::shell::word(label)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let its = if below.len() == 1 { "its" } else { "their" };
     Some(format!(
-        "{list}; --min-version {min} requires at least {min}. Nothing was run."
+        "{list}; --min-version {min} requires at least {min}. Nothing was run.\n  \
+         See {its} versions with {history}"
     ))
 }
 
@@ -318,7 +331,11 @@ mod tests {
         assert!(m.contains("app/staging is at version 4"), "{m}");
         assert!(!m.contains("shared/dev"), "{m}");
         assert!(
-            m.contains("--min-version 5") && m.ends_with("Nothing was run."),
+            m.contains("--min-version 5 requires at least 5. Nothing was run.")
+                && m.ends_with(
+                    "See their versions with `evnx cloud history --vault app/production`, \
+                     `evnx cloud history --vault app/staging`"
+                ),
             "{m}"
         );
         assert_eq!(stale_message(&vaults, 3), None);

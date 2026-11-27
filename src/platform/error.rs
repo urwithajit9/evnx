@@ -80,14 +80,18 @@ pub enum PlatformError {
     /// left it (D4): someone changed it on Vercel. Nothing was written.
     #[error(
         "{} changed on Vercel since the last pull or push: {}.\n  \
-         Nothing was written. See what differs with `evnx platform diff --to vercel`, \
-         then `evnx platform pull --to vercel` to take Vercel's state, and push again.",
+         Nothing was written. See what differs with `evnx platform diff --to vercel{flags}`, \
+         then `evnx platform pull --to vercel{flags}` to take Vercel's state, and push again.",
         if keys.len() == 1 { "this variable" } else { "these variables" },
         crate::utils::string::name_list(keys)
     )]
     Changed {
         /// The variables, by name.
         keys: Vec<String>,
+        /// The push's own project, target and file flags, each with a leading
+        /// space, so the commands look at what the push did: without
+        /// `--target preview` they read development.
+        flags: String,
     },
 
     /// The request never completed.
@@ -159,7 +163,8 @@ mod tests {
         assert_eq!(PlatformError::InvalidToken.exit_code(), Some(10));
         assert_eq!(
             PlatformError::Changed {
-                keys: vec!["A".into()]
+                keys: vec!["A".into()],
+                flags: String::new(),
             }
             .exit_code(),
             Some(14)

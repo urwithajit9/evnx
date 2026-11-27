@@ -7,8 +7,9 @@
 //! *and* the master password:
 //!
 //! ```text
-//! printf '%s\n' "$EVNX_PASSWORD" | evnx cloud pull --vault app/production --password-stdin
-//! # with EVNX_TOKEN=evnx_tok_... and EVNX_KEY_BUNDLE=evnxkb1_... in the environment
+//! evnx cloud pull --vault app/production
+//! # with EVNX_TOKEN=evnx_tok_..., EVNX_MASTER_PASSWORD and EVNX_KEY_BUNDLE=evnxkb1_...
+//! # (or EVNX_KEY_BUNDLE_FILE) in the environment
 //! ```
 //!
 //! The key bundle (`evnx auth key-bundle`) carries the sealed key material the
@@ -326,10 +327,18 @@ pub fn create(
         println!("  token id  {}", created.id);
     }
     crate::say!();
-    crate::say!("  Use it in CI (with EVNX_MASTER_PASSWORD and EVNX_KEY_BUNDLE):");
+    // ⚠️ One password variable. This said EVNX_MASTER_PASSWORD and then piped
+    // `$EVNX_PASSWORD` — the *backup* passphrase variable — into
+    // `--password-stdin`. evnx reads EVNX_MASTER_PASSWORD itself.
+    crate::say!(
+        "  Use it in CI, with {} and {} (or {}) set as CI secrets:",
+        crate::utils::secret_source::MASTER_ENV_VAR,
+        super::keybundle::ENV_KEY_BUNDLE,
+        super::keybundle::ENV_KEY_BUNDLE_FILE
+    );
     crate::say!("    export {ENV_TOKEN}={}", "evnx_tok_…".dimmed());
     crate::say!(
-        "    echo \"$EVNX_PASSWORD\" | evnx cloud pull --vault {} --password-stdin",
+        "    evnx cloud pull --vault {}",
         vault_ref
             .as_ref()
             // The **id**, not the name. A vault-scoped token is refused

@@ -212,3 +212,41 @@ fn t_i176_banner_is_on_stderr() {
         .success()
         .stderr(predicate::str::contains("evnx spec"));
 }
+
+/// The spec-init run: a template line `TEST_VAR` (no `=`) was a parse error
+/// with no way forward. The error stays; it now says how to write the line.
+#[test]
+fn a_bare_name_in_the_template_gets_a_hint() {
+    let d = tempfile::TempDir::new().unwrap();
+    std::fs::write(d.path().join(".env.example"), "TEST_VAR\n").unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["spec", "init"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("missing '=' separator"), "{stderr}");
+    assert!(stderr.contains("write it as `TEST_VAR=`"), "{stderr}");
+}
+
+/// A bare line that looks like a key value is never repeated back.
+#[test]
+fn a_bare_secret_line_gets_no_hint_and_is_not_printed() {
+    let d = tempfile::TempDir::new().unwrap();
+    let key = format!("AKIA{}", "4OZRMFJ3VREALKEY");
+    std::fs::write(d.path().join(".env.example"), format!("{key}\n")).unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["spec", "init"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!all.contains(&key), "{all}");
+    assert!(!all.contains("write it as"), "{all}");
+}

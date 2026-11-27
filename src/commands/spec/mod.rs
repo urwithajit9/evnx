@@ -511,7 +511,7 @@ fn read(path: &str, named_by: Option<&str>) -> Result<Vars> {
             .vars),
         None if Path::new(path).exists() => Ok(parser
             .parse_file(path)
-            .with_context(|| format!("Failed to parse {path}"))?
+            .map_err(|e| crate::core::parser::with_bare_name_hint(path, e))?
             .vars),
         None => Ok(Default::default()),
     }
@@ -633,12 +633,12 @@ fn write_into_with(
 
     let has_vars = config::has_vars_section(&existing);
     if has_vars && !merge {
-        bail!(
+        return Err(crate::core::verdict::stopped(format!(
             "{} already has a [vars] section.\n\
              \x20 Pass --merge to add only the variables it does not declare yet;\n\
              \x20 existing entries are kept as they are.",
             ui::short_path(path)
-        );
+        )));
     }
 
     let new: Vec<&Entry> = entries

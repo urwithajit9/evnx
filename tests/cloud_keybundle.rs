@@ -352,6 +352,43 @@ fn token_create_prints_a_bundle_that_a_token_can_pull_with() {
     );
 }
 
+/// The CI hint named EVNX_MASTER_PASSWORD, then piped `$EVNX_PASSWORD` (the
+/// backup variable) into `--password-stdin`. One name now, read by evnx
+/// itself, and the bundle's file form is named too.
+#[test]
+fn token_create_ci_hint_uses_one_password_variable() {
+    let mut s = mockito::Server::new();
+    create_token_mock(&mut s);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "auth",
+            "token",
+            "create",
+            "ci",
+            "--all-vaults",
+            "--no-key-bundle",
+        ],
+        None,
+    );
+    out.assert_code(0);
+    assert!(!out.stdout.contains("$EVNX_PASSWORD"), "{}", out.stdout);
+    assert!(
+        out.stdout.contains(
+            "Use it in CI, with EVNX_MASTER_PASSWORD and EVNX_KEY_BUNDLE (or \
+             EVNX_KEY_BUNDLE_FILE) set as CI secrets:"
+        ),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains("    evnx cloud pull --vault <vault>\n"),
+        "{}",
+        out.stdout
+    );
+}
+
 #[test]
 fn token_create_can_skip_the_bundle() {
     let mut s = mockito::Server::new();

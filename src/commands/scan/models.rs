@@ -28,6 +28,8 @@
 //!     severity: Severity::Critical,
 //!     value_preview: "AKIA...XYZ12".to_string(),
 //!     location: ".env:15 (AWS_ACCESS_KEY_ID)".to_string(),
+//!     file: ".env".to_string(),
+//!     key_path: None,
 //!     variable: Some("AWS_ACCESS_KEY_ID".to_string()),
 //!     action_url: Some("https://console.aws.amazon.com/iam".to_string()),
 //!     // An `AKIA` prefix is a value match, so the report may say so.
@@ -38,6 +40,7 @@
 //!     // What git says about the file, inside a repository (I-285).
 //!     git: None,
 //!     repo_path: None,
+//!     in_commit: None,
 //!     note: None,
 //!     line: 15,
 //!     commit: None,
@@ -127,6 +130,23 @@ pub struct Finding {
     pub severity: Severity,
     pub value_preview: String,
     pub location: String,
+    /// The file, as `location` names it (`./config.yml`, `<stdin>`; under
+    /// `--history` the path in the commit).
+    #[serde(default)]
+    pub file: String,
+    /// The line the finding is on, 1-based; `null` when it is not known.
+    /// Also used for sorting (I-062).
+    #[serde(
+        default,
+        serialize_with = "serialize_line",
+        deserialize_with = "deserialize_line"
+    )]
+    pub line: usize,
+    /// In a structured file (YAML, JSON, TOML, a notebook), the key path of
+    /// the value: `app.db.password`, `rules[76].allow[0]`. Absent elsewhere,
+    /// where `variable` is a variable's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_path: Option<String>,
     pub variable: Option<String>,
     pub action_url: Option<String>,
     /// Did a detector read the **value**, or only the variable's name?
@@ -167,16 +187,17 @@ pub struct Finding {
     #[serde(skip)]
     pub repo_path: Option<String>,
 
+    /// Whether a commit holds the file (any branch or tag): `Some(false)` for
+    /// a file that is staged and in no commit, which gets "unstage it", not a
+    /// history rewrite. `None` when nothing is known. Display only.
+    #[serde(skip)]
+    pub in_commit: Option<bool>,
+
     /// What to say about a value match in place of the generic "matches a
     /// live key format" line — `a password in a postgres:// URL` (I-052).
     /// Display only.
     #[serde(skip)]
     pub note: Option<String>,
-
-    /// The line the finding is on, for sorting (I-062). Display only; the
-    /// line is also in `location`.
-    #[serde(skip)]
-    pub line: usize,
 
     /// `--history` (RM-69): the oldest commit in the range that has the blob
     /// the finding is in. Absent for every other scan.
@@ -243,6 +264,24 @@ where
     S: serde::Serializer,
 {
     serializer.serialize_str(if *judged { "value" } else { "name" })
+}
+
+/// `line`: a number, or `null` for 0 (not known).
+fn serialize_line<S>(line: &usize, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match line {
+        0 => serializer.serialize_none(),
+        n => serializer.serialize_u64(*n as u64),
+    }
+}
+
+fn deserialize_line<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<usize>::deserialize(deserializer)?.unwrap_or(0))
 }
 
 /// Custom serializer for Confidence to output as string in JSON
@@ -336,7 +375,9 @@ impl Finding {
         action_url: Option<String>,
     ) -> Self {
         let pattern = pattern.into();
+        let location = location.into();
         Self {
+            file: super::output::file_of(&location).to_string(),
             status: Status::New,
             fingerprint: String::new(),
             reason: None,
@@ -351,15 +392,17 @@ impl Finding {
             confidence,
             severity: Severity::Medium,
             value_preview: value_preview.into(),
-            location: location.into(),
+            location,
             variable,
             action_url,
             judged_value: true,
             public_prefix: None,
             git: None,
             repo_path: None,
+            in_commit: None,
             note: None,
             line: 0,
+            key_path: None,
             commit: None,
             blob: None,
             commit_time: None,
@@ -417,6 +460,11 @@ pub struct ScanResults {
     /// outside a repository, and for files named on the command line.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub ignored_by_git: Vec<IgnoredFile>,
+    /// Of the files read, the ones held back that way, with findings or not:
+    /// the pretty output's `scanning …` line names them apart from the files
+    /// that are counted.
+    #[serde(skip)]
+    pub summarised: Vec<std::path::PathBuf>,
     pub secrets_found: usize,
     pub findings: Vec<Finding>,
     /// Findings silenced by an `evnx:allow` marker (C5). Not counted.
@@ -697,6 +745,7 @@ impl ScanResults {
             unreadable: Vec::new(),
             skipped: Vec::new(),
             ignored_by_git: Vec::new(),
+            summarised: Vec::new(),
             secrets_found: 0,
             findings: Vec::new(),
             allowed: Vec::new(),
@@ -717,6 +766,7 @@ impl ScanResults {
         self.unreadable.extend(other.unreadable);
         self.skipped.extend(other.skipped);
         self.ignored_by_git.extend(other.ignored_by_git);
+        self.summarised.extend(other.summarised);
         self.secrets_found += other.secrets_found;
         self.findings.extend(other.findings);
         self.allowed.extend(other.allowed);

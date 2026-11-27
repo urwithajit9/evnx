@@ -62,7 +62,7 @@ fn t_i157_a_committed_env_is_reported_as_tracked() {
     out.assert_code(1);
     out.assert_contains("tracked by git");
     out.assert_contains("git rm --cached .env");
-    out.assert_not_contains("NOT in .gitignore");
+    out.assert_not_contains("git would commit it");
 }
 
 #[test]
@@ -86,4 +86,38 @@ fn json_output_stays_json_under_fix() {
     let out = run(p.path(), &["doctor", "--fix", "--format", "json"]);
     serde_json::from_str::<serde_json::Value>(&out.stdout)
         .unwrap_or_else(|e| panic!("stdout is not JSON ({e}):\n{}", out.stdout));
+}
+
+/// A dated backup git would commit was "NOT in .gitignore", which reads as a
+/// fact about one file when git's answer is what counts (a global gitignore
+/// included). It now says git would commit it, and `--fix` adds `.env*.bak*`
+/// inside evnx's block and makes the copies owner-only.
+#[test]
+fn an_unignored_backup_says_git_would_commit_it_and_fix_ignores_it() {
+    let p = healthy()
+        .file(".gitignore", ".env\n")
+        .file(".env.bak-20261120", "A=1\n");
+    let out = run(p.path(), &["doctor"]);
+    out.assert_code(1);
+    out.assert_contains(".env.bak-20261120 is not ignored: git would commit it");
+    out.assert_not_contains("NOT in .gitignore");
+
+    let out = run(p.path(), &["doctor", "--fix"]);
+    out.assert_code(0);
+    assert!(p.is_ignored(".env.bak-20261120"), "{}", out.all());
+    let gi = p.read(".gitignore");
+    let block = gi
+        .split("evnx generated")
+        .nth(1)
+        .unwrap_or_else(|| panic!("{gi}"));
+    assert!(block.lines().any(|l| l == ".env*.bak*"), "{gi}");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(p.join(".env.bak-20261120"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "{}", out.all());
+    }
 }

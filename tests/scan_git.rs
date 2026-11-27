@@ -367,3 +367,200 @@ fn t_i290_one_held_back_finding_is_it() {
     assert!(stdout.contains("1 finding there is"), "{stdout}");
     assert!(stdout.contains("(--include-ignored lists it)"), "{stdout}");
 }
+
+// ── The walk line: counted files first, git-ignored ones apart ─────────────
+
+/// `scanning ./.env, ./.gitignore, ./leak-test.txt` listed a git-ignored
+/// `.env` beside the files that are counted, with nothing to tell them apart.
+#[test]
+fn the_walk_line_names_git_ignored_files_apart() {
+    let Some(d) = repo(
+        &[
+            (".gitignore", ".env\n"),
+            (".env", &env_with_keys()),
+            ("leak-test.txt", &format!("key = {AWS}\n")),
+        ],
+        &[],
+    ) else {
+        return;
+    };
+    let (code, stdout, _) = scan(&d, &[]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(
+        stdout.contains(
+            "scanning ./.gitignore, ./leak-test.txt · git-ignored (summarised only): ./.env\n"
+        ),
+        "{stdout}"
+    );
+    // `--include-ignored` counts it, so it is listed with the rest.
+    let (_, stdout, _) = scan(&d, &["--include-ignored"]);
+    assert!(
+        stdout.contains("scanning ./.env, ./.gitignore, ./leak-test.txt\n"),
+        "{stdout}"
+    );
+}
+
+/// Long lists keep "and N other files", on each side.
+#[test]
+fn the_walk_line_shortens_both_lists() {
+    let mut files: Vec<(String, String)> = vec![(".gitignore".into(), "*.env\n".into())];
+    for i in 0..5 {
+        files.push((format!("f{i}.txt"), "x = 1\n".into()));
+        files.push((format!("e{i}.env"), "A=1\n".into()));
+    }
+    let refs: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(a, b)| (a.as_str(), b.as_str()))
+        .collect();
+    let Some(d) = repo(&refs, &[]) else {
+        return;
+    };
+    let (_, stdout, _) = scan(&d, &[]);
+    assert!(
+        stdout.contains(
+            "scanning ./.gitignore, ./f0.txt, ./f1.txt and 3 other files · git-ignored \
+             (summarised only): ./e0.env, ./e1.env, ./e2.env and 2 other files\n"
+        ),
+        "{stdout}"
+    );
+}
+
+// ── History rewriting only for a committed, high-confidence format match ───
+
+/// A committed `PASSWORD=` in `tests/fixtures/`, flagged by its name alone,
+/// came with revoke, `git filter-repo` and force push. It now gets "check it,
+/// and if it is not a secret, allow it or baseline it"; the test folder is
+/// named. A committed AWS key beside it keeps the rewrite steps, which name
+/// only its file.
+#[test]
+fn history_rewrite_is_only_for_committed_format_matches() {
+    let Some(d) = repo(
+        &[
+            ("tests/fixtures/app.env", "PASSWORD=hunter2x\n"),
+            ("src/main.py", &format!("k = \"{AWS}\"\n")),
+        ],
+        &["tests/fixtures/app.env", "src/main.py"],
+    ) else {
+        return;
+    };
+    let (code, stdout, _) = scan(&d, &[]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(
+        stdout.contains("git filter-repo --path src/main.py --invert-paths"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("--path tests/fixtures/app.env"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Check ./tests/fixtures/app.env"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("./tests/fixtures/app.env is in a test folder"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("evnx:allow"), "{stdout}");
+    assert!(stdout.contains("--update-baseline"), "{stdout}");
+}
+
+/// Only the name-matched file: no revoke, no rewrite, no force push.
+#[test]
+fn a_committed_name_match_alone_gets_no_rewrite_steps() {
+    let Some(d) = repo(
+        &[("tests/fixtures/app.env", "PASSWORD=hunter2x\n")],
+        &["tests/fixtures/app.env"],
+    ) else {
+        return;
+    };
+    let (_, stdout, _) = scan(&d, &[]);
+    assert!(!stdout.contains("filter-repo --path"), "{stdout}");
+    assert!(!stdout.contains("Force push"), "{stdout}");
+    assert!(!stdout.contains("compromised"), "{stdout}");
+    assert!(
+        stdout.contains("Check ./tests/fixtures/app.env"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("If one is a real secret, revoke or rotate it"),
+        "{stdout}"
+    );
+}
+
+// ── History rewriting only for a file that is in a commit ──────────────────
+
+/// Stage `paths` in `d` (forced), without committing.
+fn stage(d: &TempDir, paths: &[&str]) {
+    let mut args = vec!["add", "-f", "--"];
+    args.extend_from_slice(paths);
+    assert!(git(d.path(), &args));
+}
+
+/// The quick-start run: `leak-test.txt` was staged, the hook blocked the
+/// commit, and a full scan said "git filter-repo --path leak-test.txt" about a
+/// file no commit holds. In a repository with no commits at all.
+#[test]
+fn a_staged_only_file_gets_unstage_steps_not_a_history_rewrite() {
+    let Some(d) = repo(&[("leak-test.txt", &format!("{AWS}\n"))], &[]) else {
+        return;
+    };
+    stage(&d, &["leak-test.txt"]);
+    let (code, stdout, _) = scan(&d, &[]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(!stdout.contains("filter-repo"), "{stdout}");
+    assert!(!stdout.contains("Force push"), "{stdout}");
+    assert!(!stdout.contains("compromised"), "{stdout}");
+    assert!(
+        stdout.contains("git restore --staged leak-test.txt"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("git rm --cached leak-test.txt"), "{stdout}");
+    assert!(stdout.contains("move the values into .env"), "{stdout}");
+    assert!(stdout.contains("rotate"), "{stdout}");
+}
+
+/// The same with earlier commits of other files: still not in a commit.
+#[test]
+fn a_newly_staged_file_beside_committed_ones_gets_unstage_steps() {
+    let Some(d) = repo(
+        &[
+            ("README.md", "hello\n"),
+            ("src/main.py", &format!("k = \"{AWS}\"\n")),
+        ],
+        &["README.md"],
+    ) else {
+        return;
+    };
+    stage(&d, &["src/main.py"]);
+    let (code, stdout, _) = scan(&d, &[]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(!stdout.contains("filter-repo"), "{stdout}");
+    assert!(
+        stdout.contains("git restore --staged src/main.py"),
+        "{stdout}"
+    );
+}
+
+/// A file committed once, deleted, and staged again is in history: the
+/// rewrite steps stay.
+#[test]
+fn a_file_in_an_older_commit_keeps_the_history_rewrite() {
+    let Some(d) = repo(
+        &[("src/main.py", &format!("k = \"{AWS}\"\n"))],
+        &["src/main.py"],
+    ) else {
+        return;
+    };
+    assert!(git(d.path(), &["rm", "-q", "src/main.py"]));
+    assert!(git(d.path(), &["commit", "-qm", "rm"]));
+    fs::create_dir_all(d.path().join("src")).unwrap();
+    fs::write(d.path().join("src/main.py"), format!("k = \"{AWS}\"\n")).unwrap();
+    stage(&d, &["src/main.py"]);
+    let (_, stdout, _) = scan(&d, &[]);
+    assert!(
+        stdout.contains("git filter-repo --path src/main.py --invert-paths"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("git restore --staged"), "{stdout}");
+}

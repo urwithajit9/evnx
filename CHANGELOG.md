@@ -55,8 +55,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `context` and the earlier level in `confidence_before_context`.
 
 - **Scan JSON is `schema_version` 3.** Findings that are allowed or in the
-  baseline carry `reason_code`, and `summary.by_reason` counts them. A finding
-  may also carry `encoded` (`base64`, `hex` or `url`), `context` and
+  baseline carry `reason_code`, and `summary.by_reason` counts them. Every
+  finding has `file` and `line` (a number, or `null` when it is not known)
+  beside `location`, so a script need not split that string, and a finding in
+  a YAML, JSON, TOML or notebook file has `key_path` (`app.db.password`). A
+  finding may also carry `encoded` (`base64`, `hex` or `url`), `context` and
   `confidence_before_context`, and under `--history` `commit`, `blob`,
   `commit_time` and `git: "history"`; `effective_config` has
   `rules_digest`. Each new field is left out when it does not apply. The `run`
@@ -226,8 +229,82 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unmaintained `number_prefix` crate. Output is unchanged.
 - The unsafe C port `unsafe-libyaml` is no longer in the build: YAML parsing
   is pure Rust. A YAML error names a line, a column and a fixed reason.
+- **`scan`'s `scanning …` line names git-ignored files apart.** It listed a
+  `.env` that git ignores beside the files that are counted. The counted files
+  now come first, and the ignored ones a walk read and only summarised follow
+  on the same line: `scanning ./.gitignore, ./leak-test.txt · git-ignored
+  (summarised only): ./.env`. Each list still ends "and N other files" when it
+  is long. With `--include-ignored` they are counted and listed with the rest.
+- **`scan` advises a history rewrite only for a real key match.** Revoke,
+  `git filter-repo` and force push are now given only for a finding in a file
+  git has committed (or outside a repository) that a format rule matched by
+  its value with high confidence. A committed finding flagged by a variable
+  name, by entropy or with lower confidence gets "Check <file>" instead, with
+  how to accept it if it is not a secret (`evnx:allow <rule-id>
+  reason=used-in-tests`, or `evnx scan --update-baseline`), and is said to be
+  in a test folder when it is. When both kinds are found, the rewrite steps
+  name only the files with a key match.
+- **Lockfiles get the key-format rules only.** In `package-lock.json`,
+  `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`,
+  `Cargo.lock`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, `composer.lock`,
+  `Gemfile.lock` and `go.sum`, in any folder, `scan` no longer judges a key by
+  its name or a value by its entropy: a package such as
+  `@radix-ui/react-password-toggle-field` was reported as a high "Sensitive
+  config key". Every format rule still runs, so a password in a `resolved`
+  registry URL or a real key is still found. JSON `files[]` gives such a file
+  the note "lockfile: only key-format rules, no name or entropy checks", and
+  `-v` prints it.
+- **`doctor` says "git would commit it" for an env file git does not
+  ignore**, instead of "NOT in .gitignore": the answer is git's own, so a
+  global excludes file or `.git/info/exclude` counts. The line reads
+  `.env is not ignored: git would commit it (security risk)`, also in
+  `doctor --format json` `details`. When a backup such as
+  `.env.bak-20261120` is one of them, `doctor --fix` adds `.env*.bak*` to
+  evnx's block in `.gitignore`, beside `.env*`, and makes the copies
+  owner-only: mode 600, or on Windows, where doctor checks no modes, an
+  owner-only ACL. evnx's own `*.bak` entry is unchanged.
+- **Refusals that name the next command end with "evnx stopped before making
+  changes (exit 2). Run one of the commands above."** instead of "No verdict:
+  evnx stopped at the error above. This is not a clean result.", which read as
+  a crash: `scan hook install` where pre-commit or prek manages the hook,
+  `spec init` when `.evnx.toml` already has `[vars]`, `parse --values` on a
+  terminal, and `migrate --to github` with names GitHub reserves. The exit code
+  (2), the message and JSON output are unchanged.
+- **`scan hook status` reads `.pre-commit-config.yaml`.** When pre-commit or
+  prek runs `evnx-scan`, `evnx-scan-installed` (or, with `--pre-push`,
+  `evnx-scan-push`) from it, the status says so with the `rev`, such as
+  "installed through pre-commit: .pre-commit-config.yaml runs evnx-scan (rev
+  v0.11.0)", instead of "not installed". A rev older than the running evnx
+  gets "rev v0.11.0 is older than this evnx (X.Y.Z): set rev: vX.Y.Z in
+  .pre-commit-config.yaml"; a hook in the file that no manager has installed
+  gets "run `pre-commit install` (or `prek install`)". The file is only read.
+- **`validate` and `init` name `evnx set --fill` for placeholder values.**
+  When `validate` finds a placeholder, its next steps add "Fill in the
+  placeholder values: evnx set --fill" (with `--env FILE` for a file other than
+  `.env`), and the "Needs your input" step ends with the same command. `init`'s
+  first next step is now "Fill in the placeholder values in .env: evnx set
+  --fill" (with `--dir DIR` when it wrote into another folder) instead of
+  "Edit .env and replace placeholder values".
+- **`doctor` suggests `evnx init --yes` for a missing `.env` beside a
+  template**, instead of `evnx sync --direction reverse`, which only copies the
+  names. `init --yes` keeps the template, writes `.env` from it and adds the
+  `.gitignore` lines and the contract. For `doctor DIR` it is
+  `evnx init --yes --dir DIR`.
+- **`parse --show-values` implies `--values`.** On its own it was a usage
+  error asking for `--values`; it now prints the values, also to a terminal.
+- **The `config` line names `[scan]` settings only for `scan`.** Every command
+  printed `config .evnx.toml (scan.exclude=1 patterns)`; other commands now
+  print `config .evnx.toml` (with any `vars.secret=false` note). Counts read
+  "1 pattern", "1 built-in detector", "1 variable".
+- **A template line with only a name says how to write it.** `TEST_VAR` alone
+  on a line is still a parse error ("missing '=' separator"); the error now
+  adds "To list a name with no value, write it as `TEST_VAR=`", in `spec init`
+  and every command that reads a file the same way. The name is repeated only
+  when it is a valid key that does not look like a credential.
 
 ### Fixed
+
+- The `scanning` line writes paths with `/` on Windows too, as finding locations already do.
 
 - A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own
   environment while it is read (that needed `unsafe`); `run` still keeps every
@@ -235,6 +312,70 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`add custom NAME=value` now writes the value to `.env` when the template
   lists NAME with another value** (such as an empty `NAME=`). It used to report
   a template conflict and write nothing.
+- **`scan` no longer reads evnx's own files.** A rule pack added with
+  `evnx scan rules add` holds example keys, so a scan of the project reported
+  them from `.evnx/rules/` and exited 1. A walk, `--staged` and `--history` now
+  leave out the rule files in `.evnx/rules/`, `.evnx/rules.lock`,
+  `.evnx/baseline.json`, `.evnx/backups.json` and `.evnx/platform/vercel.json`,
+  and say so once ("evnx's own files in .evnx/ are not scanned"). Packs are
+  still checked against their sha256 in `rules.lock`. Other files under
+  `.evnx/` are scanned. A file named on the command line is read, as always;
+  `--include-ignored` does not change this.
+- **`validate` no longer compares backups as environments.** A dated copy
+  such as `.env.bak-20261120` was read as an environment file, so `validate`
+  warned "B is in .env but not in .env.bak-20261120" and suggested
+  `evnx remove B --all`, which would have edited the backup. Backups
+  (`.env.bak`, `.env.bak-*`, `.env.bak.<n>`, and any file recorded in
+  `.evnx/backups.json`) are now left out of that comparison, of
+  `remove --all`, and of the environments `--env-name` lists. `validate` names
+  them once instead, as plaintext backups of the file it checks ("delete them
+  or keep them git-ignored"), unless git ignores every one.
+- **`scan` no longer tells you to rewrite history for a file that is only
+  staged.** A key in a file that was added but never committed (a hook blocked
+  the commit, or the repository has no commits yet) came with revoke,
+  `git filter-repo` and force push. Those steps are now given only when a commit
+  on some branch or tag holds the file. A staged-only file gets "Unstage
+  <file>: git restore --staged <file> (git rm --cached <file> before the first
+  commit)", then "move the values into .env", and "rotate it" only if the key
+  was shared another way. `scan --staged` follows the same rule: a staged
+  change to a file that is already in a commit keeps the history steps.
+- **`doctor` outside a git repository no longer says "run: git add
+  .env.example".** The template check now reports, as information, "Not a git
+  repository: whether .env.example is tracked was not checked", instead of a
+  warning about tracking in a repository that does not exist.
+- **`auth token create` names one password variable in its CI example.** It
+  said "with EVNX_MASTER_PASSWORD and EVNX_KEY_BUNDLE", then piped
+  `$EVNX_PASSWORD` (the backup passphrase variable) into `--password-stdin`.
+  It now reads "Use it in CI, with EVNX_MASTER_PASSWORD and EVNX_KEY_BUNDLE (or
+  EVNX_KEY_BUNDLE_FILE) set as CI secrets:" followed by
+  `evnx cloud pull --vault <vault>`, which reads `EVNX_MASTER_PASSWORD` itself.
+- **`auth sessions list` and `auth devices list` line up again.** Their time
+  columns were narrower than a time such as `2026-11-23 03:05 UTC`, so every
+  column after the first sat to the right of its header.
+- **`migrate -o FILE` says where the commands went and how to run them.** It
+  printed a heading such as "Run these commands:" with nothing under it, and
+  next steps that said "Run the printed commands". With `-o` the heading is
+  gone, the line reads "Commands written to FILE: review them, then run
+  `sh FILE`", and the next steps say "Review FILE, then run it: `sh FILE`",
+  for every destination that prints commands (AWS, GCP, Azure, Heroku, Vercel,
+  Doppler, Infisical, Railway).
+- **A `platform push` conflict names the commands for the same target.** When
+  a variable had changed on Vercel, the advice was `evnx platform diff --to
+  vercel` and `evnx platform pull --to vercel`, which look at development
+  whatever the push used. Both now carry the push's `--target`, and its
+  `--project`, `--team`, `--token-file`, `--git-branch` and `--env` when they
+  were given. The last line reads "No verdict: Vercel holds a newer value"
+  instead of "the server holds a newer version". Exit code 14 is unchanged.
+- **`cloud run --min-version` names a command when it refuses.** Its footer
+  says "Run one of the commands above", and there was none. The refusal now
+  ends "See its versions with `evnx cloud history --vault <vault>`", one per
+  vault below the minimum.
+- **`validate` on a terminal ends its progress line.** "Files parsed ✓" (and
+  "Applied N fix(es) ✓") ran together with the next line. The same for the
+  "Done" line of `migrate --to github`.
+- **`remove`'s hint for a missing `.env` keeps the names.** With only
+  `.env.prod` there, `evnx remove A B` suggested `evnx remove --env-name prod`;
+  it now suggests `evnx remove A B --env-name prod`.
 
 ---
 

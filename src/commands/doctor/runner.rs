@@ -537,7 +537,7 @@ impl DiagnosticCheck for EnvFileCheck {
                                 ),
                                 format!(
                                     "→ create it from the template: {}",
-                                    create_from_template(project_root, template)
+                                    create_from_template(project_root)
                                 ),
                             ],
                             nested,
@@ -597,10 +597,12 @@ impl DiagnosticCheck for EnvFileCheck {
                 gitignore::Exposure::Unignored => {
                     severity = Severity::Error;
                     fixable = true;
-                    // Wording unchanged: `doctor --format json` carries it
-                    // and other programs parse that output.
+                    // Git's own answer (`git check-ignore`: every
+                    // `.gitignore`, `.git/info/exclude`, a global excludes
+                    // file), not whether one `.gitignore` names it, which is
+                    // what "NOT in .gitignore" claimed.
                     lines.push(format!(
-                        "✗ {name} is NOT in .gitignore (security risk){copy}"
+                        "✗ {name} is not ignored: git would commit it (security risk){copy}"
                     ));
                 }
                 gitignore::Exposure::Protected => {
@@ -806,28 +808,27 @@ fn is_a_project(project_root: &Path) -> bool {
         || !crate::core::project::docker_files_in(project_root).is_empty()
 }
 
-/// The command that creates `.env` from `template` in `project_root`: the one
-/// `sync` names for the same case.
-fn create_from_template(project_root: &Path, template: &str) -> String {
-    use crate::core::shell::word;
-    let here = project_root == Path::new(".");
-    let mut cmd = String::from("evnx sync --direction reverse");
-    if !here {
+/// The command that sets `project_root` up from its template, `.env` first.
+fn create_from_template(project_root: &Path) -> String {
+    // ⚠️ `init`, not `sync --direction reverse`: sync copies the names into a
+    // new `.env` and stops, while `init --yes` keeps the template as it is,
+    // writes `.env` from it, and adds the `.gitignore` lines and the contract
+    // a set-up project has. It finds the template by the same rule doctor
+    // does (`[defaults] example`, else `.env.example`, `.env.sample`,
+    // `.env.template`), so the template needs no flag.
+    let mut cmd = String::from("evnx init --yes");
+    if project_root != Path::new(".") {
         cmd.push_str(&format!(
-            " --env {}",
-            word(&project_root.join(".env").to_string_lossy())
+            " --dir {}",
+            crate::core::shell::word(&project_root.to_string_lossy())
         ));
-    }
-    if !here || template != ".env.example" {
-        let path = if here {
-            template.to_string()
-        } else {
-            project_root.join(template).to_string_lossy().into_owned()
-        };
-        cmd.push_str(&format!(" --example {}", word(&path)));
     }
     cmd
 }
+
+/// What `doctor --fix` adds for plaintext backups of env files git would
+/// commit: `.env.bak`, `.env.bak-<date>`, `.env.production.bak.2`.
+const BACKUP_ENTRY: &str = ".env*.bak*";
 
 fn fix_env_gitignore(project_root: &Path, _verbose: bool) -> Result<bool> {
     let gitignore_path = project_root.join(".gitignore");
@@ -840,11 +841,38 @@ fn fix_env_gitignore(project_root: &Path, _verbose: bool) -> Result<bool> {
     // so it decided what to add from the wrong question. It now adds the lines
     // the file lacks, and `run_check` asks git again about the real files. A
     // later `!.env` is the user's line and is reported, never edited (G8).
-    let added = gitignore::append_entries(&gitignore_path, gitignore::ENV_ENTRIES)?;
+    let mut entries: Vec<&str> = gitignore::ENV_ENTRIES.to_vec();
+    // A backup git would commit (`.env.bak-20261120`): one pattern for every
+    // such copy, in the same block, and the copies owner-only.
+    let backups: Vec<EnvFile> = env_files(project_root)
+        .into_iter()
+        .filter(|f| {
+            f.copy
+                && f.link.is_none()
+                && crate::core::backups::is_backup_name(&f.name)
+                && gitignore::exposure(project_root, &f.name) == gitignore::Exposure::Unignored
+        })
+        .collect();
+    if !backups.is_empty() {
+        entries.push(BACKUP_ENTRY);
+    }
+    let added = gitignore::append_entries(&gitignore_path, &entries)?;
     if !added.is_empty() {
         report_fix(format!(".gitignore: added {}", added.join(", ")));
     }
-    Ok(!added.is_empty())
+    // Mode 600 is the permission check's fix, which runs after this one. It
+    // is skipped where there are no modes (Windows), so the ACL is set here.
+    let mut restricted = false;
+    if !permissions::MODES_APPLY {
+        for file in &backups {
+            let path = project_root.join(&file.name);
+            if permissions::owner_only(&path, permissions::AclFailure::Warn)? {
+                report_fix(format!("{}: owner-only", file.name));
+                restricted = true;
+            }
+        }
+    }
+    Ok(!added.is_empty() || restricted)
 }
 
 /// Check: .env.example existence and Git tracking
@@ -878,6 +906,17 @@ impl DiagnosticCheck for EnvExampleCheck {
                 } else {
                     format!("{name} not found - consider creating a template")
                 }),
+            ));
+        }
+
+        // Outside a repository nothing can be tracked, and "run: git add" was
+        // advice for a repository that does not exist.
+        if !gitignore::in_work_tree(project_root) {
+            return Ok(self.result(
+                Severity::Info,
+                Some(format!(
+                    "Not a git repository: whether {name} is tracked was not checked"
+                )),
             ));
         }
 

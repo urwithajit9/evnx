@@ -438,6 +438,19 @@ format = "text"
 as = "yarn.lock"
 
 [[case]]
+id = "neg-lockfile-pnpm"
+family = "generic"
+format = "yaml"
+as = "pnpm-lock.yaml"
+
+[[case]]
+id = "pos-lockfile-registry-url"
+family = "database"
+format = "json"
+as = "package-lock.json"
+expect = [{ line = 7, rule = "connection-string-credentials" }]
+
+[[case]]
 id = "neg-base64-image-css"
 family = "generic"
 format = "text"

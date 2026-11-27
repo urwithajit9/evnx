@@ -564,3 +564,45 @@ fn output_with_force_tightens_an_existing_file_to_0600() {
         .mode();
     assert_eq!(mode & 0o777, 0o600);
 }
+
+/// The cloud tutorial run: `-o file` printed "Run these commands:" with
+/// nothing under it, and next steps that said "Run the printed commands".
+/// Every destination that prints commands now says they went to the file and
+/// how to run it, and its next steps name the file.
+#[test]
+fn output_says_where_the_commands_went_and_how_to_run_them() {
+    let value = planted();
+    for dest in PRINTERS {
+        let p = Project::new().env(&format!("API_SECRET={value}\nPORT=8080\n"));
+        let mut args = dest.to_vec();
+        args.extend(["-o", "run.sh", "--no-gitignore"]);
+        let out = migrate(&p, &args);
+        out.assert_code(0);
+        for heading in [
+            "Run these commands",
+            "Run one of the following",
+            "Run this command",
+            "Upload secrets with",
+            "Run the printed",
+        ] {
+            assert!(
+                !out.stdout.contains(heading),
+                "{dest:?}: {heading:?} with nothing printed:\n{}",
+                out.stdout
+            );
+        }
+        assert!(
+            out.stdout
+                .contains("Commands written to run.sh: review them, then run `sh run.sh`"),
+            "{dest:?}:\n{}",
+            out.stdout
+        );
+        let steps = out.stdout.split("Next steps:").nth(1).unwrap_or("");
+        assert!(
+            steps.contains(". Review run.sh, then run it: `sh run.sh`"),
+            "{dest:?}:\n{}",
+            out.stdout
+        );
+        assert!(!out.stdout.contains(&value), "{dest:?}");
+    }
+}

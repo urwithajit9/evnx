@@ -1651,6 +1651,37 @@ fn push_stops_with_exit_14_before_any_write_when_vercel_changed() {
     }
 }
 
+/// The cloud tutorial run pushed `--target preview` and was told to run
+/// `evnx platform diff --to vercel` and `pull --to vercel`, which read
+/// development; the footer said "the server holds a newer version". The
+/// commands now carry the target and the file, and the footer names Vercel.
+#[test]
+fn a_conflict_names_the_target_and_file_to_diff_and_pull() {
+    let mut v = Vercel::start_for_diff();
+    let writes = v.no_writes();
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"))
+        .file(".evnx/platform/vercel.json", &state_file(&[("e3", 5)]));
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--yes", "--no-gitignore", "--env", ".env.development"]),
+    );
+    out.assert_code(14);
+    out.assert_contains(
+        "`evnx platform diff --to vercel --project prj_1 --team team_1 --target development \
+         --env .env.development`",
+    );
+    out.assert_contains(
+        "`evnx platform pull --to vercel --project prj_1 --team team_1 --target development \
+         --env .env.development`",
+    );
+    out.assert_contains("No verdict: Vercel holds a newer value. This is not a clean result.");
+    out.assert_not_contains("the server holds a newer version");
+    for m in &writes {
+        m.assert();
+    }
+}
+
 /// PLAT-STATE: pulling production after development used to replace
 /// development's record, so a development push saw "no state" instead of the
 /// change made on Vercel.

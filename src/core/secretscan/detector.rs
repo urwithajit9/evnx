@@ -310,9 +310,9 @@ const SENSITIVE_KEY_NAME: &str = "Sensitive config key";
 /// low-confidence by nature, is medium.
 fn heuristic_id(pattern: &str) -> (&'static str, Severity) {
     if pattern.starts_with("AWS Secret Access Key") {
-        ("aws-secret-access-key", Severity::Critical)
+        (HEURISTIC_IDS[0], Severity::Critical)
     } else {
-        ("high-entropy-string", Severity::Medium)
+        (HEURISTIC_IDS[1], Severity::Medium)
     }
 }
 
@@ -342,6 +342,18 @@ fn value_is_worth_reporting(value: &str) -> bool {
         || upper.contains("PLACEHOLDER")
         || upper.contains("EXAMPLE"))
 }
+
+/// Whether `d` is a guess rather than a format rule's match: the name check,
+/// a declaration in `[vars]`, the AWS secret key heuristic (a name and a
+/// shape) or the entropy fallback. A lockfile gets none of them.
+pub fn is_guess(d: &Detection) -> bool {
+    d.rule_id == SENSITIVE_KEY_ID
+        || d.rule_id == DECLARED_SECRET_ID
+        || HEURISTIC_IDS.contains(&d.rule_id.as_str())
+}
+
+/// The ids [`heuristic_id`] gives.
+const HEURISTIC_IDS: &[&str] = &["aws-secret-access-key", "high-entropy-string"];
 
 /// The checks that are not format rules, as `[scan] disable` names them
 /// (I-056). Matched case-insensitively against the start of a finding's name,

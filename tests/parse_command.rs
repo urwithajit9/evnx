@@ -55,8 +55,11 @@ fn rm88_values_appear_only_when_asked() {
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(json["entries"][0]["value"], "8080");
     assert_eq!(json["entries"][3]["key"], "TOKEN");
-    // `--show-values` means nothing without `--values`.
-    assert_eq!(parse(&d, None, &["--show-values"]).status.code(), Some(2));
+    // `--show-values` implies `--values` (it was a usage error alone).
+    let out = parse(&d, None, &["--format", "json", "--show-values"]);
+    assert_eq!(out.status.code(), Some(0));
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["entries"][0]["value"], "8080");
 }
 
 #[test]
@@ -119,4 +122,21 @@ fn rm36_a_missing_file_says_so() {
         "{}",
         text(&out.stderr)
     );
+}
+
+/// The quick-start run: `parse --show-values` alone was a usage error asking
+/// for `--values`. It means `--values` now.
+#[test]
+fn show_values_alone_prints_the_values() {
+    let d = TempDir::new().unwrap();
+    fs::write(d.path().join(".env"), "PORT=8080\n").unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .env("NO_COLOR", "1")
+        .args(["parse", "--show-values"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(stdout.contains("8080"), "{stdout}");
 }

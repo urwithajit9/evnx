@@ -60,7 +60,7 @@ pub fn list(server_override: Option<&str>, json: bool, verbose: bool) -> Result<
     }
 
     println!(
-        "  {:<8}  {:<17}  {:<17}  {:<10}  {}",
+        "  {:<8}  {:<20}  {:<20}  {:<10}  {}",
         "SESSION".bold(),
         "SIGNED IN".bold(),
         "LAST USED".bold(),
@@ -73,7 +73,7 @@ pub fn list(server_override: Option<&str>, json: bool, verbose: bool) -> Result<
         // inline marker silently shifts every column to its right.
         let id: String = s.session_id.chars().take(8).collect();
         println!(
-            "  {:<8}  {:<17}  {:<17}  {:<10}  {}",
+            "  {:<8}  {:<20}  {:<20}  {:<10}  {}",
             id,
             super::when::stamp(&s.created_at),
             super::when::stamp(&s.last_used_at),

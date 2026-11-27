@@ -82,7 +82,7 @@ fn t_dec_d19_a_structured_env_file_is_still_checked_for_ignore() {
 
     let out = run(p.path(), &["doctor"]);
     out.assert_code(1);
-    out.assert_contains(".env.json is NOT in .gitignore");
+    out.assert_contains(".env.json is not ignored: git would commit it");
 }
 
 // ── Copies (I-160, DEC-D5, DEC-D18) ──────────────────────────────────────────
@@ -95,7 +95,7 @@ fn t_i160_a_plaintext_env_backup_is_checked() {
 
     let out = run(p.path(), &["doctor"]);
     out.assert_code(1);
-    out.assert_contains(".env.backup is NOT in .gitignore");
+    out.assert_contains(".env.backup is not ignored: git would commit it");
     out.assert_contains("plaintext copy");
 }
 
@@ -117,7 +117,7 @@ fn t_dec_d18_every_plaintext_copy_is_an_error_until_ignored() {
     let out = run(p.path(), &["doctor"]);
     out.assert_code(1);
     for name in COPIES {
-        out.assert_contains(&format!("{name} is NOT in .gitignore"));
+        out.assert_contains(&format!("{name} is not ignored: git would commit it"));
     }
 
     // `.env*` covers every one of them.
@@ -289,5 +289,5 @@ fn t_i159_a_symlinked_env_is_checked_for_syntax_and_ignore() {
         .symlink("config/real.env", ".env");
     let out = run(p.path(), &["doctor"]);
     out.assert_code(1);
-    out.assert_contains(".env is NOT in .gitignore");
+    out.assert_contains(".env is not ignored: git would commit it");
 }

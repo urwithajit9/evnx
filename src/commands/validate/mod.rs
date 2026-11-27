@@ -742,7 +742,7 @@ pub fn run(opts: Options) -> Result<Verdict> {
         }
     };
 
-    pb.finish_with_message("Files parsed ✓");
+    ui::finish_line(&pb, "Files parsed ✓");
 
     if opts.verbose {
         ui::info(format!(
@@ -762,6 +762,35 @@ pub fn run(opts: Options) -> Result<Verdict> {
     if stdin || input_format == InputFormat::Json {
         // Not a file among the others: nothing to compare it with.
         surroundings.environments.clear();
+    } else if !ui::is_quiet() {
+        // Backups are not environments (`env_name::available` leaves them
+        // out); said once, because a plaintext copy is a second copy of the
+        // secrets.
+        // Not when git ignores every one: `evnx validate --fix` keeps a
+        // `.env.bak` and has git ignore it, and that is already the advice.
+        let backups = crate::core::backups::backups_of(Path::new(&env_path));
+        let paths: Vec<std::path::PathBuf> = backups
+            .iter()
+            .map(|b| folder_of(&env_path).join(b))
+            .collect();
+        let exposed = crate::core::gitignore::exposures(&paths).iter().any(|v| {
+            v.as_ref().map(|v| v.exposure) != Some(crate::core::gitignore::Exposure::Protected)
+        });
+        if exposed {
+            let file = Path::new(&env_path)
+                .file_name()
+                .map_or(env_path.clone(), |f| f.to_string_lossy().into_owned());
+            let (are, them) = if backups.len() == 1 {
+                ("is a plaintext backup", "it")
+            } else {
+                ("are plaintext backups", "them")
+            };
+            ui::warning(format!(
+                "{} {are} of {file}, left out of the comparison between env files: \
+                 delete {them} or keep {them} git-ignored",
+                backups.join(", ")
+            ));
+        }
     }
     let input = Input {
         doc,
@@ -782,7 +811,7 @@ pub fn run(opts: Options) -> Result<Verdict> {
     }
     if let Some(pb) = pb {
         let n = result.fixed.len() + result.needs_input.len();
-        pb.finish_with_message(format!("Applied {n} fix(es) ✓"));
+        ui::finish_line(&pb, format!("Applied {n} fix(es) ✓"));
     }
 
     if let Some((env_vars, changed)) = write {
@@ -1029,17 +1058,32 @@ fn output_pretty(result: &ValidationResult, env_path: &str) -> Result<()> {
                 && !(hidden.contains(i.variable.as_str())
                     && i.issue_type == IssueType::PlaceholderValue)
         });
+        // The quick-start run found five placeholders and never named the
+        // command that asks for each one.
+        let placeholders = result
+            .issues
+            .iter()
+            .any(|i| i.issue_type == IssueType::PlaceholderValue);
+        let fill = format!(
+            "Fill in the placeholder values: {}",
+            crate::commands::fill::command_for(None, env_path)
+        );
         let mut steps = vec!["Review and fix the errors above"];
+        if placeholders {
+            steps.push(&fill);
+        }
         if fixable {
             steps.push("Run with --fix to auto-correct common issues");
         }
         steps.push("Use --ignore issue_type to suppress specific warnings");
         ui::print_next_steps(&steps);
     } else if !hidden.is_empty() {
-        ui::print_next_steps(&[
-            "Fill in the values listed under \"Needs your input\" — evnx cannot invent them",
-            "Run evnx validate again",
-        ]);
+        let fill = format!(
+            "Fill in the values listed under \"Needs your input\" — evnx cannot invent \
+             them: {}",
+            crate::commands::fill::command_for(None, env_path)
+        );
+        ui::print_next_steps(&[&fill, "Run evnx validate again"]);
     }
 
     Ok(())

@@ -3102,8 +3102,8 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         #[arg(long)]
         values: bool,
 
-        /// Print --values to a terminal anyway.
-        #[arg(long, requires = "values")]
+        /// Print the values to a terminal anyway. Implies --values.
+        #[arg(long)]
         show_values: bool,
     },
 

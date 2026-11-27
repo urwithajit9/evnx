@@ -162,17 +162,20 @@ pub fn select(
 /// Every `.env.<something>` present in `dir` that holds real values.
 ///
 /// The `.env.example` family and copies evnx leaves behind are left out: neither
-/// is a thing you would pass to `--env-name`.
+/// is a thing you would pass to `--env-name`. So is a file `.evnx/backups.json`
+/// records as a backup, whatever its name: `validate` would compare it as an
+/// environment and `remove --all` would edit it.
 pub fn available(dir: &Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
+    let recorded = crate::core::backups::recorded_in(dir);
 
     let mut names: Vec<String> = entries
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
         .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|n| kind(n) == FileKind::Env)
+        .filter(|n| kind(n) == FileKind::Env && !recorded.contains(n))
         .filter_map(|n| n.strip_prefix(".env.").map(str::to_owned))
         .collect();
 
@@ -248,6 +251,7 @@ pub fn is_structured(file_name: &str) -> bool {
 /// |---|---|
 /// | `backup`, `backup.N`, `production.backup` | `evnx backup` and its rotation |
 /// | `bak`, `bak.N`, `production.bak` | `validate --fix`, `restore --yes` ([`crate::core::safe_write::backup`]) |
+/// | `bak-20261120` | a person's dated copy |
 /// | `restored`, `production.restored` | `restore`, for content that is not a `.env` |
 /// | `1`, `production.2` | numbered copies |
 /// | `old`, `save`, a trailing `~` | a person, or an editor |
@@ -307,6 +311,7 @@ fn is_copy(name: &str) -> bool {
         || name.ends_with('~')
         || name.split('.').any(|part| {
             matches!(part, "bak" | "restored" | "old" | "save")
+                || part.starts_with("bak-")
                 || (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
         })
 }

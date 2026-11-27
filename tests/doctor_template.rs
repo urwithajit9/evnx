@@ -107,7 +107,8 @@ fn t_i294_a_template_without_env_names_the_real_template() {
     let out = run(p.path(), &["doctor"]);
     out.assert_code(1);
     out.assert_contains(".env not found, though .env.sample is here");
-    out.assert_contains("evnx sync --direction reverse --example .env.sample");
+    // `init` finds `.env.sample` by the same rule, so it needs no flag.
+    out.assert_contains("→ create it from the template: evnx init --yes");
 }
 
 /// The JSON names the file in `details`; `name` and `description` stay what
@@ -136,4 +137,33 @@ fn t_i294_json_keeps_the_check_name_and_description() {
             .contains("git add .env.sample"),
         "{check}"
     );
+}
+
+/// Outside a git repository there is nothing to track a template in: the
+/// quick-start run was told "run: git add .env.example" in a plain folder.
+#[test]
+fn outside_a_repository_tracking_is_not_checked() {
+    let p = Project::new()
+        .file("package.json", "{}\n")
+        .env("A=1\n")
+        .file(".env.example", "A=\n");
+
+    let out = run(p.path(), &["doctor", "--strict"]);
+    out.assert_not_contains("git add .env.example");
+    out.assert_contains("Not a git repository: whether .env.example is tracked was not checked");
+}
+
+/// A cloned project with a template and no `.env`: doctor suggested
+/// `evnx sync --direction reverse`, which copies names only; `init` is the
+/// command that sets the project up from its template.
+#[test]
+fn a_missing_env_beside_a_template_suggests_init() {
+    let p = Project::new().git().file(".env.example", "A=\n");
+    let out = run(p.path(), &["doctor"]);
+    out.assert_contains("→ create it from the template: evnx init --yes");
+    out.assert_not_contains("sync --direction reverse");
+
+    let p = Project::new().file("app/.env.sample", "A=\n");
+    let out = run(p.path(), &["doctor", "app"]);
+    out.assert_contains("→ create it from the template: evnx init --yes --dir app");
 }

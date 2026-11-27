@@ -87,7 +87,7 @@ fn a_config_that_weakens_scanning_is_announced() {
         .assert()
         .stderr(predicate::str::contains(".evnx.toml"))
         .stderr(predicate::str::contains("scan.severity=high"))
-        .stderr(predicate::str::contains("1 patterns"));
+        .stderr(predicate::str::contains("scan.exclude=1 pattern"));
 }
 
 #[test]
@@ -743,4 +743,27 @@ fn i332_defaults_example_is_relative_to_the_config_file() {
             .stdout(predicate::str::contains("FROM_TEMPLATE"))
             .stderr(predicate::str::contains("does not exist").not());
     }
+}
+
+/// The quick-start run: every command printed `config .evnx.toml
+/// (scan.exclude=1 patterns)`. One pattern is a pattern, and only `scan`
+/// names its own settings.
+#[test]
+fn scan_settings_are_named_by_scan_only_and_counted_right() {
+    let d = project("[scan]\nexclude = [\".evnx\"]\n\n[vars.A]\nsecret = false\n");
+    let stderr = |args: &[&str]| {
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(d.path())
+            .env("NO_COLOR", "1")
+            .args(args)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let scan = stderr(&["scan"]);
+    assert!(scan.contains("scan.exclude=1 pattern,"), "{scan}");
+    assert!(scan.contains("vars.secret=false on 1 variable)"), "{scan}");
+    let parse = stderr(&["parse"]);
+    assert!(parse.contains("config    .evnx.toml"), "{parse}");
+    assert!(!parse.contains("scan."), "{parse}");
 }

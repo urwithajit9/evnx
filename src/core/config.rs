@@ -400,7 +400,10 @@ impl Config {
         }
         match self.scan.exclude.as_deref() {
             Some(patterns) if !patterns.is_empty() => {
-                out.push(format!("scan.exclude={} patterns", patterns.len()));
+                out.push(format!(
+                    "scan.exclude={}",
+                    crate::utils::string::pluralize(patterns.len(), "pattern", "patterns")
+                ));
             }
             _ => {}
         }
@@ -415,7 +418,14 @@ impl Config {
             Some(names) if !names.is_empty() => {
                 // "detector", not "rule": the names include heuristics such as
                 // `Sensitive config key`, which are not rules (I-292).
-                out.push(format!("scan.disable={} built-in detector(s)", names.len()));
+                out.push(format!(
+                    "scan.disable={}",
+                    crate::utils::string::pluralize(
+                        names.len(),
+                        "built-in detector",
+                        "built-in detectors"
+                    )
+                ));
             }
             _ => {}
         }
@@ -450,7 +460,10 @@ impl Config {
             .filter(|v| v.secret == Some(false))
             .count();
         if silenced > 0 {
-            out.push(format!("vars.secret=false on {silenced} variable(s)"));
+            out.push(format!(
+                "vars.secret=false on {}",
+                crate::utils::string::pluralize(silenced, "variable", "variables")
+            ));
         }
         out
     }
@@ -1432,7 +1445,7 @@ vault = "my-api/production"
 
         let overrides = load(dir.path()).unwrap().config.security_overrides();
         assert!(overrides.iter().any(|o| o.contains("scan.severity=high")));
-        assert!(overrides.iter().any(|o| o.contains("2 patterns")));
+        assert!(overrides.iter().any(|o| o == "scan.exclude=2 patterns"));
         assert!(
             !overrides.iter().any(|o| o.contains("validate")),
             "validate.strict tightens; only loosening is announced: {overrides:?}"
@@ -1458,7 +1471,7 @@ vault = "my-api/production"
         assert!(
             overrides
                 .iter()
-                .any(|o| o == "scan.disable=1 built-in detector(s)"),
+                .any(|o| o == "scan.disable=1 built-in detector"),
             "{overrides:?}"
         );
     }

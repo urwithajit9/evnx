@@ -219,6 +219,114 @@ fn the_pinned_gitleaks_rules_convert() {
     );
 }
 
+fn git(dir: &Path, args: &[&str]) -> bool {
+    std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn locations(out: &Output) -> Vec<String> {
+    let doc: serde_json::Value =
+        serde_json::from_slice(&out.stdout).unwrap_or_else(|e| panic!("{e}\n{}", text(out)));
+    doc["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["location"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// A gitleaks pack holds example keys in its allow lists: a scan of the
+/// project reported 17 findings in `.evnx/rules/gitleaks.toml` and exited 1.
+/// evnx's own files are not scanned, in a walk, `--staged` or `--history`;
+/// other files under `.evnx/` are. A file named on the command line is read.
+#[test]
+fn evnx_own_files_are_not_scanned() {
+    let (p, h) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    if !git(p.path(), &["init", "-q"]) {
+        return;
+    }
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/gitleaks/gitleaks.toml");
+    fs::copy(&fixture, p.path().join("gitleaks.toml")).unwrap();
+    let add = [
+        "scan",
+        "rules",
+        "add",
+        "gitleaks.toml",
+        "--from",
+        "gitleaks",
+    ];
+    assert!(
+        evnx(p.path(), h.path(), "http://127.0.0.1:9/", &add)
+            .status
+            .success()
+    );
+    fs::remove_file(p.path().join("gitleaks.toml")).unwrap();
+    let aws = format!("AKIA4OZRMFJ3{}", "VREALKEY");
+    fs::create_dir_all(p.path().join(".evnx/platform")).unwrap();
+    for own in [".evnx/backups.json", ".evnx/platform/vercel.json"] {
+        fs::write(p.path().join(own), format!("{{\"k\": \"{aws}\"}}\n")).unwrap();
+    }
+    fs::write(p.path().join(".evnx/notes.txt"), format!("key = {aws}\n")).unwrap();
+    fs::write(p.path().join("a.txt"), "nothing here\n").unwrap();
+    let own = |l: &String| {
+        l.contains(".evnx/rules") || l.contains("backups.json") || l.contains("vercel.json")
+    };
+
+    let run = |args: &[&str]| evnx(p.path(), h.path(), "http://127.0.0.1:9/", args);
+    let out = run(&["scan", "--format", "json"]);
+    let found = locations(&out);
+    assert!(!found.iter().any(own), "{found:?}");
+    assert!(
+        found.iter().any(|l| l.contains(".evnx/notes.txt")),
+        "{found:?}"
+    );
+    let pretty = run(&["scan"]);
+    assert!(
+        text(&pretty).contains("evnx's own files in .evnx/ are not scanned"),
+        "{}",
+        text(&pretty)
+    );
+    assert!(
+        !text(&pretty).contains("gitleaks.toml:"),
+        "{}",
+        text(&pretty)
+    );
+
+    // Named: read, like any file named on the command line.
+    let named = run(&["scan", "--format", "json", ".evnx/rules/gitleaks.toml"]);
+    assert!(
+        locations(&named)
+            .iter()
+            .any(|l| l.contains("gitleaks.toml")),
+        "{}",
+        text(&named)
+    );
+
+    // Staged, then committed: the same files are left out.
+    assert!(git(p.path(), &["add", "-A"]));
+    let staged = locations(&run(&["scan", "--staged", "--format", "json"]));
+    assert!(!staged.iter().any(own), "{staged:?}");
+    assert!(staged.iter().any(|l| l.contains("notes.txt")), "{staged:?}");
+    assert!(git(p.path(), &["commit", "-qm", "x"]));
+    let history = locations(&run(&["scan", "--history", "--full", "--format", "json"]));
+    assert!(!history.iter().any(own), "{history:?}");
+    assert!(
+        history.iter().any(|l| l.contains("notes.txt")),
+        "{history:?}"
+    );
+}
+
 #[cfg(feature = "net")]
 mod catalogue {
     use super::*;

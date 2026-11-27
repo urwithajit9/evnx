@@ -539,6 +539,22 @@ pub fn spinner(message: &str) -> indicatif::ProgressBar {
     pb
 }
 
+/// Finish `pb` with `message` and end its line.
+///
+/// ⚠️ `finish_with_message` leaves the cursor at the end of the drawn line, so
+/// on a terminal the next line printed ran on after it ("Files parsed ✓
+/// … ✓ All required variables present"). The newline goes where the bar is
+/// drawn, and only when it is drawn: a pipe or `-q` gets nothing.
+pub fn finish_line(
+    pb: &indicatif::ProgressBar,
+    message: impl Into<std::borrow::Cow<'static, str>>,
+) {
+    pb.finish_with_message(message);
+    if !pb.is_hidden() {
+        eprintln!();
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Dynamic Output (Advanced)
 // ─────────────────────────────────────────────────────────────

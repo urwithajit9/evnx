@@ -321,6 +321,19 @@ fn reason(error: &EvnxError) -> Option<&'static str> {
     if matches!(error, EvnxError::NeedsConfirmation(_)) {
         return Some("a question needed an answer and there is no terminal to ask on");
     }
+    // A push that found a variable changed on Vercel: the "server" is Vercel's,
+    // and what it holds is a value, not a vault version.
+    #[cfg(feature = "net")]
+    if error.chain().is_some_and(|e| {
+        e.chain().any(|c| {
+            matches!(
+                c.downcast_ref::<crate::platform::error::PlatformError>(),
+                Some(crate::platform::error::PlatformError::Changed { .. })
+            )
+        })
+    }) {
+        return Some("Vercel holds a newer value");
+    }
     match error.exit_code() {
         10 => return Some("nobody is signed in"),
         11 => return Some("the server refused access"),

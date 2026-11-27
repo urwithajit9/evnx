@@ -11,7 +11,7 @@ $ evnx init --blueprint t3_modern --yes
   ✓ 28 names from .env.example → .evnx.toml (10 secret, 6 with a format)
 
 Next steps:
-  1. Edit .env and replace placeholder values
+  1. Fill in the placeholder values in .env: evnx set --fill
   2. Commit .env.example and .evnx.toml; never commit .env
   3. .evnx.toml is the contract 'evnx validate' checks: safe to delete ('evnx init --no-contract' skips it)
   4. Run 'evnx validate' to check configuration

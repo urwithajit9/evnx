@@ -13,7 +13,7 @@ $ evnx doctor
 
   ✗  Validate .env file existence, security, and syntax
      .env not found, though .env.example is here: this project expects one
-     → create it from the template: evnx sync --direction reverse
+     → create it from the template: evnx init --yes
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -48,7 +48,7 @@ $ evnx doctor --strict
 
   ✗  Validate .env file existence, security, and syntax
      .env not found, though .env.example is here: this project expects one
-     → create it from the template: evnx sync --direction reverse
+     → create it from the template: evnx init --yes
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -88,7 +88,7 @@ $ evnx doctor --skip-without-env
 $ evnx doctor
 
   ✗  Validate .env file existence, security, and syntax
-     .env is NOT in .gitignore (security risk)
+     .env is not ignored: git would commit it (security risk)
 
   !  Check .env.example exists and is Git-tracked
      .env.example not found - consider creating a template
@@ -139,7 +139,7 @@ $ evnx doctor --format json
       "name": "env_file",
       "description": "Validate .env file existence, security, and syntax",
       "severity": "error",
-      "details": ".env is NOT in .gitignore (security risk)",
+      "details": ".env is not ignored: git would commit it (security risk)",
       "fixable": true,
       "fixed": false,
       "ran": true

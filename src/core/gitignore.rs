@@ -551,6 +551,10 @@ pub fn exposure(project_root: &Path, filename: &str) -> Exposure {
 pub struct GitView {
     pub exposure: Exposure,
     pub repo_path: String,
+    /// Whether some commit of the repository (any branch or tag) holds this
+    /// path. `false` for a file that is only staged: history-rewrite advice
+    /// is for a file that is in a commit, not for one that is merely tracked.
+    pub committed: bool,
 }
 
 /// Does git track any file inside `dir`? `false` outside a work tree, when git
@@ -618,6 +622,14 @@ pub fn exposures(files: &[PathBuf]) -> Vec<Option<GitView>> {
         let Some((tracked, ignored)) = ask_repository(&root, &members) else {
             continue;
         };
+        let in_index: Vec<String> = members
+            .iter()
+            .filter(|(_, rel)| tracked.contains(rel))
+            .map(|(_, rel)| rel.clone())
+            .collect();
+        // No answer is "may be committed": the advice errs towards rotating.
+        let committed =
+            committed_among(&root, &in_index).unwrap_or_else(|| in_index.iter().cloned().collect());
         for (i, rel) in members {
             let exposure = if tracked.contains(&rel) {
                 Exposure::Tracked
@@ -628,11 +640,81 @@ pub fn exposures(files: &[PathBuf]) -> Vec<Option<GitView>> {
             };
             out[i] = Some(GitView {
                 exposure,
+                committed: committed.contains(&rel),
                 repo_path: rel,
             });
         }
     }
     out
+}
+
+/// Which of `paths` (from the root of the repository at `root`, `/`
+/// separators) some commit holds, on any branch or tag: `git rev-list -1
+/// --all -- <path>` for each, asked in two git processes for all of them.
+/// `None` when git cannot answer.
+///
+/// ⚠️ A file in the index is not necessarily in a commit. The quick-start run
+/// staged `leak-test.txt`, the hook blocked the commit, and a full scan then
+/// prescribed `git filter-repo` and a force push for a file no commit held.
+/// Most tracked files are in `HEAD`, so `ls-tree` answers for them; only the
+/// rest (newly added files, usually few) are looked for in the history.
+pub fn committed_among(root: &Path, paths: &[String]) -> Option<std::collections::HashSet<String>> {
+    use std::collections::HashSet;
+    let mut found: HashSet<String> = HashSet::new();
+    if paths.is_empty() {
+        return Some(found);
+    }
+    let split = |bytes: &[u8]| -> Vec<String> {
+        bytes
+            .split(|b| *b == 0)
+            .filter(|p| !p.is_empty())
+            .map(|p| String::from_utf8_lossy(p).into_owned())
+            .collect()
+    };
+    // No `HEAD` (a repository with no commits yet, or an unborn branch) is not
+    // an error: nothing is in it.
+    let head = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-tree", "-r", "-z", "--name-only", "--full-tree", "HEAD"])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let in_head: HashSet<String> = if head.status.success() {
+        split(&head.stdout).into_iter().collect()
+    } else {
+        HashSet::new()
+    };
+    let wanted: HashSet<&String> = paths.iter().collect();
+    let rest: Vec<&String> = paths.iter().filter(|p| !in_head.contains(*p)).collect();
+    found.extend(in_head.into_iter().filter(|p| wanted.contains(p)));
+    // Chunked so a long list stays under the argument limit.
+    for chunk in rest.chunks(256) {
+        let log = Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args([
+                "log",
+                "--all",
+                "--no-renames",
+                "--format=",
+                "--name-only",
+                "-z",
+                "--",
+            ])
+            .args(chunk.iter().map(|p| format!(":(top,literal){p}")))
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())?;
+        found.extend(
+            split(&log.stdout)
+                .into_iter()
+                .map(|p| p.trim_start_matches('\n').to_string())
+                .filter(|p| wanted.contains(p)),
+        );
+    }
+    Some(found)
 }
 
 /// The tracked and the ignored paths among `members`, from git itself, or

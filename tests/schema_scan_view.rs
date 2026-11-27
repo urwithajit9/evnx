@@ -89,6 +89,7 @@ fn reported(name: &str, value: &str) -> Vec<String> {
         document: None,
         leaves: None,
         registry: &registry,
+        rules_only: false,
     };
     engine::scan_text(&format!("{name}={value}\n"), &ctx)
         .into_iter()

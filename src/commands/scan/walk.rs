@@ -36,6 +36,36 @@ pub(super) fn named_like_dotenv(path: &Path) -> bool {
     !crate::core::env_name::is_structured(name)
 }
 
+/// Package-manager lockfiles, by file name in any folder. Their keys are
+/// package names and their values versions and checksums, so a scan of one
+/// runs the format rules only ([`crate::core::secretscan::engine::Context::rules_only`]):
+/// `@radix-ui/react-password-toggle-field` is not a password, and an
+/// `integrity` hash is not a key. A token in a `resolved` URL still is.
+pub const LOCKFILES: &[&str] = &[
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lock",
+    "Cargo.lock",
+    "poetry.lock",
+    "uv.lock",
+    "Pipfile.lock",
+    "composer.lock",
+    "Gemfile.lock",
+    "go.sum",
+];
+
+/// The note a scanned lockfile carries in JSON `files[]` and under `-v`.
+pub(super) const LOCKFILE_NOTE: &str = "lockfile: only key-format rules, no name or entropy checks";
+
+/// Is this one of [`LOCKFILES`]?
+pub(super) fn is_lockfile(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| LOCKFILES.contains(&n))
+}
+
 /// The structured format a file is read as, by its extension (C8): YAML,
 /// JSON or TOML. Checked after [`named_like_dotenv`], so `.env.json` is JSON.
 pub(super) fn structured_format(path: &Path) -> Option<crate::core::secretscan::engine::Format> {

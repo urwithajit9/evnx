@@ -111,8 +111,8 @@ impl MigrationDestination for AwsDestination {
         // stored secret is exactly the JSON, and the subshell's trap removes
         // the file whatever `aws` does. Each block stands alone, so either can
         // be pasted without the other.
-        out.status(format!("\n{}", "Run one of the following commands:".bold()));
-        out.status("");
+        out.heading(format!("\n{}", "Run one of the following commands:".bold()));
+        out.heading("");
         out.command("# Create a new secret:".dimmed());
         for line in secret_script(
             &json,
@@ -144,11 +144,12 @@ impl MigrationDestination for AwsDestination {
     }
 
     fn print_next_steps(&self, out: Out) {
-        out.status(format!("\n{}", "Next steps:".bold()));
-        out.status("  1. Run the printed `aws secretsmanager` command.");
-        out.status("  2. Grant IAM roles/users access to the new secret.");
-        out.status("  3. Update your application to read from Secrets Manager.");
-        out.status("  4. Remove or encrypt your local .env file.");
+        out.next_steps(&[
+            out.run_step("Run the printed `aws secretsmanager` command.", ""),
+            "Grant IAM roles/users access to the new secret.".into(),
+            "Update your application to read from Secrets Manager.".into(),
+            "Remove or encrypt your local .env file.".into(),
+        ]);
     }
 }
 

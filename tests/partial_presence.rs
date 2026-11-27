@@ -88,6 +88,56 @@ fn the_template_and_backups_are_not_environments() {
     assert!(partial(&doc).is_empty(), "{doc:#}");
 }
 
+/// Dated copies (`cp .env .env.bak-20261120`) were compared as environments:
+/// "B is in .env but not in .env.bak-…", with `evnx remove B --all` as the
+/// advice, which would have edited the backups. They are left out, and one
+/// warning names them; so is a copy recorded in `.evnx/backups.json`.
+#[test]
+fn dated_and_recorded_backups_are_not_environments() {
+    let p = Project::new()
+        .env("A=1\nB=2\n")
+        .example("A=\nB=\n")
+        .file(".env.bak-20261120", "A=1\n")
+        .file(".env.bak-20261121", "A=1\nB=2\nOLD=x\n")
+        .file(".env.bak.2", "A=1\n")
+        .file(".env.prev", "A=1\n")
+        .file(
+            ".evnx/backups.json",
+            "{\"version\":1,\"backups\":[{\"file\":\".env\",\"backup\":\".env.prev\",\
+             \"time\":\"2026-11-20T00:00:00Z\",\"command\":\"sync\"}]}\n",
+        );
+    let doc = json(&p, &["validate", "--format", "json"]);
+    assert!(partial(&doc).is_empty(), "{doc:#}");
+    let out = evnx(&p, &["validate"]);
+    assert!(!out.all().contains("--all"), "{}", out.all());
+    let warned: Vec<&str> = out
+        .stderr
+        .lines()
+        .filter(|l| l.contains("plaintext backups of .env"))
+        .collect();
+    assert_eq!(warned.len(), 1, "{}", out.all());
+    for name in [
+        ".env.bak-20261120",
+        ".env.bak-20261121",
+        ".env.bak.2",
+        ".env.prev",
+    ] {
+        assert!(warned[0].contains(name), "{name}: {}", warned[0]);
+    }
+    assert!(
+        warned[0].contains("delete them or keep them git-ignored"),
+        "{}",
+        warned[0]
+    );
+
+    // `remove --all` leaves them alone too.
+    let out = evnx(&p, &["remove", "B", "--all", "--yes"]);
+    let text = std::fs::read_to_string(p.join(".env.bak-20261121")).unwrap();
+    assert_eq!(text, "A=1\nB=2\nOLD=x\n", "{}", out.all());
+    let text = std::fs::read_to_string(p.join(".env")).unwrap();
+    assert!(!text.contains("B="), "{text}\n{}", out.all());
+}
+
 #[test]
 fn ignore_and_config_ignore_silence_it() {
     let p = three();

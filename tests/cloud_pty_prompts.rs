@@ -427,3 +427,76 @@ fn del_latest_typing_the_vault_name_deletes_the_latest() {
     assert_eq!(code, 0, "{rest}");
     del.assert();
 }
+
+// ─── Tables line up on a terminal ────────────────────────────────────────────
+
+/// The byte offset of `needle` in the line of `text` that contains `marker`.
+fn column_in(text: &str, marker: &str, needle: &str) -> usize {
+    let line = text
+        .lines()
+        .find(|l| l.contains(marker))
+        .unwrap_or_else(|| panic!("no line with {marker:?}:\n{text}"));
+    line.find(needle)
+        .unwrap_or_else(|| panic!("{needle:?} not in {line:?}"))
+}
+
+/// `auth sessions list` and `auth devices list` padded their time columns to
+/// 17 characters; a stamp is 20 (`2026-11-23 03:05 UTC`), so every column
+/// after the first slid right of its header.
+#[test]
+fn sessions_and_devices_tables_line_up_on_a_terminal() {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/auth/sessions")
+        .with_status(200)
+        .with_body(
+            r#"{"sessions":[{"session_id":"352313c2-0000","created_at":"2026-11-23T03:05:00Z",
+            "last_used_at":"2026-11-23T03:06:00Z","expires_at":"2026-12-23T00:00:00Z",
+            "current":true}]}"#,
+        )
+        .create();
+    s.mock("GET", "/api/v1/auth/devices")
+        .with_status(200)
+        .with_body(
+            r#"{"devices":[{"id":"d8a95fce5e19","first_seen":"2026-11-23T03:05:00Z",
+            "last_seen":"2026-11-23T03:06:00Z","sign_in_count":1,"is_current":true,
+            "disavowed":false,"unknown_origin":false},
+            {"id":"x","first_seen":"2026-11-23T03:04:00Z",
+            "last_seen":"2026-11-23T03:04:00Z","sign_in_count":2,"is_current":false,
+            "disavowed":false,"unknown_origin":true}]}"#,
+        )
+        .create();
+    let url = s.url();
+    let p = Project::new();
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &url);
+    let env = [
+        ("EVNX_SERVER", url.as_str()),
+        ("EVNX_CONFIG_DIR", cfg.to_str().unwrap()),
+    ];
+
+    let (out, code) = Pty::spawn_with(p.path(), &["auth", "sessions", "list"], &env).finish();
+    assert_eq!(code, 0, "{out}");
+    for (header, cell) in [
+        ("LAST USED", "2026-11-23 03:06 UTC"),
+        ("EXPIRES", "2026-12-23"),
+    ] {
+        assert_eq!(
+            column_in(&out, "SESSION", header),
+            column_in(&out, "352313c2", cell),
+            "{header}:\n{out}"
+        );
+    }
+
+    let (out, code) = Pty::spawn_with(p.path(), &["auth", "devices", "list"], &env).finish();
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(
+        column_in(&out, "DEVICE", "LAST SEEN"),
+        column_in(&out, "d8a95fce5e19", "2026-11-23 03:06 UTC"),
+        "{out}"
+    );
+    assert_eq!(
+        column_in(&out, "DEVICE", "FIRST SEEN"),
+        column_in(&out, "(unknown)", "2026-11-23 03:04 UTC"),
+        "{out}"
+    );
+}

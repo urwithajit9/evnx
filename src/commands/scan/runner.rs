@@ -124,6 +124,9 @@ pub struct ScanRunner {
     include_ignored: bool,
     /// What this run was set to leave out, recorded in its report.
     effective_config: super::models::EffectiveConfig,
+    /// How many of evnx's own files under `.evnx/` were left out
+    /// ([`super::filters::is_evnx_own_file`]), for the one note that says so.
+    evnx_own: std::sync::atomic::AtomicUsize,
 }
 
 impl ScanRunner {
@@ -311,7 +314,20 @@ impl ScanRunner {
                 confidence_floor: "low".to_string(),
                 ..Default::default()
             },
+            evnx_own: Default::default(),
         }
+    }
+
+    /// Leave evnx's own files out of `paths` (from the repository root, as
+    /// git names them), unless one was named on the command line. Counted for
+    /// the note [`ScanRunner::finish`] prints.
+    fn keep_project_file(&self, path: &str, named: &[String]) -> bool {
+        if !super::filters::is_evnx_own_file(Path::new(path)) || named.iter().any(|n| n == path) {
+            return true;
+        }
+        self.evnx_own
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        false
     }
 
     // In commands/scan/runner.rs
@@ -356,6 +372,8 @@ impl ScanRunner {
             self.filter.collect(&on_disk)?
         };
         let files = collected.files.clone();
+        self.evnx_own
+            .store(collected.evnx_own, std::sync::atomic::Ordering::Relaxed);
         // ⚠️ After the paths are checked (WP-10): a banner followed by "does
         // not exist" reads as a scan that started.
         // Only show header for human-readable output
@@ -455,7 +473,8 @@ impl ScanRunner {
                  .nuxt, .turbo and __pycache__ below the folder scanned (unless git tracks files \
                  in them), \
                  Python virtualenvs, Go/PHP/Ruby vendor folders, \
-                 the .env.example family, and what --exclude or [scan] exclude names. \
+                 the .env.example family, evnx's own files in .evnx/, and what --exclude or \
+                 [scan] exclude names. \
                  Name a file directly to scan it regardless.\n\n\
                  Paths given: {}",
                 paths.join(", ")
@@ -517,7 +536,7 @@ impl ScanRunner {
         // warnings land in its own results. Notes are printed by `finish`, in
         // order, so stderr is as deterministic as stdout.
         use rayon::prelude::*;
-        let scanned: Vec<(ScanResults, bool)> = files
+        let scanned: Vec<(ScanResults, bool, bool)> = files
             .par_iter()
             .zip(git.par_iter())
             .map(|(file, view)| {
@@ -554,15 +573,19 @@ impl ScanRunner {
                 // is not "ignored". Each of those is reported exactly as before.
                 let ignored = view.as_ref().map(|v| v.exposure)
                     == Some(crate::core::gitignore::Exposure::Protected);
-                if walked && ignored && !self.include_ignored {
+                let held = walked && ignored && !self.include_ignored;
+                if held {
                     local.hold_back(0, display_portable(file));
                 } else if let Some(view) = view {
                     for finding in &mut local.findings {
                         finding.git = Some(view.exposure.into());
                         finding.repo_path = Some(view.repo_path.clone());
+                        if view.exposure == crate::core::gitignore::Exposure::Tracked {
+                            finding.in_commit = Some(view.committed);
+                        }
                     }
                 }
-                outcome.map(|()| (local, read))
+                outcome.map(|()| (local, read, held))
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -571,12 +594,17 @@ impl ScanRunner {
         // The files actually read: `scanning …` must not name one that was
         // then set aside as binary.
         let mut read = Vec::with_capacity(files.len());
-        for (file, (local, was_read)) in files.iter().zip(scanned) {
+        let mut summarised = Vec::new();
+        for (file, (local, was_read, held)) in files.iter().zip(scanned) {
             if was_read {
                 read.push(file.clone());
+                if held {
+                    summarised.push(file.clone());
+                }
             }
             results.merge(local);
         }
+        results.summarised = summarised;
 
         if stdin {
             self.scan_stdin(&mut results)?;
@@ -594,9 +622,11 @@ impl ScanRunner {
             ));
         }
         let cwd = std::env::current_dir()?;
-        super::git_blobs::toplevel(&cwd, "--staged")?;
+        let top = super::git_blobs::toplevel(&cwd, "--staged")?;
         let paths: Vec<String> = paths.into_iter().filter(|p| p != ".").collect();
-        let staged = super::staged::staged(&cwd, &paths, self.filter.max_bytes())?;
+        let named = named_in_repo(&cwd, &paths);
+        let mut staged = super::staged::staged(&cwd, &paths, self.filter.max_bytes())?;
+        staged.retain(|f| self.keep_project_file(&f.path, &named));
         if matches!(format, OutputFormat::Pretty) {
             ui::print_header("evnx scan", Some("Checking what is staged for commit"));
         }
@@ -609,6 +639,11 @@ impl ScanRunner {
             }
             return self.finish(results, format, &[]);
         }
+        // The same rule as a walk: a file some commit holds keeps the history
+        // advice, one in no commit gets "unstage it". No answer from git
+        // leaves `in_commit` unknown.
+        let names: Vec<String> = staged.iter().map(|f| f.path.clone()).collect();
+        let committed = crate::core::gitignore::committed_among(&top, &names);
         let mut read = Vec::with_capacity(staged.len());
         for file in staged {
             let Some(first) =
@@ -622,6 +657,7 @@ impl ScanRunner {
             for finding in &mut results.findings[first..] {
                 finding.git = Some(super::models::GitState::Staged);
                 finding.repo_path = Some(file.path.clone());
+                finding.in_commit = committed.as_ref().map(|c| c.contains(&file.path));
             }
         }
         self.finish(results, format, &read)
@@ -641,8 +677,12 @@ impl ScanRunner {
         }
         let cwd = std::env::current_dir()?;
         super::git_blobs::toplevel(&cwd, "--history")?;
+        let named = named_in_repo(&cwd, &paths);
         let mut entries = super::history::blobs(&cwd, range, &paths)?;
-        entries.retain(|e| self.filter.selects_in_history(Path::new(&e.path)));
+        entries.retain(|e| {
+            self.filter.selects_in_history(Path::new(&e.path))
+                && self.keep_project_file(&e.path, &named)
+        });
         Ok(entries)
     }
 
@@ -776,6 +816,12 @@ impl ScanRunner {
         read: &[PathBuf],
     ) -> Result<bool> {
         results.effective_config = Some(self.effective_config.clone());
+        if self.evnx_own.load(std::sync::atomic::Ordering::Relaxed) > 0
+            && matches!(format, OutputFormat::Pretty)
+            && !ui::is_quiet()
+        {
+            eprintln!("  · evnx's own files in .evnx/ are not scanned (name one to scan it)");
+        }
         // What the scan had to say, in the order it arose (RM-74).
         for (warning, line) in std::mem::take(&mut results.log) {
             if warning {
@@ -944,6 +990,7 @@ impl ScanRunner {
                 encoded: None,
             },
             &[],
+            false,
         );
     }
 
@@ -1055,6 +1102,18 @@ impl ScanRunner {
                 ));
             }
         }
+        let lockfile = super::walk::is_lockfile(path);
+        if lockfile && self.verbose {
+            results.log.push((
+                false,
+                format!("{}: {}", display_portable(path), super::walk::LOCKFILE_NOTE),
+            ));
+        }
+        let note = match (note, lockfile) {
+            (Some(n), true) => Some(format!("{}; {n}", super::walk::LOCKFILE_NOTE)),
+            (None, true) => Some(super::walk::LOCKFILE_NOTE.to_string()),
+            (n, false) => n,
+        };
         results.files.push(super::models::ScannedFile {
             path: display_portable(path),
             read_as,
@@ -1071,11 +1130,13 @@ impl ScanRunner {
             document: None,
             leaves: leaves.as_deref(),
             registry: &self.registry,
+            rules_only: lockfile,
         };
         // Detection is the engine's; what a detection becomes is the report's.
         let lines: Vec<&str> = content.lines().collect();
+        let structured = matches!(ctx.kind, engine::Kind::Structured(_));
         for f in engine::scan_text(content, &ctx) {
-            self.add_finding(results, path, f, &lines);
+            self.add_finding(results, path, f, &lines, structured);
         }
 
         Ok(())
@@ -1106,6 +1167,7 @@ impl ScanRunner {
                 document: None,
                 leaves: None,
                 registry: &self.registry,
+                rules_only: false,
             };
             let lines: Vec<&str> = chunk.text.lines().collect();
             for f in engine::scan_text(&chunk.text, &ctx) {
@@ -1117,6 +1179,7 @@ impl ScanRunner {
                         ..f
                     },
                     &lines,
+                    true,
                 );
             }
         }
@@ -1138,6 +1201,7 @@ impl ScanRunner {
         path: &Path,
         found: crate::core::secretscan::engine::Found,
         lines: &[&str],
+        structured: bool,
     ) {
         let crate::core::secretscan::engine::Found {
             line,
@@ -1257,6 +1321,11 @@ impl ScanRunner {
         }
         finding.context = context.into_iter().map(str::to_string).collect();
         finding.line = line;
+        // The key path a structured file's `variable` is, kept apart from a
+        // `.env` variable's name so a script need not parse `location`.
+        if structured {
+            finding.key_path = finding.variable.clone();
+        }
 
         // C5: what the project has looked at. The fingerprint never holds the
         // value itself: the line's text goes through BLAKE3.
@@ -1394,6 +1463,36 @@ fn annotate_history(
 
 /// The built-in rule for a password inside a URL (`core::secretscan::rules`).
 const CONNECTION_STRING_RULE: &str = "Credentials in a connection string";
+
+/// The paths named on the command line, from the repository root and
+/// `/`-separated, as git names a file in `--staged` and `--history`. Lexical:
+/// a file named for `--history` may no longer be on disk.
+fn named_in_repo(cwd: &Path, paths: &[String]) -> Vec<String> {
+    let top = super::git_blobs::toplevel(cwd, "scan")
+        .ok()
+        .and_then(|t| std::fs::canonicalize(t).ok());
+    let here = std::fs::canonicalize(cwd).ok();
+    let prefix = match (&here, &top) {
+        (Some(h), Some(t)) => h.strip_prefix(t).map(Path::to_path_buf).unwrap_or_default(),
+        _ => PathBuf::new(),
+    };
+    paths
+        .iter()
+        .map(|p| {
+            let mut parts: Vec<String> = Vec::new();
+            for c in prefix.join(p).components() {
+                match c {
+                    std::path::Component::Normal(n) => parts.push(n.to_string_lossy().into_owned()),
+                    std::path::Component::ParentDir => {
+                        parts.pop();
+                    }
+                    _ => {}
+                }
+            }
+            parts.join("/")
+        })
+        .collect()
+}
 
 /// `-----BEGIN RSA PRIVATE KEY-----` when `value` is exactly a PEM private-key
 /// header — what the Private Key rule matches — and `None` otherwise (I-051).

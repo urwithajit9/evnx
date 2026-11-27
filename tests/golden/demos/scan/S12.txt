@@ -5,7 +5,7 @@ $ evnx scan
 
   evnx scan  Checking for exposed secrets
 
-  scanning ./.env, ./.env.bak, ./.gitignore
+  scanning ./.gitignore · git-ignored (summarised only): ./.env, ./.env.bak
 
   ✓  No secrets in files git would commit
 
@@ -109,7 +109,7 @@ $ evnx scan --severity high
 
   evnx scan  Checking for exposed secrets
 
-  scanning ./.env, ./.env.bak, ./.gitignore
+  scanning ./.env, ./.gitignore · git-ignored (summarised only): ./.env.bak
 
   ✗  AWS Access Key                              critical
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…EY

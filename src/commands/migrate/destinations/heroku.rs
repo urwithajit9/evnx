@@ -56,11 +56,11 @@ impl MigrationDestination for HerokuDestination {
 
         // Build a single bulk `heroku config:set` command — much faster than
         // individual calls and only triggers one dyno restart.
-        out.status(format!(
+        out.heading(format!(
             "\n{}",
             "Run this command (single bulk set = one restart):".bold()
         ));
-        out.status("");
+        out.heading("");
         let mut command = format!("heroku config:set --app {}", shell::word(&self.app));
         for (key, value) in secrets {
             command.push_str(&format!(
@@ -78,13 +78,14 @@ impl MigrationDestination for HerokuDestination {
     }
 
     fn print_next_steps(&self, out: Out) {
-        out.status(format!("\n{}", "Next steps:".bold()));
-        out.status(format!(
-            "  1. Verify with `heroku config --app {}`.",
-            shell::word(&self.app)
-        ));
-        out.status("  2. The dyno restarts automatically after `config:set`.");
-        out.status("  3. Remove your local .env file.");
+        out.next_steps(&[
+            format!(
+                "Verify with `heroku config --app {}`.",
+                shell::word(&self.app)
+            ),
+            "The dyno restarts automatically after `config:set`.".into(),
+            "Remove your local .env file.".into(),
+        ]);
     }
 }
 

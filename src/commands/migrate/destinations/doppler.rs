@@ -78,8 +78,8 @@ impl MigrationDestination for DopplerDestination {
             (None, None) => String::new(),
         };
 
-        out.status(format!("\n{}", "Upload secrets with:".bold()));
-        out.status("");
+        out.heading(format!("\n{}", "Upload secrets with:".bold()));
+        out.heading("");
 
         for (key, value) in secrets {
             out.command(format!(
@@ -97,10 +97,11 @@ impl MigrationDestination for DopplerDestination {
     }
 
     fn print_next_steps(&self, out: Out) {
-        out.status(format!("\n{}", "Next steps:".bold()));
-        out.status("  1. Run the printed `doppler secrets set` commands.");
-        out.status("  2. Replace `.env` references in your app with `doppler run --`.");
-        out.status("  3. Add `doppler run -- <your-command>` to your CI/CD pipeline.");
+        out.next_steps(&[
+            out.run_step("Run the printed `doppler secrets set` commands.", ""),
+            "Replace `.env` references in your app with `doppler run --`.".into(),
+            "Add `doppler run -- <your-command>` to your CI/CD pipeline.".into(),
+        ]);
     }
 }
 

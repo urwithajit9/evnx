@@ -149,3 +149,114 @@ fn prose_and_scripts_are_not_judged_by_entropy_as_a_whole() {
     let d = project(&[("config.yml", "password: \"correct horse battery staple\"\n")]);
     assert_eq!(scan(&d, &[])["summary"]["total"], 1);
 }
+
+/// Scan JSON gave a finding's place only as the `location` string, which a
+/// script had to split. Each finding now has `file`, `line` and, in a
+/// structured file, `key_path`; `location` is unchanged.
+#[test]
+fn json_findings_carry_file_line_and_key_path() {
+    let p = password();
+    let d = project(&[
+        ("config.yml", &format!("app:\n  db:\n    password: {p}\n")),
+        (".env", &format!("STRIPE_KEY={}\n", stripe())),
+        ("notes.txt", &format!("key {}\n", stripe())),
+    ]);
+    let v = scan(&d, &[]);
+    let findings = v["findings"].as_array().unwrap();
+    let by_file = |f: &str| {
+        findings
+            .iter()
+            .find(|x| x["file"] == f)
+            .unwrap_or_else(|| panic!("{f}: {v:#}"))
+    };
+    let yml = by_file("./config.yml");
+    assert_eq!(yml["line"], 3, "{yml:#}");
+    assert_eq!(yml["key_path"], "app.db.password", "{yml:#}");
+    assert_eq!(
+        yml["location"], "./config.yml:3 (app.db.password)",
+        "{yml:#}"
+    );
+    let env = by_file("./.env");
+    assert_eq!(env["line"], 1, "{env:#}");
+    assert!(
+        env.get("key_path").is_none(),
+        "a variable, not a key path: {env:#}"
+    );
+    assert_eq!(env["variable"], "STRIPE_KEY", "{env:#}");
+    let txt = by_file("./notes.txt");
+    assert_eq!(txt["line"], 1, "{txt:#}");
+    assert!(txt.get("key_path").is_none(), "{txt:#}");
+}
+
+/// A pnpm lockfile names packages such as `@radix-ui/react-password-toggle-field`
+/// under `dependencies:`; the name check read each as a password ("Sensitive
+/// config key", high). In a lockfile only the key-format rules run: no name or
+/// entropy guesses, while a credential in a registry URL or a real key is
+/// still found, and the file says how it was read.
+#[test]
+fn lockfiles_get_key_format_rules_only() {
+    let integrity = format!(
+        "sha512-{}",
+        "Kq3xV9pL2mN8rT5wY7zA1bC4dE6fG0hJ3kM5nP8qR2sU4vW6xY9zA1bC3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY=="
+    );
+    let pnpm = format!(
+        "lockfileVersion: '9.0'\n\nsnapshots:\n\n  radix-ui@1.8.1(react@19.1.0):\n    \
+         dependencies:\n      '@radix-ui/react-password-toggle-field': 0.2.1(@types/react-dom@19.3.0(@types/react@19.3.0))(react@19.1.0)\n      \
+         '@radix-ui/react-one-time-password-field': 0.1.8(@types/react@19.3.0)(react@19.1.0)\n\npackages:\n\n  \
+         left-pad@1.3.0:\n    resolution: {{integrity: {integrity}}}\n"
+    );
+    let npm = format!(
+        "{{\n  \"name\": \"app\",\n  \"lockfileVersion\": 3,\n  \"packages\": {{\n    \
+         \"node_modules/secret-handshake\": {{\n      \"version\": \"1.0.0\",\n      \
+         \"resolved\": \"https://registry.npmjs.org/secret-handshake/-/secret-handshake-1.0.0.tgz\",\n      \
+         \"integrity\": \"{integrity}\"\n    }},\n    \"node_modules/private\": {{\n      \
+         \"resolved\": \"https://deploy:{}@registry.example.com/private/-/private-1.0.0.tgz\",\n      \
+         \"api_token\": \"{}\"\n    }}\n  }}\n}}\n",
+        "s3cretRegistryPw9",
+        stripe()
+    );
+    let d = project(&[("web/pnpm-lock.yaml", &pnpm), ("package-lock.json", &npm)]);
+    let v = scan(&d, &[]);
+    let findings = v["findings"].as_array().unwrap();
+    let rules: Vec<(&str, &str)> = findings
+        .iter()
+        .map(|f| (f["file"].as_str().unwrap(), f["rule_id"].as_str().unwrap()))
+        .collect();
+    assert!(
+        !rules
+            .iter()
+            .any(|(_, r)| *r == "sensitive-config-key" || *r == "high-entropy-string"),
+        "{rules:?}"
+    );
+    assert!(
+        !rules.iter().any(|(f, _)| f.ends_with("pnpm-lock.yaml")),
+        "{rules:?}"
+    );
+    assert!(
+        rules.contains(&("./package-lock.json", "connection-string-credentials"))
+            || rules
+                .iter()
+                .any(|(f, r)| *f == "./package-lock.json" && r.contains("url")),
+        "a password in a registry URL is still found: {rules:?}"
+    );
+    assert!(
+        rules
+            .iter()
+            .any(|(f, r)| *f == "./package-lock.json" && r.starts_with("stripe")),
+        "a real key is still found: {rules:?}"
+    );
+    let notes: Vec<&str> = v["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f["note"].as_str())
+        .collect();
+    assert_eq!(
+        notes
+            .iter()
+            .filter(|n| n.contains("lockfile: only key-format rules"))
+            .count(),
+        2,
+        "{notes:?}"
+    );
+}

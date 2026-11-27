@@ -149,6 +149,14 @@ fn m1_stale_vault_exits_2_and_child_never_runs() {
         out.stderr
     );
     assert!(out.stderr.contains("stopped before"), "{}", out.stderr);
+    // "Run one of the commands above" needs one above (the cloud tutorial run
+    // had none).
+    assert!(
+        out.stderr
+            .contains("See its versions with `evnx cloud history --vault a/dev`"),
+        "{}",
+        out.stderr
+    );
     s.assert_untouched();
     assert!(!out.all().contains(SECRET), "{}", out.all());
 }

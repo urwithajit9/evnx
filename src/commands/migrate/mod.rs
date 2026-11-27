@@ -377,6 +377,7 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
     if args.output.is_some() {
         colored::control::set_override(false);
     }
+    Out::set_file(args.output.as_deref());
     let result = dest.migrate(shown, &opts);
     if args.output.is_some() {
         colored::control::unset_override();
@@ -391,7 +392,10 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
             crate::core::permissions::PRIVATE,
         )
         .with_context(|| format!("Failed to write output to '{path}'"))?;
-        out.result(format!("Commands written to: {path}"));
+        let shown = crate::core::shell::word(path);
+        out.result(format!(
+            "\nCommands written to {shown}: review them, then run `sh {shown}`"
+        ));
         if written.replaced {
             out.result(format!("Replaced {path}"));
         }

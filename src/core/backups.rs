@@ -181,6 +181,81 @@ pub fn list(root: &Path) -> Vec<Entry> {
         .unwrap_or_default()
 }
 
+/// Whether `name` (a file name) is named like a backup: `*.bak`
+/// ([`crate::utils::protect::BACKUP_PATTERN`], what evnx writes), or a
+/// `.bak-<anything>` or `.bak.<n>` part, as in `.env.bak-20261120` and
+/// `.env.bak.2`.
+pub fn is_backup_name(name: &str) -> bool {
+    crate::core::glob::glob_match(crate::utils::protect::BACKUP_PATTERN, name)
+        || name
+            .split('.')
+            .skip(1)
+            .any(|part| part == "bak" || part.starts_with("bak-"))
+}
+
+/// The files in `dir` the registry records as backups, by name.
+pub fn recorded_in(dir: &Path) -> Vec<String> {
+    let abs = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let root = root_of_dir(dir);
+    list(&root)
+        .into_iter()
+        .filter_map(|e| {
+            let path = root.join(&e.backup);
+            (path.parent() == Some(abs.as_path()))
+                .then(|| path.file_name()?.to_str().map(str::to_string))
+                .flatten()
+        })
+        .collect()
+}
+
+/// The plaintext backups of `file` beside it: named like one
+/// ([`is_backup_name`], with `file`'s name before the `.bak`), or recorded as
+/// one of it in the registry. File names, sorted. `validate` leaves them out
+/// of the comparison between environment files and names them once.
+pub fn backups_of(file: &Path) -> Vec<String> {
+    let Some(own) = file.file_name().and_then(|n| n.to_str()) else {
+        return Vec::new();
+    };
+    let dir = match file.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
+    let root = root_of_dir(dir);
+    let abs = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let mut out: Vec<String> = list(&root)
+        .into_iter()
+        .filter(|e| {
+            let f = root.join(&e.file);
+            f.parent() == Some(abs.as_path()) && f.file_name().and_then(|n| n.to_str()) == Some(own)
+        })
+        .filter_map(|e| {
+            let path = root.join(&e.backup);
+            (path.parent() == Some(abs.as_path()) && path.is_file())
+                .then(|| path.file_name()?.to_str().map(str::to_string))
+                .flatten()
+        })
+        .collect();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let Ok(name) = entry.file_name().into_string() else {
+                continue;
+            };
+            // `.env.bak…`, not `.env.production.bak`: that one is a backup
+            // of `.env.production`.
+            let copy_of_own = name
+                .strip_prefix(own)
+                .is_some_and(|rest| rest.starts_with(".bak"))
+                && is_backup_name(&name);
+            if copy_of_own && entry.file_type().is_ok_and(|t| t.is_file()) {
+                out.push(name);
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// The running command's name: the first argument that is not a flag.
 fn command() -> String {
     std::env::args()

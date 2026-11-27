@@ -4,7 +4,7 @@
 $ evnx doctor
 
   ✗  Validate .env file existence, security, and syntax
-     .env is NOT in .gitignore (security risk)
+     .env is not ignored: git would commit it (security risk)
 
   !  Check .env.example exists and is Git-tracked
      .env.example not found - consider creating a template

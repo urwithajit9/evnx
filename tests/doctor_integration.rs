@@ -87,9 +87,11 @@ fn doctor_flags_every_unignored_env_file() {
         .assert()
         .failure()
         .stdout(predicate::str::contains(
-            ".env.production is NOT in .gitignore",
+            ".env.production is not ignored: git would commit it",
         ))
-        .stdout(predicate::str::contains(".env.test is NOT in .gitignore"));
+        .stdout(predicate::str::contains(
+            ".env.test is not ignored: git would commit it",
+        ));
 }
 
 #[test]
@@ -103,7 +105,7 @@ fn doctor_does_not_flag_the_template_family() {
         .arg("doctor")
         .arg(dir.path())
         .assert()
-        .stdout(predicate::str::contains(".env.example is NOT in .gitignore").not());
+        .stdout(predicate::str::contains(".env.example is not ignored: git would commit it").not());
 }
 
 #[test]
@@ -136,7 +138,7 @@ fn auto_fix_covers_every_env_file_and_keeps_the_example_committable() {
         .arg("doctor")
         .arg(dir.path())
         .assert()
-        .stdout(predicate::str::contains("NOT in .gitignore").not());
+        .stdout(predicate::str::contains("git would commit it").not());
 }
 
 // ─────────────────────────────────────────────────────────────

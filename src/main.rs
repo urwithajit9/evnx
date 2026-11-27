@@ -255,7 +255,12 @@ fn run() -> Result<Verdict, EvnxError> {
         }
     }
     if let Some(source) = &loaded.source {
-        let overrides = loaded.config.security_overrides();
+        let mut overrides = loaded.config.security_overrides();
+        // `[scan]` settings change what `scan` reads and nothing else: every
+        // command printed "scan.exclude=1 patterns" on its config line.
+        if !matches!(cli.command, Commands::Scan { .. }) {
+            overrides.retain(|o| !o.starts_with("scan."));
+        }
         // I-060: `-q` is findings only — except, for `scan`, the line saying a
         // committed config weakens the scan. Every override is a `[scan]` or
         // `[vars] secret` setting, so for any other command it stays hidden.
@@ -1442,7 +1447,8 @@ fn run() -> Result<Verdict, EvnxError> {
             commands::parse::run(
                 &env,
                 output.resolved() == evnx::cli::args::Format::Json,
-                values,
+                // `--show-values` alone was a usage error asking for `--values`.
+                values || show_values,
                 show_values,
             )
         }

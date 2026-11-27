@@ -105,8 +105,8 @@ impl MigrationDestination for RailwayDestination {
             });
         }
 
-        out.status(format!("\n{}", "Upload secrets with:".bold()));
-        out.status("");
+        out.heading(format!("\n{}", "Upload secrets with:".bold()));
+        out.heading("");
 
         // One call sets every variable, and triggers one deploy.
         let mut command = self.set_command();
@@ -126,15 +126,16 @@ impl MigrationDestination for RailwayDestination {
     }
 
     fn print_next_steps(&self, out: Out) {
-        out.status(format!("\n{}", "Next steps:".bold()));
-        out.status("  1. Login first: `railway login`.");
-        if self.project.is_none() {
-            out.status("  2. Link the project here: `railway link`.");
-        } else {
-            out.status("  2. The command names the project; no `railway link` needed.");
-        }
-        out.status("  3. Run the printed `railway variable set` command.");
-        out.status("  4. Setting variables redeploys the service.");
+        out.next_steps(&[
+            "Login first: `railway login`.".into(),
+            if self.project.is_none() {
+                "Link the project here: `railway link`.".into()
+            } else {
+                "The command names the project; no `railway link` needed.".into()
+            },
+            out.run_step("Run the printed `railway variable set` command.", ""),
+            "Setting variables redeploys the service.".into(),
+        ]);
     }
 }
 
