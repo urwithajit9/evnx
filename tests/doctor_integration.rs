@@ -6,6 +6,16 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
+/// A real repository: outside one, doctor does not say what git would commit.
+fn git_init(dir: &std::path::Path) {
+    let ok = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(dir)
+        .status()
+        .is_ok_and(|s| s.success());
+    assert!(ok, "git init failed");
+}
+
 /// ⚠️ T-038: this asserted `.success()` on a template with no `.env`, which
 /// DEC-D8 makes an error (I-162). The JSON still prints, with the verdict.
 #[test]
@@ -72,6 +82,7 @@ fn test_doctor_missing_env_warning() {
 #[test]
 fn doctor_flags_every_unignored_env_file() {
     let dir = TempDir::new().unwrap();
+    git_init(dir.path());
     fs::write(dir.path().join(".gitignore"), ".env\n").unwrap();
     fs::write(dir.path().join(".env"), "A=1\n").unwrap();
     fs::write(
@@ -97,6 +108,7 @@ fn doctor_flags_every_unignored_env_file() {
 #[test]
 fn doctor_does_not_flag_the_template_family() {
     let dir = TempDir::new().unwrap();
+    git_init(dir.path());
     fs::write(dir.path().join(".gitignore"), ".env\n").unwrap();
     fs::write(dir.path().join(".env"), "A=1\n").unwrap();
     fs::write(dir.path().join(".env.example"), "A=\n").unwrap();
@@ -111,6 +123,7 @@ fn doctor_does_not_flag_the_template_family() {
 #[test]
 fn auto_fix_covers_every_env_file_and_keeps_the_example_committable() {
     let dir = TempDir::new().unwrap();
+    git_init(dir.path());
     fs::write(dir.path().join(".gitignore"), ".env\n").unwrap();
     fs::write(dir.path().join(".env"), "A=1\n").unwrap();
     fs::write(dir.path().join(".env.production"), "DATABASE_URL=x\n").unwrap();
@@ -149,7 +162,7 @@ fn auto_fix_covers_every_env_file_and_keeps_the_example_committable() {
 /// `--fix` can genuinely repair.
 fn unhealthy_project() -> TempDir {
     let d = TempDir::new().unwrap();
-    fs::create_dir_all(d.path().join(".git")).unwrap();
+    git_init(d.path());
     fs::write(d.path().join(".env"), "AWS=AKIA4OZRMFJ3VREALKEY\n").unwrap();
     #[cfg(unix)]
     {

@@ -121,3 +121,22 @@ fn an_unignored_backup_says_git_would_commit_it_and_fix_ignores_it() {
         assert_eq!(mode & 0o777, 0o600, "{}", out.all());
     }
 }
+
+/// Outside a git repository there is no commit to make: ".env is not ignored:
+/// git would commit it (security risk)" was an error about a repository that
+/// does not exist. It is information now, like the template's tracking.
+#[test]
+fn outside_a_repository_whether_git_would_commit_env_is_not_checked() {
+    let p = Project::new().example("A=\n").env("A=1\n");
+    #[cfg(unix)]
+    let p = p.mode(".env", 0o600);
+    let out = run(p.path(), &["doctor", "--strict"]);
+    out.assert_not_contains("git would commit it");
+    out.assert_contains("Not a git repository: whether git would commit .env was not checked");
+    out.assert_code(0);
+    // A `.gitignore` that covers it is still read, as git would read it.
+    let p = p.file(".gitignore", ".env\n");
+    let out = run(p.path(), &["doctor", "--strict"]);
+    out.assert_not_contains("Not a git repository: whether git would commit");
+    out.assert_code(0);
+}

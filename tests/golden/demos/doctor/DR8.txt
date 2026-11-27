@@ -87,8 +87,8 @@ $ evnx doctor --skip-without-env
 
 $ evnx doctor
 
-  ✗  Validate .env file existence, security, and syntax
-     .env is not ignored: git would commit it (security risk)
+  ·  Validate .env file existence, security, and syntax
+     Not a git repository: whether git would commit .env was not checked
 
   !  Check .env.example exists and is Git-tracked
      .env.example not found - consider creating a template
@@ -106,10 +106,7 @@ $ evnx doctor
 
   ✓  Check env files and templates for empty evnx sections
 
-  2 errors  ·  1 warning  ·  2 checks passed
-
-  →  1 issue evnx doctor --fix can repair:
-     ·  Validate .env file existence, security, and syntax
+  1 error  ·  1 warning  ·  2 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -138,9 +135,9 @@ $ evnx doctor --format json
     {
       "name": "env_file",
       "description": "Validate .env file existence, security, and syntax",
-      "severity": "error",
-      "details": ".env is not ignored: git would commit it (security risk)",
-      "fixable": true,
+      "severity": "info",
+      "details": "Not a git repository: whether git would commit .env was not checked",
+      "fixable": false,
       "fixed": false,
       "ran": true
     },
@@ -201,11 +198,11 @@ $ evnx doctor --format json
   ],
   "summary": {
     "total": 7,
-    "errors": 2,
+    "errors": 1,
     "warnings": 1,
     "passed": 2,
-    "info": 2,
-    "fixable": 1
+    "info": 3,
+    "fixable": 0
   },
   "timestamp": "<date>+00:00"
 }

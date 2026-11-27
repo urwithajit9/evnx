@@ -387,6 +387,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   filter-repo is needed". History a remote already has, and a repository with
   no remote, keep the old steps. The hook's own line now reads "Fix the
   commits as the next steps above say".
+- **Outside a git repository, `scan` and `doctor` no longer talk about
+  commits.** `scan`'s next steps for a finding flagged only by a name, an
+  entropy guess or a lower-confidence match said "Check ./.env: it is
+  committed, but only…" and "it is in git history"; they now read "Check
+  ./.env: only a variable name, an entropy guess or a lower-confidence match
+  flagged it, so it may not be a secret" and "If one is a real secret, revoke
+  or rotate it". `doctor` reported ".env is not ignored: git would commit it
+  (security risk)" as an error, offered to fix it, and exited 1; it now
+  reports, as information, "Not a git repository: whether git would commit
+  .env was not checked", which does not fail `--strict`. A `.gitignore` that
+  covers the file is still read, and inside a repository nothing changes.
 
 ---
 

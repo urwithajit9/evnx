@@ -839,11 +839,15 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
             }
         }
         let all_local = to_check.iter().all(|f| local_only(f));
+        // Outside a repository nothing is committed, and nothing is known.
+        let no_repo = to_check.iter().all(|f| f.git.is_none());
         steps.push(format!(
             "Check {}: {}only a variable name, an entropy guess or a \
              lower-confidence match flagged it, so it may not be a secret",
             names(&shown),
-            if all_local {
+            if no_repo {
+                ""
+            } else if all_local {
                 "it is in local commits no remote has, but "
             } else {
                 "it is committed, but "
@@ -861,7 +865,9 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
              false-positive), or accept it with evnx scan --update-baseline"
                 .to_string(),
         );
-        if all_local {
+        if no_repo {
+            steps.push("If one is a real secret, revoke or rotate it".to_string());
+        } else if all_local {
             steps.push(format!(
                 "If one is a real secret, take it out of the local commits before you \
                  push: {}",
