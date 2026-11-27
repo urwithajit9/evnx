@@ -54,7 +54,7 @@ fn a_k8s_secret_data_value_is_decoded_and_the_finding_says_so() {
     let f = &doc["findings"][0];
     assert_eq!(f["rule_id"], "stripe-live-secret-key");
     assert_eq!(f["encoded"], "base64");
-    assert_eq!(f["location"].as_str().unwrap().split(':').nth(1), Some("4"));
+    assert_eq!(f["line"], 4, "{raw}");
     // One value, one finding: the name check on `api_key` is not a second one.
     assert_eq!(doc["findings"].as_array().unwrap().len(), 1, "{raw}");
     // Never the value, decoded or not.
@@ -142,4 +142,69 @@ fn an_allow_marker_still_allows_a_decoded_finding() {
     let (code, doc, raw) = scan(".env", &line);
     assert_eq!(code, 0, "{raw}");
     assert_eq!(doc["allowed"][0]["encoded"], "base64");
+}
+
+fn git(dir: &std::path::Path, args: &[&str]) -> bool {
+    std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env(
+            "GIT_CONFIG_GLOBAL",
+            if cfg!(windows) { "NUL" } else { "/dev/null" },
+        )
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// A value decoded from a YAML leaf had no `key_path` (and no key in its
+/// location), in a walk and under `--history`, while the same value as
+/// written had both.
+#[test]
+fn a_decoded_yaml_value_carries_its_key_path_in_a_walk_and_in_history() {
+    let yaml = format!(
+        "apiVersion: v1\nkind: Secret\ndata:\n  api_key: {}\n",
+        b64(&stripe())
+    );
+    let (_, doc, raw) = scan("secret.yaml", &yaml);
+    let f = &doc["findings"][0];
+    assert_eq!(f["encoded"], "base64", "{raw}");
+    assert_eq!(f["key_path"], "data.api_key", "{raw}");
+    assert_eq!(f["location"], "secret.yaml:4 (data.api_key)", "{raw}");
+
+    let d = TempDir::new().unwrap();
+    if !git(d.path(), &["init", "-q"]) {
+        return;
+    }
+    fs::write(d.path().join("secret.yaml"), &yaml).unwrap();
+    assert!(git(d.path(), &["add", "-A"]));
+    assert!(git(d.path(), &["commit", "-q", "-m", "k"]));
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .env("NO_COLOR", "1")
+        .env(
+            "GIT_CONFIG_GLOBAL",
+            if cfg!(windows) { "NUL" } else { "/dev/null" },
+        )
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .args(["scan", "--history", "--format", "json"])
+        .output()
+        .unwrap();
+    let raw = String::from_utf8_lossy(&out.stdout).into_owned();
+    let doc: serde_json::Value =
+        serde_json::from_str(&raw).unwrap_or_else(|e| panic!("{e}\n{raw}"));
+    let f = &doc["findings"][0];
+    assert_eq!(f["encoded"], "base64", "{raw}");
+    assert_eq!(f["key_path"], "data.api_key", "{raw}");
+    assert!(
+        f["location"]
+            .as_str()
+            .unwrap()
+            .ends_with(":4 (data.api_key)"),
+        "{raw}"
+    );
 }

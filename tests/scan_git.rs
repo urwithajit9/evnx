@@ -351,6 +351,26 @@ fn t_i286_outside_a_repository_the_history_advice_names_the_file() {
     );
 }
 
+/// Outside a repository nothing is committed: a weak finding's steps said
+/// "Check ./.env: it is committed" and "it is in git history".
+#[test]
+fn outside_a_repository_a_weak_finding_is_not_called_committed() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".env"),
+        format!("DB_PASSWORD=correct-{}\n", "horse-battery-staple"),
+    )
+    .unwrap();
+    let (code, stdout, _) = scan(&d, &[]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(
+        stdout.contains("Check ./.env: only a variable name"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("committed"), "{stdout}");
+    assert!(!stdout.contains("git history"), "{stdout}");
+}
+
 /// I-290: one held-back finding is "it", not "them".
 #[test]
 fn t_i290_one_held_back_finding_is_it() {

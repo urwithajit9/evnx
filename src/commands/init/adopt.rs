@@ -222,9 +222,12 @@ pub(crate) fn handle(target: &Target, opts: WriteOptions, found: &Found) -> Resu
             ));
             shared::say_names_env_lacks(&adopted, &env);
         } else {
+            // ⚠️ Forward: `sync` writes the template from the env file, which
+            // `[defaults] env_name` (just set) names. `--direction reverse`
+            // fills an env file from a template, and exited 2 with none.
             ui::warning(format!(
                 "{env} has no template yet, so no [vars] were recorded. \
-                 Create one from it:  evnx sync --direction reverse"
+                 Create one from it:  evnx sync"
             ));
         }
     };

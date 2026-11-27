@@ -123,10 +123,11 @@ else
   if [ "$evnx_status" -ne 0 ]; then
     if [ "$evnx_status" -eq 1 ]; then
       echo "evnx scan: push blocked, secrets are in the commits being pushed (see above)." >&2
+      echo "  Fix the commits as the next steps above say. To push anyway, with a reason that is logged:" >&2
     else
       echo "evnx scan: push blocked, the scan could not run (see above)." >&2
+      echo "  To push anyway, with a reason that is logged:" >&2
     fi
-    echo "  Rotate the key, then rewrite the commits. To push anyway, with a reason that is logged:" >&2
     echo "  EVNX_SCAN_BYPASS=\"why\" git push. To turn the hook off: git config hooks.evnx-scan false" >&2
     exit 1
   fi

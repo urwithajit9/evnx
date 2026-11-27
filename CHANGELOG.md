@@ -376,6 +376,46 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`remove`'s hint for a missing `.env` keeps the names.** With only
   `.env.prod` there, `evnx remove A B` suggested `evnx remove --env-name prod`;
   it now suggests `evnx remove A B --env-name prod`.
+- **The pre-push hook no longer tells you to force push commits no remote
+  has.** When it blocked a push, the next steps were `git filter-repo` and
+  "Force push, after coordinating with everyone who has a clone", for commits
+  that were never pushed. `scan --history` now asks git whether a remote
+  already has the file with that key. If none does, the steps are "Take the
+  keys out of <file>, then rewrite the local commits that hold them: git commit
+  --amend" (or `git rebase -i <commit>^` when it is not the last commit), then
+  "Then push as usual: no remote has these commits, so no force push or git
+  filter-repo is needed". History a remote already has, and a repository with
+  no remote, keep the old steps. The hook's own line now reads "Fix the
+  commits as the next steps above say".
+- **Outside a git repository, `scan` and `doctor` no longer talk about
+  commits.** `scan`'s next steps for a finding flagged only by a name, an
+  entropy guess or a lower-confidence match said "Check ./.env: it is
+  committed, but only…" and "it is in git history"; they now read "Check
+  ./.env: only a variable name, an entropy guess or a lower-confidence match
+  flagged it, so it may not be a secret" and "If one is a real secret, revoke
+  or rotate it". `doctor` reported ".env is not ignored: git would commit it
+  (security risk)" as an error, offered to fix it, and exited 1; it now
+  reports, as information, "Not a git repository: whether git would commit
+  .env was not checked", which does not fail `--strict`. A `.gitignore` that
+  covers the file is still read, and inside a repository nothing changes.
+- **`init` adopting an env file with no template names the command that
+  creates one.** After `evnx init --yes --env-name development` adopted
+  `.env.development`, it said "Create one from it:  evnx sync --direction
+  reverse", which fills an env file from a template and so exited 2. It now
+  says "Create one from it:  evnx sync", which writes `.env.example` from
+  `.env.development` (the `[defaults] env_name` that `init` just set).
+- **`spec init` no longer writes "# only in .env" for names the template
+  has.** A template name with a default, such as `PORT=8000` or `NAME=demo`,
+  is written `required = false`, and the comment followed that instead of where
+  the name came from. Only a name that is in the env file and not in the
+  template gets the comment now.
+- **A value decoded from a YAML, JSON or TOML file carries its key path.** A
+  base64, hex or percent-encoded value found in a structured file had
+  `key_path: null` in `scan --format json` and no key in its location
+  (`config.yaml:3`), in a folder walk and under `--history`, while the same
+  file's other findings had both. It now reads `config.yaml:3
+  (app.aws.encoded_key)` with `key_path` set. Its fingerprint is unchanged, so
+  a baseline that accepted it still does.
 
 ---
 

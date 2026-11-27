@@ -413,14 +413,24 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
         // ⚠️ History advice names the files it is about (I-286). It said
         // `git filter-repo --path .env` whatever file held the key, so a key in
         // `src/main.py` came with a command that rewrote the wrong file.
-        let committed_public = paths_where(public.iter().copied(), may_be_committed);
-        let then_history = (!committed_public.is_empty()).then(|| {
-            format!(
+        let committed_public = paths_where(public.iter().copied(), |f| {
+            may_be_committed(f) && !local_only(f)
+        });
+        let mut then_history: Vec<String> = Vec::new();
+        if !committed_public.is_empty() {
+            then_history.push(format!(
                 "Then, for anything that was ALSO committed: {}, and force push after \
                  coordinating with everyone who has a clone",
                 filter_repo(&committed_public)
-            )
-        });
+            ));
+        }
+        if public.iter().any(|f| local_only(f)) {
+            then_history.push(format!(
+                "Then take them out of the local commits that hold them: {}, and push \
+                 as usual: no remote has those commits",
+                local_rewrite(results)
+            ));
+        }
 
         let steps: Vec<String> = if !public.is_empty() && any_named_provider {
             let mut steps = vec![
@@ -698,9 +708,29 @@ fn warrants_rewrite(f: &super::models::Finding) -> bool {
         && f.confidence_before_context.unwrap_or(f.confidence) == Confidence::High
 }
 
-/// [`may_be_committed`] and [`warrants_rewrite`].
+/// A `--history` finding whose blob no remote has: it is in local commits
+/// only (what the pre-push hook scans), so amending or rebasing them before
+/// the push is the fix, with no force push.
+fn local_only(f: &super::models::Finding) -> bool {
+    f.git == Some(super::models::GitState::History) && f.on_remote == Some(false)
+}
+
+/// The command that rewrites the local commits, as the runner worked it out.
+fn local_rewrite(results: &ScanResults) -> &str {
+    results
+        .local_rewrite
+        .as_deref()
+        .unwrap_or("git rebase -i <the commit before the first one that holds it>")
+}
+
+/// [`may_be_committed`] and [`warrants_rewrite`], in history a remote may have.
 fn rewrite_in_history(f: &super::models::Finding) -> bool {
-    may_be_committed(f) && warrants_rewrite(f)
+    may_be_committed(f) && warrants_rewrite(f) && !local_only(f)
+}
+
+/// [`warrants_rewrite`], in local commits only.
+fn rewrite_locally(f: &super::models::Finding) -> bool {
+    local_only(f) && warrants_rewrite(f)
 }
 
 /// [`may_be_committed`], and not [`warrants_rewrite`]: check it first.
@@ -763,6 +793,38 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
         ));
         steps.push("Force push, after coordinating with everyone who has a clone".to_string());
     }
+    let mut local: Vec<String> = Vec::new();
+    for f in results.findings.iter().filter(|f| rewrite_locally(f)) {
+        let file = split_location(&f.location).0.to_string();
+        if !local.contains(&file) {
+            local.push(file);
+        }
+    }
+    if !local.is_empty() {
+        let cmd = local_rewrite(results);
+        let how = if cmd.contains("rebase") {
+            ", marking each commit that has them as edit"
+        } else {
+            ""
+        };
+        steps.push(format!(
+            "Take the keys out of {}, then rewrite the local commits that hold them: {cmd}{how}",
+            names(&local)
+        ));
+        steps.push(
+            "Then push as usual: no remote has these commits, so no force push or \
+             git filter-repo is needed"
+                .to_string(),
+        );
+        if history.is_empty() {
+            steps.push(
+                "If a key was shared another way (copied, sent, pushed from another \
+                 clone), rotate it"
+                    .to_string(),
+            );
+            rotate_said = true;
+        }
+    }
     if !to_check.is_empty() {
         let mut shown: Vec<String> = Vec::new();
         let mut in_tests: Vec<String> = Vec::new();
@@ -776,10 +838,20 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
                 shown.push(file);
             }
         }
+        let all_local = to_check.iter().all(|f| local_only(f));
+        // Outside a repository nothing is committed, and nothing is known.
+        let no_repo = to_check.iter().all(|f| f.git.is_none());
         steps.push(format!(
-            "Check {}: it is committed, but only a variable name, an entropy guess or a \
+            "Check {}: {}only a variable name, an entropy guess or a \
              lower-confidence match flagged it, so it may not be a secret",
-            names(&shown)
+            names(&shown),
+            if no_repo {
+                ""
+            } else if all_local {
+                "it is in local commits no remote has, but "
+            } else {
+                "it is committed, but "
+            }
         ));
         if !in_tests.is_empty() {
             steps.push(format!(
@@ -793,8 +865,19 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
              false-positive), or accept it with evnx scan --update-baseline"
                 .to_string(),
         );
-        steps
-            .push("If one is a real secret, revoke or rotate it: it is in git history".to_string());
+        if no_repo {
+            steps.push("If one is a real secret, revoke or rotate it".to_string());
+        } else if all_local {
+            steps.push(format!(
+                "If one is a real secret, take it out of the local commits before you \
+                 push: {}",
+                local_rewrite(results)
+            ));
+        } else {
+            steps.push(
+                "If one is a real secret, revoke or rotate it: it is in git history".to_string(),
+            );
+        }
     }
     if !uncommitted.is_empty() {
         // ⚠️ Two remedies: an env file is gitignored; a source file is not —

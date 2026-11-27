@@ -567,6 +567,11 @@ impl DiagnosticCheck for EnvFileCheck {
         // `.gitignore` and never runs git (DEC-D2), so a tracked file is not
         // something it can repair.
         let mut fixable = false;
+        // Outside a repository there is no commit to make: "git would commit
+        // it (security risk)" was an error about a repository that does not
+        // exist. Said once, as information, like the template's tracking.
+        let in_repo = gitignore::in_work_tree(project_root);
+        let mut unchecked: Vec<String> = Vec::new();
         for file in &env_files {
             let name = &file.name;
             // A plaintext copy exposes what the file it copies does (DEC-D18).
@@ -593,6 +598,9 @@ impl DiagnosticCheck for EnvFileCheck {
                         "→ git rm --cached {name}, commit, then rotate every secret it held \
                          (`evnx scan .` lists them)"
                     ));
+                }
+                gitignore::Exposure::Unignored if !in_repo => {
+                    unchecked.push(name.clone());
                 }
                 gitignore::Exposure::Unignored => {
                     severity = Severity::Error;
@@ -685,6 +693,18 @@ impl DiagnosticCheck for EnvFileCheck {
             }
         }
 
+        if !unchecked.is_empty() {
+            lines.insert(
+                0,
+                format!(
+                    "· Not a git repository: whether git would commit {} was not checked",
+                    crate::utils::string::name_list(&unchecked)
+                ),
+            );
+            if severity == Severity::Ok {
+                severity = Severity::Info;
+            }
+        }
         let nested = nested_env_lines(project_root);
         if severity == Severity::Ok && !nested.is_empty() {
             severity = Severity::Info;

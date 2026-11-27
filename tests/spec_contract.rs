@@ -295,6 +295,27 @@ fn t_i183_template_order_then_names_only_in_env() {
     assert!(table(&out.stdout, "A").contains("required = true"));
 }
 
+/// A template name with a default (`PORT=8000`, `NAME=demo`) is optional, and
+/// was commented "only in .env" too, although the template has it: the
+/// comment followed `required`, not where the name came from.
+#[test]
+fn a_template_name_with_a_default_is_not_called_only_in_env() {
+    let p = Project::new()
+        .dir(".git")
+        .example("PORT=8000\nAPI_KEY=your-api-key\nNAME=demo\nDEBUG=false\n")
+        .env("PORT=3000\nAPI_KEY=abc123def456\nNAME=demo\nDEBUG=false\nEXTRA=1\n");
+    let out = run(p.path(), &["spec", "init", "--stdout"]);
+    out.assert_code(0);
+    for name in ["PORT", "NAME", "DEBUG"] {
+        let t = table(&out.stdout, name);
+        assert!(!t.contains("only in"), "{name}: {t}");
+        assert!(t.contains("required = false"), "{name}: {t}");
+    }
+    assert!(!table(&out.stdout, "API_KEY").contains("only in"));
+    let extra = table(&out.stdout, "EXTRA");
+    assert!(extra.contains("# only in .env"), "{extra}");
+}
+
 /// The comment names the file the values came from.
 #[test]
 fn t_i183_the_comment_names_the_environment_file() {
