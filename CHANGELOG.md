@@ -420,7 +420,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Security
 
 - Dependencies updated: `url` 2.5.9 (RUSTSEC-2026-0592; reached through
-  `reqwest`, in builds with `cloud` or `migrate`), and the `wasm-bindgen` family,
+  `reqwest`, in builds with `net`, which `cloud` and `migrate` imply), and the `wasm-bindgen` family,
   whose versions in the lockfile had been yanked. `cargo audit` reports no
   vulnerability; the accepted "unmaintained" notices (`chrono`, `pin-utils`,
   and `humantime`, which only the tests use) are listed with reasons in

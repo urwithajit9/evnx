@@ -36,9 +36,10 @@ ignore = [
     "RUSTSEC-2026-0543",
 
     # pin-utils 0.1.0 (unmaintained), reached through hyper 1.x (reqwest, the
-    # cloud feature) and through nix. No replacement is available without a
-    # change in those crates. `cargo tree -e normal --all-features -i pin-utils`
-    # prints pin-utils -> hyper -> hyper-rustls / hyper-util -> reqwest -> evnx.
+    # net feature that cloud and migrate imply) and, in tests only, through
+    # expectrl -> nix. No replacement is available without a change in those
+    # crates. `cargo tree -e normal --all-features -i pin-utils` prints
+    # pin-utils -> hyper -> hyper-rustls / hyper-util -> reqwest -> evnx.
     "RUSTSEC-2026-0441",
 
     # humantime 2.4.0 (unmaintained): test-only. It arrives through
