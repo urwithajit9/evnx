@@ -409,6 +409,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is written `required = false`, and the comment followed that instead of where
   the name came from. Only a name that is in the env file and not in the
   template gets the comment now.
+- **A value decoded from a YAML, JSON or TOML file carries its key path.** A
+  base64, hex or percent-encoded value found in a structured file had
+  `key_path: null` in `scan --format json` and no key in its location
+  (`config.yaml:3`), in a folder walk and under `--history`, while the same
+  file's other findings had both. It now reads `config.yaml:3
+  (app.aws.encoded_key)` with `key_path` set. Its fingerprint is unchanged, so
+  a baseline that accepted it still does.
 
 ---
 

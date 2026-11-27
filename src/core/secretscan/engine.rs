@@ -130,12 +130,29 @@ pub fn scan_text(text: &str, ctx: &Context) -> Vec<Found> {
 fn scan_decoded(text: &str, ctx: &Context, out: &mut Vec<Found>) {
     use super::decode;
     let mut budget = decode::MAX_CANDIDATES_PER_FILE;
+    // ⚠️ A structured file's decoded value is named by its leaf, as the same
+    // value as written is: it had no `key_path` and no key in its location.
+    let parsed;
+    let leaves: &[Leaf] = match (ctx.kind, ctx.leaves) {
+        (Kind::Structured(_), Some(l)) => l,
+        (Kind::Structured(format), None) => {
+            parsed = leaves(text, format).unwrap_or_default();
+            &parsed
+        }
+        _ => &[],
+    };
     for (i, line) in text.lines().enumerate() {
         let line_num = i + 1;
-        let variable = matches!(ctx.kind, Kind::Dotenv)
+        let key = matches!(ctx.kind, Kind::Dotenv)
             .then(|| assignment_key(line))
             .flatten();
         for token in decode::tokens(line) {
+            let variable = key.clone().or_else(|| {
+                leaves
+                    .iter()
+                    .find(|l| l.line == line_num && l.value.contains(token))
+                    .map(|l| l.path.clone())
+            });
             if budget == 0 {
                 return;
             }
