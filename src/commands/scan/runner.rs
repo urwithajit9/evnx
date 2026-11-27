@@ -749,6 +749,7 @@ impl ScanRunner {
                 eprintln!("  scanning history: {done} of {total} files");
             }
         }
+        mark_on_remotes(&cwd, &mut results);
         let n = read.len();
         self.finish(results, format, &read).map(|found| (found, n))
     }
@@ -1458,6 +1459,40 @@ fn annotate_history(
     for list in [&mut local.known, &mut local.allowed] {
         list.retain(|f| seen.insert(f.fingerprint.clone()));
         list.iter_mut().for_each(mark);
+    }
+}
+
+/// Whether a remote already has each history finding's blob, asked once for
+/// all of them, and the command that rewrites the local commits holding the
+/// rest. Findings arrive oldest commit first, so the first local one names
+/// where a rebase starts. Nothing is set when git cannot say.
+fn mark_on_remotes(cwd: &Path, results: &mut ScanResults) {
+    let mut paths: Vec<String> = Vec::new();
+    for f in &results.findings {
+        if let Some(p) = &f.repo_path {
+            if !paths.contains(p) {
+                paths.push(p.clone());
+            }
+        }
+    }
+    if paths.is_empty() {
+        return;
+    }
+    let Some(pushed) = super::history::on_remotes(cwd, &paths) else {
+        return;
+    };
+    for f in &mut results.findings {
+        if let Some(blob) = &f.blob {
+            f.on_remote = Some(pushed.contains(blob));
+        }
+    }
+    if let Some(commit) = results
+        .findings
+        .iter()
+        .find(|f| f.on_remote == Some(false))
+        .and_then(|f| f.commit.clone())
+    {
+        results.local_rewrite = Some(super::history::local_rewrite(cwd, &commit));
     }
 }
 

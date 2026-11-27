@@ -362,3 +362,73 @@ fn the_config_switch_turns_it_off() {
     assert!(out.status.success(), "{}", all_text(&out));
     assert!(all_text(&out).contains("skipped"));
 }
+
+/// The hook's advice said "force push, after coordinating with everyone who
+/// has a clone" and `git filter-repo` for commits no remote had yet. Local
+/// commits are fixed locally: amend the last one, or rebase, then push.
+#[test]
+fn a_blocked_push_of_local_commits_says_amend_not_force_push() {
+    let Some(s) = setup() else { return };
+    let w = s.work.path();
+    commit(w, "a.txt", "hello\n");
+    assert!(push(w, &["origin", "main"], &[]).status.success());
+    // The secret is in the last commit: amend it.
+    commit(w, "k.env", &secret_file());
+    let out = push(w, &["origin", "main"], &[]);
+    assert!(!out.status.success());
+    let text = all_text(&out);
+    assert!(text.contains("git commit --amend"), "{text}");
+    assert!(text.contains("no force push"), "{text}");
+    assert!(!text.contains("Force push"), "{text}");
+    assert!(!text.contains("filter-repo --path"), "{text}");
+    // An older local commit: rebase from the one before it.
+    commit(w, "b.txt", "two\n");
+    let first = String::from_utf8(
+        git_cmd(w)
+            .args(["rev-parse", "--short=7", "HEAD~1"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    let out = push(w, &["origin", "main"], &[]);
+    assert!(!out.status.success());
+    let text = all_text(&out);
+    assert!(
+        text.contains(&format!("git rebase -i {}^", first.trim())),
+        "{text}"
+    );
+    assert!(
+        !text.contains("Force push") && !text.contains("filter-repo --path"),
+        "{text}"
+    );
+    // A first push of a branch to an empty remote is local commits too.
+    let Some(s) = setup() else { return };
+    let w = s.work.path();
+    commit(w, "k.env", &secret_file());
+    let text = all_text(&push(w, &["origin", "main"], &[]));
+    assert!(text.contains("git commit --amend"), "{text}");
+    assert!(!text.contains("Force push"), "{text}");
+}
+
+/// History a remote already has keeps the rewrite and force push advice.
+#[test]
+fn a_secret_a_remote_already_has_keeps_the_force_push_advice() {
+    let Some(s) = setup() else { return };
+    let w = s.work.path();
+    commit(w, "k.env", &secret_file());
+    assert!(git(w, &["push", "-q", "--no-verify", "origin", "main"]));
+    let out = evnx(w, &["scan", "--history"]);
+    let text = all_text(&out);
+    assert!(text.contains("git filter-repo --path k.env"), "{text}");
+    assert!(text.contains("Force push"), "{text}");
+    assert!(!text.contains("--amend"), "{text}");
+    // Removed and then added back in a local commit: the remote has the file
+    // with that key, so amending the local commit is not enough.
+    assert!(git(w, &["rm", "-q", "k.env"]));
+    assert!(git(w, &["commit", "-q", "--no-verify", "-m", "rm"]));
+    commit(w, "k.env", &secret_file());
+    let text = all_text(&push(w, &["origin", "main"], &[]));
+    assert!(text.contains("Force push"), "{text}");
+    assert!(!text.contains("--amend"), "{text}");
+}

@@ -41,6 +41,7 @@
 //!     git: None,
 //!     repo_path: None,
 //!     in_commit: None,
+//!     on_remote: None,
 //!     note: None,
 //!     line: 15,
 //!     commit: None,
@@ -192,6 +193,13 @@ pub struct Finding {
     /// history rewrite. `None` when nothing is known. Display only.
     #[serde(skip)]
     pub in_commit: Option<bool>,
+
+    /// For a `--history` finding: whether a commit a remote already has
+    /// holds this blob. `Some(false)` is in local commits only, which are
+    /// amended or rebased, with no force push. `None` when nothing is known
+    /// (no remote, or not history). Display only.
+    #[serde(skip)]
+    pub on_remote: Option<bool>,
 
     /// What to say about a value match in place of the generic "matches a
     /// live key format" line — `a password in a postgres:// URL` (I-052).
@@ -400,6 +408,7 @@ impl Finding {
             git: None,
             repo_path: None,
             in_commit: None,
+            on_remote: None,
             note: None,
             line: 0,
             key_path: None,
@@ -489,6 +498,11 @@ pub struct ScanResults {
     /// clean result says what it did not cover. `--include-dir` walks one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skipped_dirs: Vec<String>,
+    /// `--history`: the command that rewrites the local commits holding the
+    /// findings no remote has (`git commit --amend`, `git rebase -i
+    /// abc1234^`). Display only.
+    #[serde(skip)]
+    pub local_rewrite: Option<String>,
 }
 
 /// The settings that decide what a scan can report: rules turned off, the
@@ -756,6 +770,7 @@ impl ScanResults {
             log: Vec::new(),
             effective_config: None,
             skipped_dirs: Vec::new(),
+            local_rewrite: None,
         }
     }
 

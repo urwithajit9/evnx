@@ -376,6 +376,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`remove`'s hint for a missing `.env` keeps the names.** With only
   `.env.prod` there, `evnx remove A B` suggested `evnx remove --env-name prod`;
   it now suggests `evnx remove A B --env-name prod`.
+- **The pre-push hook no longer tells you to force push commits no remote
+  has.** When it blocked a push, the next steps were `git filter-repo` and
+  "Force push, after coordinating with everyone who has a clone", for commits
+  that were never pushed. `scan --history` now asks git whether a remote
+  already has the file with that key. If none does, the steps are "Take the
+  keys out of <file>, then rewrite the local commits that hold them: git commit
+  --amend" (or `git rebase -i <commit>^` when it is not the last commit), then
+  "Then push as usual: no remote has these commits, so no force push or git
+  filter-repo is needed". History a remote already has, and a repository with
+  no remote, keep the old steps. The hook's own line now reads "Fix the
+  commits as the next steps above say".
 
 ---
 

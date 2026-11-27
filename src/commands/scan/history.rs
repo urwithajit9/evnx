@@ -138,6 +138,75 @@ fn parse_log(raw: &[u8]) -> Vec<Entry> {
     out
 }
 
+/// Of `paths` (from the repository root), the blobs some commit a remote
+/// already has holds there: one `git log --remotes` for all of them. `None`
+/// when the repository has no remote (nothing says whether a commit was
+/// pushed, so the advice stays the one for shared history) or git cannot
+/// answer. A remote with no refs yet (a first push) has none.
+///
+/// ⚠️ The pre-push hook scans only the commits being pushed, and its advice
+/// said to force push after coordinating with everyone who has a clone, for
+/// commits no one else had. A blob no remote has is in local commits only:
+/// amending or rebasing them is the whole fix.
+pub fn on_remotes(cwd: &Path, paths: &[String]) -> Option<HashSet<String>> {
+    let remotes = Command::new("git")
+        .args(["remote"])
+        .current_dir(cwd)
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    if String::from_utf8_lossy(&remotes.stdout).trim().is_empty() {
+        return None;
+    }
+    let mut found = HashSet::new();
+    // Chunked so a long list stays under the argument limit.
+    for chunk in paths.chunks(256) {
+        let out = Command::new("git")
+            .args([
+                "log",
+                "--remotes",
+                "--raw",
+                "-z",
+                "--no-abbrev",
+                "--no-renames",
+                "-m",
+                "--diff-filter=ACMT",
+                "--format=%x01%H%x09%ct",
+                "--",
+            ])
+            .args(chunk.iter().map(|p| format!(":(top,literal){p}")))
+            .current_dir(cwd)
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())?;
+        found.extend(parse_log(&out.stdout).into_iter().map(|e| e.blob));
+    }
+    Some(found)
+}
+
+/// What rewrites local commits from `commit` on: `git commit --amend` when it
+/// is `HEAD`, else `git rebase -i <commit>^`, or `--root` for a first commit.
+pub fn local_rewrite(cwd: &Path, commit: &str) -> String {
+    let short: String = commit.chars().take(7).collect();
+    if head(cwd).is_ok_and(|h| h == commit) {
+        return "git commit --amend".to_string();
+    }
+    let has_parent = Command::new("git")
+        .args(["rev-parse", "--verify", "-q", &format!("{commit}^")])
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    if has_parent {
+        format!("git rebase -i {short}^")
+    } else {
+        "git rebase -i --root".to_string()
+    }
+}
+
 /// The commit `HEAD` names, in full.
 pub fn head(cwd: &Path) -> Result<String> {
     let out = Command::new("git")
