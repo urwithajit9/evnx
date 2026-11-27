@@ -398,6 +398,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reports, as information, "Not a git repository: whether git would commit
   .env was not checked", which does not fail `--strict`. A `.gitignore` that
   covers the file is still read, and inside a repository nothing changes.
+- **`init` adopting an env file with no template names the command that
+  creates one.** After `evnx init --yes --env-name development` adopted
+  `.env.development`, it said "Create one from it:  evnx sync --direction
+  reverse", which fills an env file from a template and so exited 2. It now
+  says "Create one from it:  evnx sync", which writes `.env.example` from
+  `.env.development` (the `[defaults] env_name` that `init` just set).
 
 ---
 

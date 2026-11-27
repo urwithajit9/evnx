@@ -171,3 +171,33 @@ fn spec3_without_vars_json_says_it_was_skipped() {
     let doc: serde_json::Value = serde_json::from_str(&out.stdout).expect(&out.stdout);
     assert_eq!(doc["checked"], false);
 }
+
+/// Adopting `.env.development` with no template said "Create one from it:
+/// evnx sync --direction reverse", which fills an env file from a template and
+/// so exits 2 when there is none. Forward sync is what writes the template;
+/// the command is run as printed.
+#[test]
+fn adopting_with_no_template_names_the_sync_that_creates_it() {
+    let p = Project::new()
+        .git()
+        .file(".env.development", "PORT=3000\nDEBUG=true\n");
+    let out = run(p.path(), &["init", "--yes", "--env-name", "development"]);
+    out.assert_code(0);
+    out.assert_not_contains("--direction reverse");
+    let all = out.all();
+    let hint = all
+        .split("Create one from it:")
+        .nth(1)
+        .and_then(|rest| rest.lines().next())
+        .unwrap_or_else(|| panic!("no hint:\n{all}"))
+        .trim()
+        .to_string();
+    assert_eq!(hint, "evnx sync", "{all}");
+    let args: Vec<&str> = hint.split_whitespace().skip(1).collect();
+    run(p.path(), &args).assert_code(0);
+    let template = p.read(".env.example");
+    assert!(
+        template.contains("PORT=") && template.contains("DEBUG="),
+        "{template}"
+    );
+}
