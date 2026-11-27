@@ -21,15 +21,14 @@ ignore = [
     # Remove this the moment http3 is enabled for any reason.
     "RUSTSEC-2026-0185",
 
-    # ── Accepted "unmaintained" notices (checked 2026-11-19, offline) ─────────
+    # ── Accepted "unmaintained" notices ────────────────────────────────────
+    #
+    # Checked 2026-11-26 with cargo audit (owner): on this lockfile it reports
+    # only the unmaintained warnings below and no vulnerability.
     #
     # Gone since 0.16.0, so not listed: serde_yaml / unsafe-libyaml (YAML is
     # read with yaml-rust2, pure Rust) and number_prefix (indicatif 0.18).
     # `grep -c 'serde_yaml\|unsafe-libyaml\|number_prefix' Cargo.lock` is 0.
-    #
-    # ⚠️ TODO(owner): the IDs below were written without access to the advisory
-    # database. Run `cargo audit` once and make each ID match its crate; an ID
-    # that matches nothing is harmless, a missing one fails the audit job.
 
     # chrono 0.4: kept on purpose (25 call sites; replacing it with jiff or time
     # is a separate change). Read the advisory before each release: if evnx
@@ -37,8 +36,16 @@ ignore = [
     "RUSTSEC-2026-0543",
 
     # pin-utils 0.1.0 (unmaintained), reached through hyper 1.x (reqwest, the
-    # cloud feature) and through nix. No replacement is available without a
-    # change in those crates. `cargo tree -e normal --all-features -i pin-utils`
-    # prints pin-utils -> hyper -> hyper-rustls / hyper-util -> reqwest -> evnx.
-    # Its advisory ID is not recorded here yet (see the TODO above).
+    # net feature that cloud and migrate imply) and, in tests only, through
+    # expectrl -> nix. No replacement is available without a change in those
+    # crates. `cargo tree -e normal --all-features -i pin-utils` prints
+    # pin-utils -> hyper -> hyper-rustls / hyper-util -> reqwest -> evnx.
+    "RUSTSEC-2026-0441",
+
+    # humantime 2.4.0 (unmaintained): test-only. It arrives through
+    # trycmd -> humantime-serde, and trycmd is a dev-dependency, so it is never
+    # in the shipped binary. `cargo tree -e all --all-features --target all -i
+    # humantime` shows the path; `cargo tree -e normal --all-features -i
+    # humantime` prints nothing.
+    "RUSTSEC-2026-0542",
 ]

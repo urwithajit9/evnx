@@ -79,8 +79,12 @@ links that are dead on the live site, and `pnpm check:links` is what catches it.
 cargo check          # updates Cargo.lock's own entry
 ```
 
-Two pins in `README.md` also carry it (the `ghcr.io/urwithajit9/evnx:X.Y.Z` Docker
-example and the pre-commit `rev: vX.Y.Z`); `grep -n 'X\.Y\.Z' README.md` before the tag.
+Pins in the docs also carry it: in `README.md` the `ghcr.io/urwithajit9/evnx:X.Y.Z` Docker
+example, the pre-commit `rev: vX.Y.Z` and the `EVNX_VERSION` examples, the same `EVNX_VERSION`
+examples in `docs/GETTING_STARTED.md`, and for a minor the supported-versions table in
+`SECURITY.md`. `git grep -n 'OLD\.VERSION' -- README.md docs/GETTING_STARTED.md SECURITY.md`
+before the tag; a line that describes the old release (`From v0.15.0 the archives carry…`)
+stays.
 The packaging artefacts (npm, PyPI, Homebrew, Scoop, winget) all derive the version from
 the tag.
 
@@ -235,13 +239,14 @@ It reads the compiled feature list from `evnx commands --json`, so it covers
 
 | Channel | Check | The trap |
 |---|---|---|
-| GitHub Release | 16 assets + checksums | |
+| GitHub Release | 18 assets: 8 archives, the SBOM, and a `.sha256` for each | `verify-provenance` checks the build provenance of every archive and the SBOM attestation (`--predicate-type https://cyclonedx.org/bom`) of one |
 | **npm** | `npm view @evnx/cli version` | `npm-publish.yml` fires on `release.yml` *completing* — including when it **fails**, where it correctly skips and still reports green. A green npm run means nothing; read the registry. A **red** one is safe to re-run: the publish steps skip every version already in the registry and finish the rest (I-256). Only an auth failure ("check NPM_TOKEN") needs a new token first. |
 | **crates.io** | `curl -A … https://crates.io/api/v1/crates/evnx` shows the version | `publish-crate` in `release.yml` since v0.11.0 (RM-27). It was a manual `cargo publish` that evnx-crypto skipped twice (0.1.1, 0.1.2). It fails without the trusted publisher above. |
 | PyPI | install the wheel and run the binary — **and run `scripts/check-build-features.sh` on it** | ⚠️ Built with `--features full` until 0.9.0, and `full` excludes `cloud`. Five releases of wheels had no `auth`, `vault`, `cloud` or `org`. Fixed to `--all-features`; **verify it on the first release after 0.9.0.** |
 | Homebrew / Scoop | formula and manifest bumped | |
 | ghcr.io | new digest, not the old one | |
 | **winget** | a PR against microsoft/winget-pkgs | 8 of 34 versions held up, for three different reasons. See "Winget validation" below. |
+| install script | run `install-container` from the Actions tab once the release is out | It installs the *latest* release, so before the tag it tests the previous one; otherwise it runs on Mondays. |
 
 ⚠️ **Checking crates.io needs a `User-Agent`.** Their API refuses an anonymous
 request and answers with HTML, so a naive `curl | python3 -c 'json.load(...)'`

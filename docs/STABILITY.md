@@ -2,7 +2,7 @@
 
 What you can rely on in evnx, what may still change before 1.0, and what changed
 in this release. evnx follows [Semantic Versioning](https://semver.org); before 1.0 a
-minor release (0.14 to 0.15) may change behaviour, and the CHANGELOG says so under
+minor release (0.15 to 0.16) may change behaviour, and the CHANGELOG says so under
 "Breaking".
 
 ## Stable
@@ -58,10 +58,16 @@ These do not change without a CHANGELOG "Breaking" entry, and are tested.
 
 ## Changed defaults in 0.16.0
 
-The headlines of the CHANGELOG's "Breaking" section for the 0.16.0 release (others are
-added there as they land).
+The headlines of the CHANGELOG's "Breaking" section for this release. Each entry there
+says who is hit and what to pass to get the old behaviour.
 
 - **A "no" at a confirmation prompt now exits 4.**
+- **Classic GitHub tokens that fail their checksum are no longer findings.**
+- **More GitLab tokens are found.**
+- **Secrets inside encoded values are found.**
+- **The confidence shown can move one level.**
+- **Scan JSON is `schema_version` 3.**
+- **YAML reader replaced.**
 
 ## Changed defaults in 0.15.0
 

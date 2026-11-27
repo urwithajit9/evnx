@@ -6,7 +6,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.16.0] - 2026-11-27
+
+A minor release: `scan` finds more (inside encoded values, more GitLab tokens),
+reports less noise (checksum stand-ins, lockfiles), and its JSON is
+`schema_version` 3; a "no" at a confirmation prompt exits 4. Read "Breaking"
+before upgrading scripts and CI.
 
 ### Breaking
 
@@ -19,7 +24,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `auth devices disavow`. They now exit 4 after the same message, like
   `set`, `remove` and `platform`. A script that treated a "no" as success
   should accept 4 or pass `--yes`.
-
 - **Classic GitHub tokens that fail their checksum are no longer findings.** A
   value that starts `ghp_`, `gho_`, `ghu_` or `ghr_` and has 36 characters after
   it carries a checksum in its last six. A value whose checksum does not match
@@ -27,7 +31,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   variable is called. A value that matches is reported with high confidence.
   `ghs_` tokens and other lengths are not judged. CI that gated on made-up
   `ghp_` values in test files now passes; real tokens are unaffected.
-
 - **More GitLab tokens are found.** New rules for feed tokens (`glft-`),
   incoming email tokens (`glimt-`), agent for Kubernetes tokens (`glagent-`),
   workspace tokens (`glwt-`, GitLab 18.2 and later), SCIM tokens (`glsoat-`),
@@ -36,7 +39,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   access token rule finds the routable form that ends in `.` and nine
   characters. CI that passed may now fail: accept what is not a secret with
   `evnx:allow` or `--update-baseline`.
-
 - **Secrets inside encoded values are found.** A value of 16 to 4096
   characters that is base64, hex or percent-encoded text is decoded once, and
   the text is checked against the format rules (known prefixes, private-key
@@ -44,7 +46,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   such as images and hashes are dropped. Such a finding says "found inside a
   base64-encoded value, decoded once" and carries `encoded` in JSON. CI that
   passed may now fail: baseline what is not a secret.
-
 - **The confidence shown can move one level.** A finding on a line with an
   `Authorization` or `Bearer` header, an HTTP client call or a connection
   string is shown one level higher; one in a file under a `test`, `tests`,
@@ -53,19 +54,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--confidence` floor and the summary counts use the level before the hint.
   Pretty, JSON and SARIF output show the moved level; JSON lists the hints in
   `context` and the earlier level in `confidence_before_context`.
-
 - **Scan JSON is `schema_version` 3.** Findings that are allowed or in the
   baseline carry `reason_code`, and `summary.by_reason` counts them. Every
   finding has `file` and `line` (a number, or `null` when it is not known)
   beside `location`, so a script need not split that string, and a finding in
-  a YAML, JSON, TOML or notebook file has `key_path` (`app.db.password`). A
+  a YAML, JSON, TOML or notebook file has `key_path` (`app.db.password`), also
+  when it was found inside an encoded value (`config.yaml:3
+  (app.aws.encoded_key)`). A
   finding may also carry `encoded` (`base64`, `hex` or `url`), `context` and
   `confidence_before_context`, and under `--history` `commit`, `blob`,
   `commit_time` and `git: "history"`; `effective_config` has
   `rules_digest`. Each new field is left out when it does not apply. The `run`
   header is unchanged. The SARIF output now lists allowed and baseline
   findings as suppressed results, with the reason as the justification.
-
 - **YAML reader replaced.** evnx reads YAML (scan of `.yml`/`.yaml`, `init`'s
   compose detection, `add import`) with `yaml-rust2` instead of the deprecated
   `serde_yaml`. The rules are the same: YAML 1.2, so `yes`, `no`, `on` and
@@ -76,14 +77,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so scan reads that file as text and `add import` refuses it; a key that is a
   list or a mapping is refused the same way; an integer too large for 128 bits
   no longer sends the file to the text scan; a numeric or `~` key is named as
-  written in a finding's location (`1.10`, `~`, not `1.1`, `null`).
+  written in a finding's location (`1.10`, `~`, not `1.1`, `null`). The unsafe
+  C port `unsafe-libyaml` is no longer in the build, and a YAML error names a
+  line, a column and a fixed reason.
 
 ### Added
 
 - **The SBOM is attached to each release archive** as a signed CycloneDX
   attestation: `gh attestation verify <archive> -R urwithajit9/evnx
   --predicate-type https://cyclonedx.org/bom`.
-
 - **`evnx add custom NAME --from-file <path|->` and `evnx set NAME --from-file
   <path|->`** read one value from a file or from standard input: a certificate,
   a private key, a service-account JSON. Several lines are fine; the value is
@@ -93,7 +95,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   command takes exactly one NAME and no `NAME=value`. The value is never
   printed: a dry run says `118 bytes, 4 lines`. A source file inside a git
   repository that is tracked or not ignored gets a warning.
-
 - **`evnx set --fill`** asks, in file order, for every name in `.env` whose
   value is empty or a placeholder (`YOUR_KEY_HERE`, `changeme`: the rule
   `validate` uses). A secret-looking name is typed with no echo, and Enter
@@ -105,7 +106,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `evnx set NAME`. A name only in the template is not added (`evnx sync
   --direction reverse` adds it); the run lists those. `--json` carries
   `filled`, `skipped`, `remaining` and `missing`: names only.
-
 - **`evnx add import <FILE|->`** adds many variables from one file to `.env`:
   `.env`, `.properties`, INI, JSON, YAML (flat, nested with `__`, a Kubernetes
   Secret with base64 `data`, a docker-compose `environment:`, a GitHub Actions
@@ -117,7 +117,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--dry-run` and `--json` give a source-to-name mapping and never a value.
   A tracked source file with secrets gets a warning to untrack it and rotate
   them.
-
 - **`evnx add import` reads a `web.config`** (`.config`, `.xml`, or
   `--from web-config`): the `<add key value>` entries of
   `<configuration><appSettings>`, with `<clear/>` and `<remove key>` applied
@@ -125,7 +124,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   comments and CDATA are skipped; `<connectionStrings>` is not read. A UTF-8
   byte-order mark and UTF-16 files are accepted. An error names a line and a
   column, never a value.
-
 - **`evnx cloud delete-version --latest`** (admin) deletes the latest version of
   a vault. The question names the version that becomes the latest and asks for
   the vault's full name; `--yes` skips it for CI. A vault with one version is
@@ -134,7 +132,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   between is never the one removed. This machine stops warning about the
   version it deleted; other machines still see the "latest went down" warning,
   which now says an admin may have deleted it.
-
 - **`evnx cloud watch --on-change -- <COMMAND>...`** runs a command once for
   each reported change. It runs directly, not through a shell, like `evnx run`;
   it gets `EVNX_WATCH_VAULT` and `EVNX_WATCH_VERSION` and no other `EVNX_*`
@@ -142,14 +139,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are one call. A failing command prints one warning and watching goes on. With
   `--once` it runs when the vault is past the latest version this machine has
   seen.
-
 - **`evnx config show`** prints every effective setting with its source: the
   built-in default, a line of `.evnx.toml`, the user's `config.toml`, an
   environment variable, a global flag, or a scan policy file. `--json` has the
   usual `run` header, a `files` list, the `settings` and any warnings for
   unknown keys. Credentials are shown only as `set (hidden)` or `not set`, and
   a server URL that does not validate is refused without being quoted.
-
 - **`evnx scan --history [RANGE]`** scans the files git history added or
   changed instead of the files on disk: `--history origin/main..HEAD`,
   `--history v0.15.0..`, a bare `--history` for everything reachable from
@@ -158,7 +153,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`path@abc1234:LINE`). A secret that was added and later removed is still
   found: rotate it, then rewrite history. Paths limit it to files under them;
   outside a repository it exits 2.
-
 - **A bare `scan --history` builds on the last clean scan.** It reads only
   the commits made since the last clean history scan of this clone, kept in
   `.git/evnx/history.json` (never committed), unless the rules, the scan
@@ -166,14 +160,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   baseline now records a hash of the rule set it was written under
   (`rules_digest`); it stays `schema_version` 1, and an older evnx ignores the
   field.
-
 - **`evnx scan hook install --pre-push`** installs a git `pre-push` hook that
   scans the commits being pushed (what each ref adds beyond the remote). A push
   is blocked for secrets in them, and when the scan cannot run.
   `EVNX_SCAN_BYPASS="<reason>" git push` pushes anyway: the reason is required,
   and it is logged with the time and the commits to `.git/evnx/bypass.log`.
-  `hook uninstall` and `hook status` take `--pre-push` too.
-
+  `hook uninstall` and `hook status` take `--pre-push` too. `scan --history`
+  asks git whether a remote already has the file with that key: if none does,
+  the next steps are "Take the keys out of <file>, then rewrite the local
+  commits that hold them: git commit --amend" (or `git rebase -i <commit>^`
+  when it is not the last commit), then "Then push as usual: no remote has
+  these commits, so no force push or git filter-repo is needed". History a
+  remote already has, and a repository with no remote, get the history-rewrite
+  steps (`git filter-repo`, then a force push). The hook's own line reads "Fix
+  the commits as the next steps above say".
 - **`evnx vault revoke --all-vaults --user <email>`** removes someone from
   every vault where you can see them, in one command. It lists the vaults
   first, with the ones it must skip and why (your role does not allow it, they
@@ -187,7 +187,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   change) and `--json` (vault names and results) work as for one vault, and
   `vault revoke <vault>` takes `--dry-run` and `--json` too. Your own address
   is refused: use `evnx vault leave`.
-
 - **`evnx vault revoke` ends with a "rotate at the source" checklist.**
   Revoking cannot recall what the person could already read, so it lists the
   names of the credentials in the vault, grouped by who issued them, with the
@@ -201,7 +200,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is not covered, and the output says so. `--json` carries the list as
   `rotate` (name, provider, url, vaults), with `other_names` and
   `rotate_notes`.
-
 - **A server that refuses an old evnx is explained.** An evnx server can answer
   HTTP 426 Upgrade Required when the CLI is older than it accepts (every
   request already names the version in its `User-Agent`). evnx then says
@@ -227,8 +225,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   test fails for a rule with no keywords unless it is listed with a reason.
 - Progress bars use `indicatif` 0.18, which no longer pulls in the
   unmaintained `number_prefix` crate. Output is unchanged.
-- The unsafe C port `unsafe-libyaml` is no longer in the build: YAML parsing
-  is pure Rust. A YAML error names a line, a column and a fixed reason.
 - **`scan`'s `scanning …` line names git-ignored files apart.** It listed a
   `.env` that git ignores beside the files that are counted. The counted files
   now come first, and the ignored ones a walk read and only summarised follow
@@ -304,8 +300,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- The `scanning` line writes paths with `/` on Windows too, as finding locations already do.
-
+- The `scanning` line writes paths with `/` on Windows too, as finding
+  locations already do.
 - A backup passphrase in `EVNX_PASSWORD` is no longer removed from evnx's own
   environment while it is read (that needed `unsafe`); `run` still keeps every
   `EVNX_*` variable out of the command it starts.
@@ -376,17 +372,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`remove`'s hint for a missing `.env` keeps the names.** With only
   `.env.prod` there, `evnx remove A B` suggested `evnx remove --env-name prod`;
   it now suggests `evnx remove A B --env-name prod`.
-- **The pre-push hook no longer tells you to force push commits no remote
-  has.** When it blocked a push, the next steps were `git filter-repo` and
-  "Force push, after coordinating with everyone who has a clone", for commits
-  that were never pushed. `scan --history` now asks git whether a remote
-  already has the file with that key. If none does, the steps are "Take the
-  keys out of <file>, then rewrite the local commits that hold them: git commit
-  --amend" (or `git rebase -i <commit>^` when it is not the last commit), then
-  "Then push as usual: no remote has these commits, so no force push or git
-  filter-repo is needed". History a remote already has, and a repository with
-  no remote, keep the old steps. The hook's own line now reads "Fix the
-  commits as the next steps above say".
 - **Outside a git repository, `scan` and `doctor` no longer talk about
   commits.** `scan`'s next steps for a finding flagged only by a name, an
   entropy guess or a lower-confidence match said "Check ./.env: it is
@@ -409,13 +394,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is written `required = false`, and the comment followed that instead of where
   the name came from. Only a name that is in the env file and not in the
   template gets the comment now.
-- **A value decoded from a YAML, JSON or TOML file carries its key path.** A
-  base64, hex or percent-encoded value found in a structured file had
-  `key_path: null` in `scan --format json` and no key in its location
-  (`config.yaml:3`), in a folder walk and under `--history`, while the same
-  file's other findings had both. It now reads `config.yaml:3
-  (app.aws.encoded_key)` with `key_path` set. Its fingerprint is unchanged, so
-  a baseline that accepted it still does.
+
+### Security
+
+- Dependencies updated: `url` 2.5.9 (RUSTSEC-2026-0592; reached through
+  `reqwest`, in builds with `net`, which `cloud` and `migrate` imply), and the
+  `wasm-bindgen` family, whose versions in the lockfile had been yanked.
+  `cargo audit` reports no vulnerability; the accepted "unmaintained" notices
+  (`chrono`, `pin-utils`, and `humantime`, which only the tests use) are listed
+  with reasons in `.cargo/audit.toml`.
 
 ---
 

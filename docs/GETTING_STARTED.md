@@ -35,7 +35,7 @@ Full documentation and guides are available at [evnx.dev](https://www.evnx.dev).
 curl -fsSL https://evnx.dev/install.sh | bash
 ```
 
-The script detects your OS and architecture, downloads the correct binary from GitHub Releases, verifies the checksum, and installs it to `/usr/local/bin` when you can write there, else `~/.local/bin`. If that folder is not on your `PATH` it prints a "Use it now" line for this terminal and a "Keep it" line for your shell's startup file; it edits the file only if you answer yes at a terminal or set `EVNX_MODIFY_PATH=1`. `EVNX_VERSION=0.15.0` pins a release; `EVNX_INSTALL_DIR` picks the folder.
+The script detects your OS and architecture, downloads the correct binary from GitHub Releases, verifies the checksum, and installs it to `/usr/local/bin` when you can write there, else `~/.local/bin`. If that folder is not on your `PATH` it prints a "Use it now" line for this terminal and a "Keep it" line for your shell's startup file; it edits the file only if you answer yes at a terminal or set `EVNX_MODIFY_PATH=1`. `EVNX_VERSION=0.16.0` pins a release; `EVNX_INSTALL_DIR` picks the folder.
 
 ### npm
 
@@ -655,7 +655,7 @@ jobs:
 
       - name: Install evnx
         env:
-          EVNX_VERSION: "0.15.0"
+          EVNX_VERSION: "0.16.0"
           EVNX_INSTALL_DIR: ${{ github.workspace }}/.evnx-bin
           GH_TOKEN: ${{ github.token }}   # lets the installer check build provenance with the runner's gh
         run: |
@@ -682,7 +682,7 @@ validate-env:
   stage: validate
   image: alpine:3.21
   variables:
-    EVNX_VERSION: "0.15.0"
+    EVNX_VERSION: "0.16.0"
   before_script:
     - apk add --no-cache curl bash
     - curl -fsSL https://evnx.dev/install.sh | bash

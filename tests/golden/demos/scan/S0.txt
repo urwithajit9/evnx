@@ -111,7 +111,7 @@ Options:
       --history [<RANGE>]
           Scan the files git history added or changed, not the files on disk.
           
-          Takes any revision range: `--history origin/main..HEAD`, `--history v<version>..`. Bare `--history` is everything reachable from `HEAD`, and `--history all` every ref. Each distinct file version is read once, whole (so a name rule sees its key), and reported against the oldest commit that has it: `path@abc1234:LINE`. A secret that was added and later removed is still found: rotate it, then rewrite history. Paths limit it to files under them. Exits 2 outside a repository.
+          Takes any revision range: `--history origin/main..HEAD`, `--history v0.15.0..`. Bare `--history` is everything reachable from `HEAD`, and `--history all` every ref. Each distinct file version is read once, whole (so a name rule sees its key), and reported against the oldest commit that has it: `path@abc1234:LINE`. A secret that was added and later removed is still found: rotate it, then rewrite history. Paths limit it to files under them. Exits 2 outside a repository.
 
       --full
           With a bare `--history`: scan all of history again.
