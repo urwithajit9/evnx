@@ -461,14 +461,14 @@ fn from_project(inputs: &Inputs) -> Result<(Vec<Entry>, LeftOut)> {
     // the env file alone, with no template to say otherwise: required, as
     // before. Only in the env file beside a template: optional (DEC-SP9).
     let from_template = !template.is_empty();
-    for (name, required) in names
+    for (name, required, extra) in names
         .into_iter()
         .map(|n| {
             let required = !from_template
                 || infer::required(n, template.get(n).map(Secret::expose).unwrap_or(""));
-            (n, required)
+            (n, required, false)
         })
-        .chain(extras.into_iter().map(|n| (n, false)))
+        .chain(extras.into_iter().map(|n| (n, false, true)))
     {
         // A real value says more than a template placeholder, so prefer it.
         let sample = actual
@@ -491,10 +491,13 @@ fn from_project(inputs: &Inputs) -> Result<(Vec<Entry>, LeftOut)> {
         out.push(Entry {
             name: name.clone(),
             spec,
-            origin: if required {
-                Origin::Project
-            } else {
+            // ⚠️ Where the name came from, not `required`: a template name
+            // with a default (`PORT=8000`) is optional too, and was commented
+            // "only in .env" although the template has it.
+            origin: if extra {
                 Origin::OnlyIn(only_in.clone())
+            } else {
+                Origin::Project
             },
         });
     }

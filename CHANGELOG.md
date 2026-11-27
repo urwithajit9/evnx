@@ -404,6 +404,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reverse", which fills an env file from a template and so exited 2. It now
   says "Create one from it:  evnx sync", which writes `.env.example` from
   `.env.development` (the `[defaults] env_name` that `init` just set).
+- **`spec init` no longer writes "# only in .env" for names the template
+  has.** A template name with a default, such as `PORT=8000` or `NAME=demo`,
+  is written `required = false`, and the comment followed that instead of where
+  the name came from. Only a name that is in the env file and not in the
+  template gets the comment now.
 
 ---
 
