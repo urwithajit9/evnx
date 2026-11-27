@@ -41,13 +41,13 @@ https://www.evnx.dev/blog/sbom-what-it-is-and-how-evnx-ships-one
 
 ## Supported versions
 
-evnx is pre-1.0, so a "minor" is the second number: `0.15` is a minor, `0.15.1`
+evnx is pre-1.0, so a "minor" is the second number: `0.16` is a minor, `0.16.1`
 a patch of it. The policy:
 
 | Version | Receives |
 |---------|----------|
-| The latest minor (for example `0.15.x`) | Bug fixes and security fixes, as new patch releases |
-| The previous minor (for example `0.14.x`) | **Security fixes only, for 90 days** after the next minor is released |
+| The latest minor (for example `0.16.x`) | Bug fixes and security fixes, as new patch releases |
+| The previous minor (for example `0.15.x`) | **Security fixes only, for 90 days** after the next minor is released |
 | Anything older | Nothing. Upgrade |
 
 The 90 days run from the release date of the minor that replaced it. After that

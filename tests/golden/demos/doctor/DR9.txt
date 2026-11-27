@@ -95,7 +95,7 @@ $ env EVNX_OUTPUT_JSON=1 evnx doctor
 
 $ evnx doctor --format text
 [stderr]
-error: '--format text' was removed from 'evnx doctor' in <version>; use '--format pretty'
+error: '--format text' was removed from 'evnx doctor' in 0.15.0; use '--format pretty'
 [exit 2]
   ok: WP-8: --format text was removed, with a hint to pretty (exit 2)
 

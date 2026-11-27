@@ -58,7 +58,7 @@ provenance. It installs into `/usr/local/bin` when you can write there, else
 
 | Variable | Effect |
 |---|---|
-| `EVNX_VERSION=0.15.0` | install this release instead of the latest (CI should pin) |
+| `EVNX_VERSION=0.16.0` | install this release instead of the latest (CI should pin) |
 | `EVNX_INSTALL_DIR=/opt/bin` | install into this folder |
 | `EVNX_MODIFY_PATH=1` | when the folder is not on `PATH`, append the `PATH` line to your shell's startup file |
 
@@ -84,7 +84,7 @@ prints the script; see [`evnx completions`](#evnx-completions).
 ### Docker
 
 ```bash
-docker run --rm -v "$PWD:/work" ghcr.io/urwithajit9/evnx:0.15.0 scan
+docker run --rm -v "$PWD:/work" ghcr.io/urwithajit9/evnx:0.16.0 scan
 ```
 
 Commands that write files need `--user "$(id -u):$(id -g)"`.
@@ -1646,7 +1646,7 @@ jobs:
 
       - name: Install evnx
         env:
-          EVNX_VERSION: "0.15.0"
+          EVNX_VERSION: "0.16.0"
           EVNX_INSTALL_DIR: ${{ github.workspace }}/.evnx-bin
           GH_TOKEN: ${{ github.token }}   # lets the installer check build provenance with the runner's gh
         run: |
@@ -1673,7 +1673,7 @@ validate-env:
   stage: validate
   image: alpine:3.21
   variables:
-    EVNX_VERSION: "0.15.0"
+    EVNX_VERSION: "0.16.0"
   before_script:
     - apk add --no-cache curl bash
     - curl -fsSL https://evnx.dev/install.sh | bash
@@ -1709,7 +1709,7 @@ repos:
     # before 0.10.15 evnx-doctor had no --skip-without-env. Before 0.10.0 the
     # scan hook scanned the whole working tree on every commit, including the
     # real, gitignored `.env`, and blocked every commit.
-    rev: v0.15.0
+    rev: v0.16.0
     hooks:
       - id: evnx-scan        # blocks commit if secrets found in the staged files
       - id: evnx-validate    # blocks commit if .env misconfigured
